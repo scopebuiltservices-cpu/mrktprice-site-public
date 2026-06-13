@@ -1,0 +1,16 @@
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.vscode/
+.idea/
+
+# Python (from running build_reports.py locally)
+__pycache__/
+*.pyc
+.venv/
+
+# local build scratch
+_site/
+*.tmp

@@ -1,0 +1,107 @@
+<!doctype html>
+<!-- ============================================================================
+     MrktPrice · Opportunity News™ — REPORT TEMPLATE
+     HOW TO USE:
+       1. Copy this file to a new name:  reports/YYYY-MM-DD-short-slug.html
+          (e.g. reports/2026-06-15-energy-rotation.html)
+       2. Edit the JSON in <script id="report-meta"> below (title, date, summary, tags).
+       3. Write your report inside <article class="body"> … </article>.
+       4. Run:  python tools/build_reports.py    (rebuilds the reports index/list page)
+       5. Publish (the deploy workflow copies /reports to the site).
+     Keep it GENERAL & IMPERSONAL. Results, not methodology. Disclaimer stays. © stays.
+     ============================================================================ -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- ▼▼▼ EDIT THIS METADATA BLOCK (the index page reads it) ▼▼▼ -->
+<script type="application/json" id="report-meta">
+{
+  "title": "Report title goes here",
+  "date": "2026-06-15",
+  "summary": "One or two sentences that appear on the news list page as the teaser.",
+  "tags": ["macro", "energy"],
+  "author": "Marc Jones"
+}
+</script>
+<!-- ▲▲▲ EDIT THIS METADATA BLOCK ▲▲▲ -->
+<title>Report title goes here · Opportunity News</title>
+<style>
+  :root{--bg:#0a0d12;--panel:#111721;--line:#27313f;--ink:#eef3f8;--muted:#97a4b3;
+        --faint:#646e7c;--accent:#16c79a;--brand:#16c79a;--gold:#f5c451;--up:#2ecc8f;--down:#ef5f4e;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:760px;margin:0 auto;padding:28px 22px 60px}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:12px;
+       border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:26px}
+  .brand{font-weight:800;letter-spacing:.2px}
+  .brand b{color:var(--brand)} .brand span{color:var(--muted);font-weight:600}
+  a.back{color:var(--muted);text-decoration:none;font-size:13px;border:1px solid var(--line);
+         padding:5px 10px;border-radius:7px}
+  a.back:hover{color:var(--ink);border-color:var(--accent)}
+  h1{font-size:30px;line-height:1.2;margin:.2em 0 .15em}
+  .meta{color:var(--faint);font-size:13px;margin-bottom:8px}
+  .tags{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 28px}
+  .tag{font-size:11px;color:var(--accent);border:1px solid var(--line);border-radius:20px;padding:3px 10px;
+       text-transform:uppercase;letter-spacing:.5px}
+  .body h2{font-size:20px;margin:34px 0 10px;color:var(--ink)}
+  .body h3{font-size:16px;margin:24px 0 8px;color:var(--muted)}
+  .body p{margin:0 0 16px}
+  .body a{color:var(--accent)}
+  .body blockquote{border-left:3px solid var(--accent);margin:18px 0;padding:4px 16px;color:var(--muted)}
+  .body table{border-collapse:collapse;width:100%;margin:18px 0;font-size:14px}
+  .body th,.body td{border:1px solid var(--line);padding:7px 10px;text-align:left}
+  .body th{background:var(--panel);color:var(--muted)}
+  .disclaimer{margin-top:42px;padding:16px 18px;background:var(--panel);border:1px solid var(--line);
+              border-radius:10px;font-size:12.5px;color:var(--muted);line-height:1.6}
+  footer{margin-top:24px;color:var(--faint);font-size:12px;border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div class="brand"><b>Mrkt</b><span>Price</span> · Opportunity&nbsp;News™</div>
+    <a class="back" href="./index.html">← All reports</a>
+  </div>
+
+  <!-- The H1 / date / tags are also shown here for the reader; keep them in sync with the JSON above. -->
+  <h1>Report title goes here</h1>
+  <div class="meta">June 15, 2026 · by Marc Jones</div>
+  <div class="tags"><span class="tag">macro</span><span class="tag">energy</span></div>
+
+  <article class="body">
+    <p><em>Replace everything in this article with your report. Below is a structure you can follow —
+    delete the guidance as you write.</em></p>
+
+    <h2>What we observed</h2>
+    <p>State the market observation in plain terms — what moved, what the data showed. Report
+    <strong>results and observations</strong>, not the inner workings of your model.</p>
+
+    <h2>The data</h2>
+    <p>Add a small table or describe the figures. Facts (prices, filings, levels) are free to report;
+    cite sources and link out rather than reproducing other outlets' writing.</p>
+    <table>
+      <tr><th>Metric</th><th>Reading</th><th>Note</th></tr>
+      <tr><td>Example</td><td>—</td><td>—</td></tr>
+    </table>
+
+    <h2>What it may mean</h2>
+    <p>Offer general, impersonal interpretation of the market at large. Avoid telling any individual
+    reader what to buy or sell, and avoid performance promises or "guaranteed" claims.</p>
+  </article>
+
+  <div class="disclaimer">
+    <strong>Not investment advice.</strong> Opportunity News is a general, impersonal market-analysis
+    publication for research and educational purposes only. It is not financial, investment, legal, or
+    tax advice, and not a recommendation to buy or sell any security. Data may be delayed, incomplete,
+    or inaccurate. Do your own research; consult a licensed professional before making decisions.
+  </div>
+
+  <footer>© 2026 MrktPrice™ / Marc Jones. All rights reserved. Opportunity News™, MrktPrice™ are
+  trademarks of Marc Jones.</footer>
+
+</div>
+</body>
+</html>

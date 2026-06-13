@@ -1,0 +1,52 @@
+name: Deploy MrktPrice site
+
+# Publishes mrktprice.com to GitHub Pages on every push to main.
+# Rebuilds the Opportunity News index from reports/, then deploys the dashboard + reports.
+# This repo is self-contained: no build tools or secrets required.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+
+      - name: Rebuild Opportunity News index from reports/
+        run: python build_reports.py
+
+      - name: Stage site (dashboard + reports + root files)
+        run: |
+          mkdir -p _site/reports
+          cp index.html _site/index.html
+          cp -r reports/*.html _site/reports/ 2>/dev/null || true
+          rm -f _site/reports/report-template.html   # never publish the blank template
+          for f in 404.html robots.txt; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
+          [ -f CNAME ] && cp CNAME _site/CNAME || echo "mrktprice.com" > _site/CNAME
+          touch _site/.nojekyll
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '_site'
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

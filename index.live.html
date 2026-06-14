@@ -118,6 +118,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
   <div class="ctrl"><label>DD alert%</label><input id="ddTh" type="number" value="-15"></div>
   <div class="ctrl"><label>&nbsp;</label><div class="dz" id="dz">Drop CSV</div></div>
  </div></header>
+<div id="decision"></div>
 <div id="oppstrip"></div>
 <div id="alertpanel" style="display:none;position:fixed;inset:0;background:rgba(10,13,18,.97);z-index:55;padding:18px;overflow:auto">
  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h2 style="margin:0;font-size:16px;color:var(--ink)">⚠ Alerts — whole book, every active threshold breach</h2><button class="ghost" id="alertClose">✕ Close</button></div>
@@ -206,6 +207,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
  <div class="card"><h3>OU mean-reversion</h3><table id="outab"></table><div class="note" id="ounote"></div></div>
  <div class="card"><h3>Volume spikes — RVOL ≥ <span id="spkTh">2</span>×</h3><table id="spiketab"></table></div>
  <div class="card"><h3>This name — trailing</h3><table id="trail"></table></div>
+ <div class="card" id="reactCard" style="display:none"><h3>Last 4 reports &middot; price reaction</h3><table id="reactTab" class="scan" style="font-size:11px"></table><div class="note" id="reactNote"></div></div>
  <div class="card"><h3>Projection / crosshair</h3><table id="readout"></table><table id="cross" style="margin-top:5px"><tr><td>hover the chart</td></tr></table></div></div>
 <div class="strip">
  <div class="card"><h3>Release gate</h3><div class="gatebig"><span class="pill" id="gate">—</span></div><div class="note" id="gatewhy"></div></div>
@@ -723,7 +725,7 @@ function buildFundamentals(){if(typeof FUND!=='object'||!FUND){document.getEleme
  const _sel=document.getElementById('symsel');const _cur=_sel&&_sel.value;const _focus=(_cur&&FUND[_cur])?_cur:(rows[0]&&rows[0].t);if(_focus)renderFundFocus(_focus);}
 function _fmtB(x){return x==null?'—':(Math.abs(x)>=1e9?'$'+(x/1e9).toFixed(2)+'B':Math.abs(x)>=1e6?'$'+(x/1e6).toFixed(0)+'M':'$'+x.toFixed(0));}
 function _fmtP(x){return x==null?'—':(x*100).toFixed(1)+'%';}
-function renderFundFocus(sym){
+function renderFundFocus(sym){try{renderReaction(sym);}catch(_e){}
  const hero=document.getElementById('fundHero'),qt=document.getElementById('fundQuarterly');if(!hero||!qt)return;
  const C=(typeof FUND==='object'&&FUND)?FUND[sym]:null;if(!C){hero.innerHTML='';qt.innerHTML='';return;}
  const yk=Object.keys(C.years).sort();const fy=yk[yk.length-1];const r=C.years[fy]||{};const py=yk.length>1?C.years[yk[yk.length-2]]:null;
@@ -830,6 +832,78 @@ function renderValuation(sym,C){
 }
 function _pct(x,d){return (x==null||!isFinite(x))?'—':((x>=0?'+':'')+(x*100).toFixed(d==null?1:d)+'%');}
 function _tspark(vals,col,w,h){var v=vals.filter(function(x){return x!=null&&isFinite(x);});if(v.length<2)return '';var lo=Math.min.apply(null,v),hi=Math.max.apply(null,v),rg=(hi-lo)||1;w=w||90;h=h||20;var pts=vals.map(function(x,i){return x==null?null:((i/(vals.length-1))*w).toFixed(1)+','+(h-((x-lo)/rg)*h).toFixed(1);}).filter(Boolean).join(' ');return '<svg width="'+w+'" height="'+h+'" style="vertical-align:middle"><polyline points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="1.3"/></svg>';}
+function _qEndFromLabel(lab){var m=/^(\d{4})Q([1-4])$/.exec(String(lab||""));if(!m)return null;var y=+m[1],q=+m[2],endMon=[2,5,8,11][q-1];return new Date(Date.UTC(y,endMon+1,0));}
+function reactionMatrix(sym){
+ var F=(typeof FUND==='object'&&FUND)?FUND[sym]:null,D=(typeof DATA==='object')?DATA[sym]:null;
+ if(!F||!F.quarters||!F.quarters.length||!D||!D.dates||!D.closes)return null;
+ var dates=D.dates,cl=D.closes,est=(F.estimates&&F.estimates.history)?F.estimates.history:null,rows=[];
+ F.quarters.slice(-4).forEach(function(q){
+  var fd=q.filedDate,estDate=false;if(!fd){var qe=_qEndFromLabel(q.label);if(qe){fd=new Date(qe.getTime()+40*86400000).toISOString().slice(0,10);estDate=true;}}if(!fd)return;var idx=-1;for(var i=0;i<dates.length;i++){if(dates[i]>=fd){idx=i;break;}}
+  if(idx<0)return;var base=cl[idx];if(!(base>0))return;
+  var d1=(idx+1<cl.length)?(cl[idx+1]/base-1)*100:null,d5=(idx+5<cl.length)?(cl[idx+5]/base-1)*100:null;
+  var sp=null;if(est){for(var k=0;k<est.length;k++){if(est[k].date&&est[k].surprisePct!=null&&String(est[k].date).slice(0,7)===fd.slice(0,7)){sp=est[k].surprisePct;break;}}}
+  rows.push({q:q.label,fd:fd,est:estDate,eps:q.eps,sp:sp,d1:d1,d5:d5});
+ });
+ return rows.length?rows:null;
+}
+function renderReaction(sym){
+ var card=document.getElementById('reactCard');if(!card)return;
+ var R=reactionMatrix(sym);
+ if(!R){card.style.display='none';return;}
+ card.style.display='';
+ var pc=function(v){return v==null?'<span style="color:var(--faint)">&mdash;</span>':'<b style="color:'+(v>=0?'var(--pass)':'var(--fail)')+'">'+(v>=0?'+':'')+v.toFixed(1)+'%</b>';};
+ var body='<tr><th>quarter</th><th>filed</th><th>EPS</th><th>surprise</th><th>+1d</th><th>+5d</th></tr>'+R.map(function(r){
+   return '<tr><td>'+r.q+'</td><td>'+(r.est?'~':'')+r.fd+(r.est?'<span title="estimated filing date — exact date populates on SEC refresh" style="color:var(--faint)"> est</span>':'')+'</td><td>'+(r.eps!=null?(+r.eps).toFixed(2):'&mdash;')+'</td><td>'+(r.sp!=null?('<span style="color:'+(r.sp>=0?'var(--up)':'var(--down)')+'">'+(r.sp>=0?'+':'')+r.sp.toFixed(1)+'%</span>'):'<span style="color:var(--faint)">vendor</span>')+'</td><td>'+pc(r.d1)+'</td><td>'+pc(r.d5)+'</td></tr>';
+ }).join('');
+ var tb=document.getElementById('reactTab');if(tb)tb.innerHTML=body;
+ var nt=document.getElementById('reactNote');if(nt)nt.innerHTML='Price move from the close on/after each <b>SEC filing date</b> (point-in-time, no lookahead) &mdash; computed <b>offline</b> from prices + filing dates. Surprise% is <b>vendor/unofficial</b> (live mode); &mdash; where unavailable. Research only; not advice.';
+}
+function _fmtSign(x,dig){return (x>=0?'+':'')+(+x).toFixed(dig);}
+function renderDecision(sym){
+ var el=document.getElementById('decision');if(!el)return;
+ if(!CUR||!CUR.c||!CUR.c.length||!CUR.emaM||!CUR.emaM[21]){el.innerHTML='';return;}
+ var c=CUR.c,n=c.length,last=CUR.last,d=CUR.d;
+ var e21=CUR.emaM[21],ema21=e21.last,ema21p=(e21.e&&e21.e.length>1)?e21.e[n-2]:ema21;
+ var s20=(CUR.std20&&CUR.std20[n-1]>0)?CUR.std20[n-1]:0;
+ var dAbs=last-ema21,dPct=ema21?(last/ema21-1)*100:0,dZ=s20?dAbs/s20:0;
+ var above=last>=ema21,slopeUp=(ema21-ema21p)>=0;
+ var state=above?(slopeUp?'above & rising':'above but fading'):(slopeUp?'below & recovering':'below & weakening');
+ var stateCol=above?(slopeUp?'var(--up)':'var(--caution)'):(slopeUp?'var(--caution)':'var(--down)');
+ var TR=(typeof triangulateMove==='function')?triangulateMove(c,20):null;
+ var emaSl=CUR.emaM[CUR.bestTrack]?CUR.emaM[CUR.bestTrack].slope/last*100:0;
+ var sigs=[above?1:-1,slopeUp?1:-1,(TR&&TR.directional)?(TR.consensus>=0?1:-1):0,(Math.abs(emaSl)>0.05?(emaSl>0?1:-1):0)];
+ var sumS=sigs.reduce(function(a,b){return a+b;},0),act=sigs.filter(function(x){return x!==0;}).length;
+ var conflict=act?(1-Math.abs(sumS)/act):0,dirScore=act?(sumS/act):0;
+ var direction=dirScore>0.15?'UP':dirScore<-0.15?'DOWN':'RANGE';
+ var dirCol=direction==='UP'?'var(--up)':direction==='DOWN'?'var(--down)':'var(--muted)';
+ var cred=TR?TR.credibility:0,validated=!!(TR&&TR.validated);
+ var cf=CUR.integrity&&CUR.integrity.checks?CUR.integrity.checks.conformal:null,calib=!!(cf&&!cf.under);
+ var conf=(validated?40:0)+(cred>=66?30:cred>=40?18:6)+(calib?15:0)+((act>=2&&conflict<0.34)?15:(act>=2&&conflict<0.67)?6:0);
+ var confLbl=conf>=70?'HIGH':conf>=45?'MODERATE':'LOW',confCol=conf>=70?'var(--pass)':conf>=45?'var(--caution)':'var(--fail)';
+ var lv=[];function addL(v,lab){if(v!=null&&isFinite(v)&&v>0&&Math.abs(v/last-1)>=0.0015)lv.push({v:v,lab:lab});}
+ if(CUR.anchors){addL(CUR.anchors.high,'P6 high');addL(CUR.anchors.mid,'P6 mid');addL(CUR.anchors.low,'P6 low');}
+ addL(CUR.v20&&CUR.v20[n-1],'VWAP');[5,8,13,21].forEach(function(N){if(CUR.emaM[N])addL(CUR.emaM[N].last,'EMA'+N);});
+ addL(CUR.bbU2&&CUR.bbU2[n-1],'+2sd');addL(CUR.bbL2&&CUR.bbL2[n-1],'-2sd');if(CUR.vp)addL(CUR.vp.pocPrice,'POC');
+ var ab=lv.filter(function(x){return x.v>last;}).sort(function(a,b){return a.v-b.v;});
+ var bl=lv.filter(function(x){return x.v<last;}).sort(function(a,b){return b.v-a.v;});
+ function lvl(o){if(!o)return '<span style="color:var(--faint)">none</span>';var dp=(o.v/last-1)*100;return o.lab+' <b>'+o.v.toFixed(2)+'</b> <span style="color:var(--muted)">('+(dp>=0?'+':'')+dp.toFixed(1)+'%)</span>';}
+ var ev='&mdash;',ne=(d&&d.length)?nextEarnings(d[n-1]):null;if(ne){var days=Math.round((ne-new Date(d[n-1]+'T00:00:00Z'))/86400000);ev='~'+days+'d ('+ne.toISOString().slice(0,10)+')';}
+ var asof=(d&&d.length)?d[n-1]:'&mdash;';
+ var live=(typeof FUND==='object'&&FUND&&FUND[sym]&&/\(live\)/.test(FUND[sym].name||''));
+ var ageD=999;try{if(d&&d.length)ageD=Math.round((Date.now()-new Date(d[n-1]+'T00:00:00Z').getTime())/86400000);}catch(e){}
+ var fcol=ageD<=2?'var(--pass)':ageD<=7?'var(--caution)':'var(--fail)';var flbl=ageD<=2?'fresh':ageD<=7?(ageD+'d old'):(ageD+'d STALE');
+ var cell=function(lbl,val){return '<div style="display:flex;flex-direction:column;gap:1px;padding:0 11px;border-left:1px solid var(--line)"><span style="font-size:8.5px;letter-spacing:.06em;color:var(--faint);text-transform:uppercase">'+lbl+'</span><span style="font-size:11.5px">'+val+'</span></div>';};
+ var verdict='<div style="display:flex;flex-direction:column;gap:1px;padding:0 12px 0 4px"><span style="font-size:8.5px;letter-spacing:.06em;color:var(--faint);text-transform:uppercase">verdict &middot; '+sym+'</span><span style="font-size:16px;font-weight:800;color:'+dirCol+'">'+direction+' <span style="font-size:10px;font-weight:600;color:'+confCol+'">&middot; '+confLbl+' conf</span></span></div>';
+ var html='<div style="display:flex;align-items:center;flex-wrap:wrap;padding:7px 10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:6px 0">'
+  +verdict
+  +cell('price vs EMA21','<b style="color:'+stateCol+'">'+state+'</b> &middot; '+_fmtSign(dAbs,2)+' &middot; '+_fmtSign(dPct,1)+'% &middot; '+_fmtSign(dZ,2)+'sd')
+  +cell('next upside',lvl(ab[0]))+cell('resistance',lvl(ab[1]))+cell('downside invalidate',lvl(bl[0]))
+  +cell('next event',ev)+cell('confidence','<b style="color:'+confCol+'">'+conf+'/100</b>')
+  +cell('freshness','<span style="color:'+fcol+'">&#9679;</span> '+asof+' &middot; '+(live?'live':'EOD')+' &middot; '+flbl)
+  +'</div>';
+ if(conflict>=0.5){html+='<div style="padding:4px 10px;margin:-2px 0 6px;background:rgba(230,180,80,.12);border:1px solid rgba(230,180,80,.4);border-radius:8px;font-size:11px;color:var(--caution)">&#9888; <b>Signals disagree</b> (conflict '+(conflict*100).toFixed(0)+'%): price '+(above?'above':'below')+' EMA21, trend '+(emaSl>=0?'up':'down')+', forecast '+((TR&&TR.directional)?(TR.consensus>=0?'up':'down'):'indeterminate')+' &mdash; treat as range / low-conviction, not a clean '+direction+'.</div>';}
+ el.innerHTML=html;
+}
 function buildInsightTiles(sym){
  var el=document.getElementById('insightTiles');if(!el||!CUR.c)return;
  var n=CUR.c.length,last=CUR.last;
@@ -1278,7 +1352,7 @@ function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementByI
  const rk={pass:0,caution:1,fail:2,'weak-id':1};let w=0;S.forEach(s=>w=Math.max(w,rk[s]??1));const gs=['pass','caution','fail'][w];
  setPill('gate',gs,gs==='pass'?'PASS':gs==='caution'?'PASS · CAUTION':'REJECT');
  document.getElementById('gatewhy').textContent=gs==='pass'?'volatility, RV-ratio, tail, skew within tolerance (timing daily-proxy; dependence degraded).':gs==='caution'?'a risk component elevated/weak-id; size conservatively.':'a hard risk band breached — release withheld.';
- buildAlerts();draw();buildInsightTiles(CUR.sym);}
+ buildAlerts();draw();buildInsightTiles(CUR.sym);renderDecision(CUR.sym);renderReaction(CUR.sym);}
 function buildAlerts(){const A=[];const c=CUR.c,r=CUR.r,ic=CUR.icss,last=CUR.last,n=c.length;
  const rvolNow=CUR.rvolS[CUR.rvolS.length-1],v20=CUR.v20[CUR.v20.length-1],v20p=CUR.v20[CUR.v20.length-2];
  const ao=CUR.ao[CUR.ao.length-1],aop=CUR.ao[CUR.ao.length-2];const rvolTh=+document.getElementById('rvolTh').value||2,ddTh=(+document.getElementById('ddTh').value||-15)/100;

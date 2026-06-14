@@ -1793,6 +1793,40 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
    ensureMacro(function(){if(!CUR||CUR.sym!==sym)return;var c=CUR.c,dates=CUR.d,rets=[];for(var i=1;i<c.length;i++)rets.push(c[i-1]>0?Math.log(c[i]/c[i-1]):0);
     var F={};Object.keys(MACRO_FACTORS).forEach(function(k){var rows=_macroRows[k];if(rows&&rows.length)F[MACRO_FACTORS[k]]=alignFactor(dates,rows);});
     if(typeof macroBetas==='function'&&Object.keys(F).length){try{CUR.macro=macroBetas(rets,F);if(typeof renderMacro==='function')renderMacro(sym);}catch(e){}}});}
+ /* ---- Market indices vs Treasury-rate correlation board (live only) ---- */
+ var IDX=[{s:'DIA',n:'Dow'},{s:'SPY',n:'S&P 500'},{s:'QQQ',n:'Nasdaq 100'},{s:'IWM',n:'Russell 2000'}];
+ var IDXRATES=[['DGS2','2Y'],['DGS5','5Y'],['DGS10','10Y']],_rateRows={},_rateLast={},IDXW=250;
+ function _pear(a,b){var xs=[],ys=[],i;for(i=0;i<a.length;i++){if(isFinite(a[i])&&isFinite(b[i])){xs.push(a[i]);ys.push(b[i]);}}var n=xs.length;if(n<20)return null;var mx=0,my=0;for(i=0;i<n;i++){mx+=xs[i];my+=ys[i];}mx/=n;my/=n;var sx=0,sy=0,sxy=0;for(i=0;i<n;i++){var dx=xs[i]-mx,dy=ys[i]-my;sx+=dx*dx;sy+=dy*dy;sxy+=dx*dy;}return(sx>0&&sy>0)?sxy/Math.sqrt(sx*sy):null;}
+ function _cspan(v){if(v==null)return '<b style="color:var(--faint)">&mdash;</b>';var c=v>=0?'var(--up)':'var(--down)';return '<b style="color:'+c+'">'+(v>=0?'+':'')+v.toFixed(2)+'</b>';}
+ function buildIdxBoard(){
+   if(document.getElementById('idxBoard'))return;
+   var d=document.createElement('div');d.id='idxBoard';
+   d.style.cssText='margin:9px 9px 0;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 11px';
+   d.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:var(--faint)"><span>Market indices &times; Treasury rates &mdash; corr(daily index return, daily &Delta;rate), &le;'+IDXW+'d &middot; ETF proxies, vendor/unofficial &middot; not advice</span><span id="ibRates">2Y &middot; 5Y &middot; 10Y</span></div><div id="ibGrid" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:7px"></div>';
+   document.body.insertBefore(d,document.body.firstChild);
+   var g=document.getElementById('ibGrid');
+   g.innerHTML=IDX.map(function(x){return '<div class="ibCard" data-go="'+x.s+'" title="click to chart '+x.s+'" style="flex:1;min-width:210px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 9px;cursor:pointer"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px"><span style="font-weight:700;font-size:12px">'+x.n+' <b style="color:var(--faint);font-weight:600;font-size:10px">('+x.s+')</b></span><span id="ibpx-'+x.s+'" style="font-size:12px;color:var(--muted)">&hellip;</span></div><div id="ibc-'+x.s+'" style="display:flex;gap:11px;margin-top:5px;font-size:10.5px;color:var(--muted)">2Y &mdash; &middot; 5Y &mdash; &middot; 10Y &mdash;</div></div>';}).join('');
+   g.querySelectorAll('.ibCard').forEach(function(c){c.onclick=function(){loadTicker(c.getAttribute('data-go'),true);};});
+ }
+ function loadRatesThen(cb){var need=IDXRATES.filter(function(r){return !_rateRows[r[0]];});
+   if(!need.length){cb();return;}
+   Promise.all(need.map(function(r){return fetchJSON(MRKT_API+'/macro?series='+r[0]).then(function(j){_rateRows[r[0]]=(j&&j.rows)||[];if(j&&j.rows&&j.rows.length)_rateLast[r[0]]=+j.rows[j.rows.length-1][1];}).catch(function(){_rateRows[r[0]]=[];});})).then(cb);}
+ function refreshIdxBoard(){
+   buildIdxBoard();
+   loadRatesThen(function(){
+     var rt=document.getElementById('ibRates');if(rt)rt.innerHTML=IDXRATES.map(function(r){return r[1]+' <b style="color:var(--ink)">'+(_rateLast[r[0]]!=null?_rateLast[r[0]].toFixed(2)+'%':'&mdash;')+'</b>';}).join(' &middot; ');
+     IDX.forEach(function(x){
+       fetchJSON(MRKT_API+'/history?ticker='+x.s+'&rows=400').then(function(j){
+         if(!j||!j.rows||!j.rows.length)return;
+         var dates=j.rows.map(function(r){return r[0];}),cl=j.rows.map(function(r){return +r[1];});
+         var ret=[];for(var i=1;i<cl.length;i++)ret.push(cl[i-1]>0?Math.log(cl[i]/cl[i-1]):NaN);
+         var last=cl[cl.length-1],prev=cl[cl.length-2],ch=(prev>0)?(last/prev-1)*100:null;
+         var pe=document.getElementById('ibpx-'+x.s);if(pe&&ch!=null)pe.innerHTML='<b style="color:var(--ink)">'+last.toFixed(2)+'</b> <span style="color:'+(ch>=0?'var(--up)':'var(--down)')+'">'+(ch>=0?'▲':'▼')+Math.abs(ch).toFixed(2)+'%</span>';
+         var ce=document.getElementById('ibc-'+x.s);if(ce)ce.innerHTML=IDXRATES.map(function(r){var dr=alignFactor(dates,_rateRows[r[0]]||[]);var c=_pear(ret.slice(-IDXW),dr.slice(-IDXW));return r[1]+' '+_cspan(c);}).join(' &nbsp;&middot;&nbsp; ');
+       }).catch(function(){});
+     });
+   });
+ }
  function mount(){
   var ctrls=document.querySelector('.ctrls');if(!ctrls)return;
   var d=document.createElement('div');d.className='ctrl';
@@ -1812,6 +1846,7 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
   document.getElementById('liveTk').addEventListener('keydown',function(e){if(e.key==='Enter')go();});
   st('live data: '+MRKT_API.replace(/^https?:\/\//,'')+' · watchlist saved locally');
   restoreWatch();
+  refreshIdxBoard();
  }
  if(document.readyState!=='loading')mount();else document.addEventListener('DOMContentLoaded',mount);
 })();

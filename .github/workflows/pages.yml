@@ -39,7 +39,7 @@ jobs:
           cp index.html _site/index.html
           cp -r reports/*.html _site/reports/ 2>/dev/null || true
           rm -f _site/reports/report-template.html   # never publish the blank template
-          for f in 404.html robots.txt; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
+          for f in 404.html robots.txt live.html; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
           [ -f CNAME ] && cp CNAME _site/CNAME || echo "mrktprice.com" > _site/CNAME
           touch _site/.nojekyll
 

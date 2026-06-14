@@ -207,7 +207,8 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
  <div class="card"><h3>OU mean-reversion</h3><table id="outab"></table><div class="note" id="ounote"></div></div>
  <div class="card"><h3>Volume spikes — RVOL ≥ <span id="spkTh">2</span>×</h3><table id="spiketab"></table></div>
  <div class="card"><h3>This name — trailing</h3><table id="trail"></table></div>
- <div class="card" id="reactCard" style="display:none"><h3>Last 4 reports &middot; price reaction</h3><table id="reactTab" class="scan" style="font-size:11px"></table><div class="note" id="reactNote"></div></div>
+ <div class="card" id="reactCard" style="display:none"><h3>Last 4 reports &middot; price reaction</h3><table id="reactTab" class="scan" style="font-size:11px"></table><div id="reactBeat" style="font-size:11px;margin-top:6px"></div><div class="note" id="reactNote"></div></div>
+ <div class="card" id="macroCard" style="display:none"><h3>Macro exposure &middot; context</h3><div id="macroBody"></div></div>
  <div class="card"><h3>Projection / crosshair</h3><table id="readout"></table><table id="cross" style="margin-top:5px"><tr><td>hover the chart</td></tr></table></div></div>
 <div class="strip">
  <div class="card"><h3>Release gate</h3><div class="gatebig"><span class="pill" id="gate">—</span></div><div class="note" id="gatewhy"></div></div>
@@ -497,6 +498,28 @@ function _aucPY(p,y){var pos=[],neg=[];for(var i=0;i<y.length;i++){(y[i]?pos:neg
  var c=0;for(var a=0;a<pos.length;a++)for(var bb=0;bb<neg.length;bb++){if(pos[a]>neg[bb])c++;else if(pos[a]===neg[bb])c+=0.5;}return c/(pos.length*neg.length);}
 /* MCS: fit a logistic on the name's OWN history (features: EMA21-distance, EMA21-slope, RVOL, realized-vol),
    walk-forward OOS, gate by a permutation p-value on OOS AUC. Emits a number ONLY when validated. Honest. */
+/* #4 Macro exposure: per-factor HAC-regression of the name's returns on macro-factor changes,
+   with JAMES-STEIN/ridge shrinkage toward zero-exposure (noisy betas pulled to 0) and BH-FDR gating
+   across factors. Honest: shown as CONTEXT (R^2), never cause; emits a factor only when it survives FDR. */
+function macroBetas(rets,F,alpha){alpha=alpha||0.10;var names=Object.keys(F||{}),out=[],pv=[];
+ names.forEach(function(nm){var x=F[nm]||[],n=Math.min(x.length,rets.length),X=[],Y=[];
+  for(var i=0;i<n;i++){if(isFinite(x[i])&&isFinite(rets[i])){X.push(x[i]);Y.push(rets[i]);}}
+  if(X.length<30){out.push({name:nm,beta:0,betaRaw:0,t:0,p:1,r2:0,sig:false,n:X.length,latestDelta:x.length?x[x.length-1]:0});pv.push(1);return;}
+  var R=slReg(X,Y);var shrink=(R.t*R.t)/(R.t*R.t+4);            /* James-Stein-style: weak t -> shrink to ~0 */
+  out.push({name:nm,beta:R.b*shrink,betaRaw:R.b,t:R.t,p:R.p,r2:R.r2,n:X.length,sig:false,latestDelta:x[x.length-1]});pv.push(R.p);});
+ var ord=pv.map(function(p,i){return{p:p,i:i};}).sort(function(a,b){return a.p-b.p;}),m=pv.length,kmax=0;
+ for(var k=1;k<=m;k++){if(ord[k-1].p<=k/m*alpha)kmax=k;}
+ for(var k=0;k<m;k++)out[ord[k].i].sig=(k<kmax);
+ out.sort(function(a,b){return b.r2-a.r2;});return{factors:out,alpha:alpha,nSig:out.filter(function(f){return f.sig;}).length};}
+function renderMacro(sym){var card=document.getElementById('macroCard');if(!card)return;card.style.display='';
+ var bd=document.getElementById('macroBody');if(!bd)return;var M=(typeof CUR==='object'&&CUR)?CUR.macro:null;
+ if(!M||!M.factors){bd.innerHTML='<div class="note">Macro exposure (rates / commodities) is computed in <b>live mode</b> — start the data service and it regresses this name on FRED factors with <b>shrinkage + FDR gating</b>, shown as <b>context, not cause</b> (point-in-time).</div>';return;}
+ var sig=M.factors.filter(function(f){return f.sig;});
+ if(!sig.length){bd.innerHTML='<div class="note">No macro factor shows a statistically significant relationship to this name after FDR correction — <b>treat macro as background only</b>.</div>';return;}
+ bd.innerHTML='<table class="scan" style="font-size:11px"><tr><th>factor</th><th>&beta;</th><th>t</th><th>R&sup2;</th><th>today</th></tr>'+sig.map(function(f){
+   var supp=(f.beta*(f.latestDelta||0))>=0,col=supp?'var(--up)':'var(--down)';
+   return '<tr><td>'+f.name+'</td><td>'+f.beta.toFixed(3)+'</td><td>'+f.t.toFixed(1)+'</td><td>'+(f.r2*100).toFixed(0)+'%</td><td style="color:'+col+'">'+(supp?'▲ supportive':'▼ adverse')+'</td></tr>';}).join('')
+   +'</table><div class="note">Per-name betas, <b>James-Stein/ridge-shrunk</b> toward zero-exposure and <b>FDR-gated</b>; R&sup2; = share of daily variance explained. Macro is <b>context, not cause</b> &middot; point-in-time (no lookahead) &middot; vendor/official data. Research only.</div>';}
 function momentumContinuation(c,v,H){
  H=H||20;var n=c.length;if(n<140)return{validated:false,reason:'short history',score:null};
  var e=ema(c,21),rows=[],ys=[],warm=30;
@@ -884,18 +907,35 @@ function renderValuation(sym,C){
 function _pct(x,d){return (x==null||!isFinite(x))?'—':((x>=0?'+':'')+(x*100).toFixed(d==null?1:d)+'%');}
 function _tspark(vals,col,w,h){var v=vals.filter(function(x){return x!=null&&isFinite(x);});if(v.length<2)return '';var lo=Math.min.apply(null,v),hi=Math.max.apply(null,v),rg=(hi-lo)||1;w=w||90;h=h||20;var pts=vals.map(function(x,i){return x==null?null:((i/(vals.length-1))*w).toFixed(1)+','+(h-((x-lo)/rg)*h).toFixed(1);}).filter(Boolean).join(' ');return '<svg width="'+w+'" height="'+h+'" style="vertical-align:middle"><polyline points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="1.3"/></svg>';}
 function _qEndFromLabel(lab){var m=/^(\d{4})Q([1-4])$/.exec(String(lab||""));if(!m)return null;var y=+m[1],q=+m[2],endMon=[2,5,8,11][q-1];return new Date(Date.UTC(y,endMon+1,0));}
+/* #6/#7 trend-expected baseline: least-squares extrapolation of the name's own prior (<=4) quarters to index idx.
+   Point-in-time (only looks backward), vendor-free. <2 priors -> carry-forward single prior, else null. */
+function _trendExpect(arr,idx){var X=[],Y=[],k,i;for(k=Math.max(0,idx-4);k<idx;k++){if(arr[k]!=null&&isFinite(arr[k])){X.push(k);Y.push(arr[k]);}}
+ if(Y.length<2)return Y.length===1?Y[0]:null;
+ var n=Y.length,mx=0,my=0;for(i=0;i<n;i++){mx+=X[i];my+=Y[i];}mx/=n;my/=n;
+ var sxx=0,sxy=0;for(i=0;i<n;i++){sxx+=(X[i]-mx)*(X[i]-mx);sxy+=(X[i]-mx)*(Y[i]-my);}
+ var b=sxx?sxy/sxx:0;return (my-b*mx)+b*idx;}
+function _surp(act,exp){return (act!=null&&exp!=null&&isFinite(act)&&isFinite(exp)&&Math.abs(exp)>1e-9)?((act-exp)/Math.abs(exp)*100):null;}
 function reactionMatrix(sym){
  var F=(typeof FUND==='object'&&FUND)?FUND[sym]:null,D=(typeof DATA==='object')?DATA[sym]:null;
  if(!F||!F.quarters||!F.quarters.length||!D||!D.dates||!D.closes)return null;
- var dates=D.dates,cl=D.closes,est=(F.estimates&&F.estimates.history)?F.estimates.history:null,rows=[];
- F.quarters.slice(-4).forEach(function(q){
-  var fd=q.filedDate,estDate=false;if(!fd){var qe=_qEndFromLabel(q.label);if(qe){fd=new Date(qe.getTime()+40*86400000).toISOString().slice(0,10);estDate=true;}}if(!fd)return;var idx=-1;for(var i=0;i<dates.length;i++){if(dates[i]>=fd){idx=i;break;}}
-  if(idx<0)return;var base=cl[idx];if(!(base>0))return;
+ var dates=D.dates,cl=D.closes,est=(F.estimates&&F.estimates.history)?F.estimates.history:null;
+ var qs=F.quarters,epsA=qs.map(function(q){return (q.eps!=null&&isFinite(+q.eps))?+q.eps:null;}),revA=qs.map(function(q){return (q.rev!=null&&isFinite(+q.rev))?+q.rev:null;});
+ var rows=[],start=Math.max(0,qs.length-4);
+ for(var qi=start;qi<qs.length;qi++){var q=qs[qi];
+  var fd=q.filedDate,estDate=false;if(!fd){var qe=_qEndFromLabel(q.label);if(qe){fd=new Date(qe.getTime()+40*86400000).toISOString().slice(0,10);estDate=true;}}if(!fd)continue;
+  var idx=-1;for(var i=0;i<dates.length;i++){if(dates[i]>=fd){idx=i;break;}}
+  if(idx<0)continue;var base=cl[idx];if(!(base>0))continue;
   var d1=(idx+1<cl.length)?(cl[idx+1]/base-1)*100:null,d5=(idx+5<cl.length)?(cl[idx+5]/base-1)*100:null;
   var sp=null;if(est){for(var k=0;k<est.length;k++){if(est[k].date&&est[k].surprisePct!=null&&String(est[k].date).slice(0,7)===fd.slice(0,7)){sp=est[k].surprisePct;break;}}}
-  rows.push({q:q.label,fd:fd,est:estDate,eps:q.eps,sp:sp,d1:d1,d5:d5});
- });
- return rows.length?rows:null;
+  var epsTrendSur=_surp(epsA[qi],_trendExpect(epsA,qi)),revTrendSur=_surp(revA[qi],_trendExpect(revA,qi));
+  var epsSur=(sp!=null)?sp:epsTrendSur,epsSrc=(sp!=null)?'cons':(epsTrendSur!=null?'trend':null);
+  var beat=(epsSur!=null)?(epsSur>=0):null;
+  rows.push({q:q.label,fd:fd,est:estDate,eps:q.eps,sp:sp,epsSur:epsSur,epsSrc:epsSrc,revSur:revTrendSur,beat:beat,d1:d1,d5:d5});
+ }
+ if(!rows.length)return null;
+ var eb=rows.filter(function(r){return r.beat!=null;}),ebeat=eb.filter(function(r){return r.beat;}).length;
+ var rb=rows.filter(function(r){return r.revSur!=null;}),rbeat=rb.filter(function(r){return r.revSur>=0;}).length;
+ return {rows:rows,epsBeat:ebeat,epsN:eb.length,epsRate:eb.length?ebeat/eb.length:null,revBeat:rbeat,revN:rb.length,revRate:rb.length?rbeat/rb.length:null};
 }
 function renderReaction(sym){
  var card=document.getElementById('reactCard');if(!card)return;
@@ -903,11 +943,19 @@ function renderReaction(sym){
  if(!R){card.style.display='none';return;}
  card.style.display='';
  var pc=function(v){return v==null?'<span style="color:var(--faint)">&mdash;</span>':'<b style="color:'+(v>=0?'var(--pass)':'var(--fail)')+'">'+(v>=0?'+':'')+v.toFixed(1)+'%</b>';};
- var body='<tr><th>quarter</th><th>filed</th><th>EPS</th><th>surprise</th><th>+1d</th><th>+5d</th></tr>'+R.map(function(r){
-   return '<tr><td>'+r.q+'</td><td>'+(r.est?'~':'')+r.fd+(r.est?'<span title="estimated filing date — exact date populates on SEC refresh" style="color:var(--faint)"> est</span>':'')+'</td><td>'+(r.eps!=null?(+r.eps).toFixed(2):'&mdash;')+'</td><td>'+(r.sp!=null?('<span style="color:'+(r.sp>=0?'var(--up)':'var(--down)')+'">'+(r.sp>=0?'+':'')+r.sp.toFixed(1)+'%</span>'):'<span style="color:var(--faint)">vendor</span>')+'</td><td>'+pc(r.d1)+'</td><td>'+pc(r.d5)+'</td></tr>';
+ var surp=function(r){if(r.epsSur==null)return '<span style="color:var(--faint)">&mdash;</span>';
+   var col=r.epsSur>=0?'var(--up)':'var(--down)',tag=r.epsSrc==='cons'?'<span title="vendor/unofficial consensus surprise (live)" style="color:var(--faint);font-size:9px"> cons</span>':'<span title="model-derived: actual vs least-squares trend of this name\'s own prior quarters (vendor-free, point-in-time)" style="color:var(--faint);font-size:9px"> trend</span>';
+   return '<span style="color:'+col+'">'+(r.epsSur>=0?'+':'')+r.epsSur.toFixed(1)+'%</span>'+tag;};
+ var body='<tr><th>quarter</th><th>filed</th><th>EPS</th><th>surprise</th><th>+1d</th><th>+5d</th></tr>'+R.rows.map(function(r){
+   return '<tr><td>'+r.q+'</td><td>'+(r.est?'~':'')+r.fd+(r.est?'<span title="estimated filing date — exact date populates on SEC refresh" style="color:var(--faint)"> est</span>':'')+'</td><td>'+(r.eps!=null?(+r.eps).toFixed(2):'&mdash;')+'</td><td>'+surp(r)+'</td><td>'+pc(r.d1)+'</td><td>'+pc(r.d5)+'</td></tr>';
  }).join('');
  var tb=document.getElementById('reactTab');if(tb)tb.innerHTML=body;
- var nt=document.getElementById('reactNote');if(nt)nt.innerHTML='Price move from the close on/after each <b>SEC filing date</b> (point-in-time, no lookahead) &mdash; computed <b>offline</b> from prices + filing dates. Surprise% is <b>vendor/unofficial</b> (live mode); &mdash; where unavailable. Research only; not advice.';
+ var br=document.getElementById('reactBeat');
+ if(br){var seg=[];
+   if(R.epsRate!=null)seg.push('EPS beat <b style="color:'+(R.epsRate>=0.5?'var(--pass)':'var(--fail)')+'">'+R.epsBeat+'/'+R.epsN+'</b> ('+(R.epsRate*100).toFixed(0)+'%)');
+   if(R.revRate!=null)seg.push('Rev beat <b style="color:'+(R.revRate>=0.5?'var(--pass)':'var(--fail)')+'">'+R.revBeat+'/'+R.revN+'</b> ('+(R.revRate*100).toFixed(0)+'%)');
+   br.innerHTML=seg.length?('<b>Beat rate</b> &mdash; '+seg.join(' &nbsp;·&nbsp; ')):'<span style="color:var(--faint)">Beat rate &mdash; needs EPS/revenue history (populates on SEC refresh / live mode).</span>';}
+ var nt=document.getElementById('reactNote');if(nt)nt.innerHTML='Price move from the close on/after each <b>SEC filing date</b> (point-in-time, no lookahead) &mdash; computed <b>offline</b> from prices + filing dates. Surprise% uses <b>vendor/unofficial consensus</b> where available (<i>cons</i>, live mode); otherwise a vendor-free <b>vs-own-trend</b> baseline (<i>trend</i>: actual vs least-squares fit of this name&rsquo;s prior quarters). Beat rate counts surprises &ge; 0 over the shown quarters. Research only; not advice.';
 }
 function _fmtSign(x,dig){return (x>=0?'+':'')+(+x).toFixed(dig);}
 function renderDecision(sym){
@@ -1404,7 +1452,7 @@ function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementByI
  const rk={pass:0,caution:1,fail:2,'weak-id':1};let w=0;S.forEach(s=>w=Math.max(w,rk[s]??1));const gs=['pass','caution','fail'][w];
  setPill('gate',gs,gs==='pass'?'PASS':gs==='caution'?'PASS · CAUTION':'REJECT');
  document.getElementById('gatewhy').textContent=gs==='pass'?'volatility, RV-ratio, tail, skew within tolerance (timing daily-proxy; dependence degraded).':gs==='caution'?'a risk component elevated/weak-id; size conservatively.':'a hard risk band breached — release withheld.';
- buildAlerts();draw();buildInsightTiles(CUR.sym);renderDecision(CUR.sym);renderReaction(CUR.sym);}
+ buildAlerts();draw();buildInsightTiles(CUR.sym);renderDecision(CUR.sym);renderReaction(CUR.sym);renderMacro(CUR.sym);}
 function buildAlerts(){const A=[];const c=CUR.c,r=CUR.r,ic=CUR.icss,last=CUR.last,n=c.length;
  const rvolNow=CUR.rvolS[CUR.rvolS.length-1],v20=CUR.v20[CUR.v20.length-1],v20p=CUR.v20[CUR.v20.length-2];
  const ao=CUR.ao[CUR.ao.length-1],aop=CUR.ao[CUR.ao.length-2];const rvolTh=+document.getElementById('rvolTh').value||2,ddTh=(+document.getElementById('ddTh').value||-15)/100;
@@ -1629,7 +1677,8 @@ function readCSV(f){if(!f)return;const rd=new FileReader();rd.onload=()=>{const 
  const sym=(f.name.split('_')[0]||'CSV').toUpperCase();if(![...sel.options].some(o=>o.value===sym)){const o=document.createElement('option');o.value=sym;o.textContent=sym;sel.appendChild(o);}
  DATA[sym]={dates:dates.slice(-252),closes:closes.slice(-252),volumes:vols.slice(-252)};SCANROWS=null;sel.value=sym;load(sym,DATA[sym]);if(typeof updateStrip==='function')updateStrip();};rd.readAsText(f);}
 sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnimationFrame(()=>{draw();drawCone();});
-</script><script>
+</script>
+<script>
 /* MrktPrice live-ticker mode — injected ONLY into a --live build (never the offline index.html).
    Add a symbol -> pulls history from the local data service (yfinance->Stooq) -> tracked everywhere
    (ACTIVE()=Object.keys(DATA)). PERSISTENT watchlist in localStorage, restored each visit.
@@ -1641,7 +1690,7 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
  var WATCH_KEY="mrkt.watchlist",CAP=520,MAXW=50,TKRE=/^[A-Z0-9.\-]{1,12}$/,_drag=null;
  function st(m,c){var s=document.getElementById('liveStatus');if(s){s.textContent=m;s.style.color=c||'var(--muted)';}}
  function ensureFund(t){if(typeof FUND==='object'&&FUND&&!FUND[t]&&DATA[t])liveFund(t);}        /* lazy: fetch fundamentals only when needed */
- function selLoad(t){var s=document.getElementById('symsel');if(s)s.value=t;if(typeof load==='function')load(t,DATA[t]);ensureFund(t);}
+ function selLoad(t){var s=document.getElementById('symsel');if(s)s.value=t;if(typeof load==='function')load(t,DATA[t]);ensureFund(t);if(typeof computeMacro==='function')computeMacro(t);}
  function loadWatch(){try{return JSON.parse(localStorage.getItem(WATCH_KEY)||'[]');}catch(e){return [];}}
  function saveWatch(a){try{localStorage.setItem(WATCH_KEY,JSON.stringify(a));}catch(e){}}
  function addToWatch(t){var w=loadWatch();if(w.indexOf(t)<0){if(w.length>=MAXW){st('watchlist full ('+MAXW+')','var(--warn)');return;}w.push(t);saveWatch(w);}renderChips();refreshTracker();}
@@ -1732,6 +1781,18 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
    fetch(MRKT_API+'/estimates?ticker='+encodeURIComponent(t)).then(function(r){return r.ok?r.json():null;}).then(function(e){if(e&&FUND[t]){FUND[t].estimates=e;if(typeof buildInsightTiles==='function'&&typeof CUR!=='undefined'&&CUR&&CUR.sym===t)buildInsightTiles(t);}}).catch(function(){});
   }).catch(function(){});
  }
+
+ /* #4 live macro exposure: fetch FRED factors once, align to the ticker, regress (shrinkage+FDR) */
+ var MACRO_FACTORS={DGS10:'10y',DGS2:'2y',DCOILWTICO:'WTI',DCOILBRENTEU:'Brent',DHHNGSP:'NatGas'},_macroRows={};
+ function alignFactor(dates,rows){var map={};rows.forEach(function(r){map[r[0]]=+r[1];});var vals=[],last=null;
+   for(var i=0;i<dates.length;i++){if(map[dates[i]]!=null)last=map[dates[i]];vals.push(last);}
+   var d=[];for(var i=1;i<vals.length;i++)d.push((vals[i]!=null&&vals[i-1]!=null)?(vals[i]-vals[i-1]):NaN);return d;}
+ function ensureMacro(cb){var need=Object.keys(MACRO_FACTORS).filter(function(k){return !_macroRows[k];});if(!need.length){cb();return;}
+   Promise.all(need.map(function(k){return fetchJSON(MRKT_API+'/macro?series='+k).then(function(j){_macroRows[k]=(j&&j.rows)||[];}).catch(function(){_macroRows[k]=[];});})).then(cb);}
+ function computeMacro(sym){if(typeof CUR!=='object'||!CUR||!CUR.c||CUR.sym!==sym)return;
+   ensureMacro(function(){if(!CUR||CUR.sym!==sym)return;var c=CUR.c,dates=CUR.d,rets=[];for(var i=1;i<c.length;i++)rets.push(c[i-1]>0?Math.log(c[i]/c[i-1]):0);
+    var F={};Object.keys(MACRO_FACTORS).forEach(function(k){var rows=_macroRows[k];if(rows&&rows.length)F[MACRO_FACTORS[k]]=alignFactor(dates,rows);});
+    if(typeof macroBetas==='function'&&Object.keys(F).length){try{CUR.macro=macroBetas(rets,F);if(typeof renderMacro==='function')renderMacro(sym);}catch(e){}}});}
  function mount(){
   var ctrls=document.querySelector('.ctrls');if(!ctrls)return;
   var d=document.createElement('div');d.className='ctrl';

@@ -1677,4 +1677,144 @@ function readCSV(f){if(!f)return;const rd=new FileReader();rd.onload=()=>{const 
  const sym=(f.name.split('_')[0]||'CSV').toUpperCase();if(![...sel.options].some(o=>o.value===sym)){const o=document.createElement('option');o.value=sym;o.textContent=sym;sel.appendChild(o);}
  DATA[sym]={dates:dates.slice(-252),closes:closes.slice(-252),volumes:vols.slice(-252)};SCANROWS=null;sel.value=sym;load(sym,DATA[sym]);if(typeof updateStrip==='function')updateStrip();};rd.readAsText(f);}
 sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnimationFrame(()=>{draw();drawCone();});
-</script></body></html>
+</script>
+<script>
+/* MrktPrice live-ticker mode — injected ONLY into a --live build (never the offline index.html).
+   Add a symbol -> pulls history from the local data service (yfinance->Stooq) -> tracked everywhere
+   (ACTIVE()=Object.keys(DATA)). PERSISTENT watchlist in localStorage, restored each visit.
+   v2.29 audit fixes: lazy fundamentals (fetch only when charted), series capped for scanner speed,
+   staggered restore, import/export, drag-reorder, refresh-all, size/symbol guards. */
+(function(){
+ var MRKT_API="https://mrktprice-data.onrender.com".replace(/\/+$/,'');
+ var IDB_DB="mrktprice",IDB_STORE="hist",IDB_VER=1,_db=null;
+ var WATCH_KEY="mrkt.watchlist",CAP=520,MAXW=50,TKRE=/^[A-Z0-9.\-]{1,12}$/,_drag=null;
+ function st(m,c){var s=document.getElementById('liveStatus');if(s){s.textContent=m;s.style.color=c||'var(--muted)';}}
+ function ensureFund(t){if(typeof FUND==='object'&&FUND&&!FUND[t]&&DATA[t])liveFund(t);}        /* lazy: fetch fundamentals only when needed */
+ function selLoad(t){var s=document.getElementById('symsel');if(s)s.value=t;if(typeof load==='function')load(t,DATA[t]);ensureFund(t);if(typeof computeMacro==='function')computeMacro(t);}
+ function loadWatch(){try{return JSON.parse(localStorage.getItem(WATCH_KEY)||'[]');}catch(e){return [];}}
+ function saveWatch(a){try{localStorage.setItem(WATCH_KEY,JSON.stringify(a));}catch(e){}}
+ function addToWatch(t){var w=loadWatch();if(w.indexOf(t)<0){if(w.length>=MAXW){st('watchlist full ('+MAXW+')','var(--warn)');return;}w.push(t);saveWatch(w);}renderChips();refreshTracker();}
+ function refreshTracker(){if(typeof SCANROWS!=='undefined')SCANROWS=null;if(typeof updateStrip==='function'){try{updateStrip();}catch(e){}}}
+ function idbOpen(){return new Promise(function(res){if(_db)return res(_db);
+   try{var rq=indexedDB.open(IDB_DB,IDB_VER);
+    rq.onupgradeneeded=function(e){var db=e.target.result;if(!db.objectStoreNames.contains(IDB_STORE))db.createObjectStore(IDB_STORE);};
+    rq.onsuccess=function(e){_db=e.target.result;res(_db);};rq.onerror=function(){res(null);};}catch(e){res(null);}});}
+ function idbGet(k){return idbOpen().then(function(db){if(!db)return null;return new Promise(function(res){
+   try{var tx=db.transaction(IDB_STORE,'readonly').objectStore(IDB_STORE).get(k);
+    tx.onsuccess=function(){res(tx.result||null);};tx.onerror=function(){res(null);};}catch(e){res(null);}});});}
+ function idbPut(k,v){return idbOpen().then(function(db){if(!db)return;try{db.transaction(IDB_STORE,'readwrite').objectStore(IDB_STORE).put(v,k);}catch(e){}});}
+ function idbDel(k){return idbOpen().then(function(db){if(!db)return;try{db.transaction(IDB_STORE,'readwrite').objectStore(IDB_STORE).delete(k);}catch(e){}});}
+ function applyRows(t,dates,closes,vols,asof,note,select){
+   if(select===undefined)select=true;
+   DATA[t]={dates:dates.slice(-CAP),closes:closes.slice(-CAP),volumes:vols.slice(-CAP)};   /* cap tracked series -> fast scanner */
+   var sel=document.getElementById('symsel');
+   if(sel&&!Array.prototype.some.call(sel.options,function(o){return o.value===t;})){
+     var o=document.createElement('option');o.value=t;o.textContent=t+' (live)';sel.appendChild(o);}
+   if(typeof SCANROWS!=='undefined')SCANROWS=null;
+   if(select){selLoad(t);addToWatch(t);st(t+' ✓ '+DATA[t].closes.length+' bars · as of '+(asof||(dates.length?dates[dates.length-1]:'?'))+(note?' · '+note:''),'var(--pass)');}
+ }
+ function splitRows(rows){var dates=[],closes=[],vols=[];rows.forEach(function(r){dates.push(r[0]);closes.push(+r[1]);vols.push(+r[2]||0);});return{dates:dates,closes:closes,volumes:vols};}
+ function mergeLatest(cached,rows){var d=cached.dates.slice(),c=cached.closes.slice(),v=cached.volumes.slice();var last=d.length?d[d.length-1]:'';
+   rows.forEach(function(r){var dt=r[0];if(dt>last){d.push(dt);c.push(+r[1]);v.push(+r[2]||0);}else if(dt===last){c[c.length-1]=+r[1];v[v.length-1]=+r[2]||0;}});
+   return{dates:d.slice(-CAP),closes:c.slice(-CAP),volumes:v.slice(-CAP)};}
+ function fetchJSON(url){return fetch(url).then(function(r){if(!r.ok)return r.json().then(function(j){throw new Error(j.detail||('HTTP '+r.status));});return r.json();});}
+ function loadTicker(t,select,force){
+  if(!force&&typeof DATA==='object'&&DATA[t]){if(select){selLoad(t);addToWatch(t);st(t+' ✓ (in memory)','var(--pass)');}return;}
+  if(select)st('loading '+t+' …','var(--accent)');
+  idbGet(t).then(function(cached){
+   if(cached&&cached.dates&&cached.dates.length>=40){
+     if(!force||!DATA[t])applyRows(t,cached.dates,cached.closes,cached.volumes,cached.dates[cached.dates.length-1],'cached',select);
+     fetchJSON(MRKT_API+'/history?ticker='+encodeURIComponent(t)+'&rows=12').then(function(j){
+        if(!j.rows||!j.rows.length)return;var merged=mergeLatest(cached,j.rows);
+        applyRows(t,merged.dates,merged.closes,merged.volumes,j.asof,'local+'+(merged.dates.length-cached.dates.length)+' new',select);idbPut(t,merged);refreshTracker();
+      }).catch(function(e){if(select)st(t+' ✓ cached (offline · '+e.message+')','var(--warn)');});
+   }else{
+     fetchJSON(MRKT_API+'/history?ticker='+encodeURIComponent(t)+'&rows=2520').then(function(j){
+        if(!j.rows||!j.rows.length)throw new Error('no data');var s=splitRows(j.rows);
+        applyRows(t,s.dates,s.closes,s.volumes,j.asof,'fresh',select);idbPut(t,{dates:s.dates.slice(-CAP),closes:s.closes.slice(-CAP),volumes:s.volumes.slice(-CAP)});refreshTracker();
+      }).catch(function(e){if(select)st('✗ '+t+': '+e.message,'var(--fail)');});
+   }
+  });
+ }
+ function go(){var t=(document.getElementById('liveTk').value||'').toUpperCase().trim();if(!t)return;
+   if(!TKRE.test(t)){st('invalid symbol: '+t,'var(--fail)');return;}loadTicker(t,true);document.getElementById('liveTk').value='';}
+ function removeTicker(t){
+   saveWatch(loadWatch().filter(function(x){return x!==t;}));
+   try{delete DATA[t];}catch(e){} try{if(typeof FUND==='object'&&FUND)delete FUND[t];}catch(e){}
+   idbDel(t);
+   var sel=document.getElementById('symsel');
+   if(sel)Array.prototype.slice.call(sel.options).forEach(function(o){if(o.value===t)o.remove();});
+   refreshTracker();renderChips();
+   if(sel&&sel.value===t){var first=Object.keys(DATA)[0];if(first){sel.value=first;selLoad(first);}}
+   st('removed '+t,'var(--muted)');
+ }
+ function reorderTo(src,tgt){var w=loadWatch();var i=w.indexOf(src);if(i<0)return;w.splice(i,1);var j=w.indexOf(tgt);if(j<0)j=w.length;w.splice(j,0,src);saveWatch(w);renderChips();}
+ function exportWatch(){var w=loadWatch();var s=w.join(', ');if(navigator.clipboard){try{navigator.clipboard.writeText(s);}catch(e){}}window.prompt('Your watchlist (Ctrl+C to copy):',s);}
+ function importWatch(){var s=window.prompt('Paste tickers (comma / space / newline separated):','');if(s===null)return;
+   var arr=s.toUpperCase().split(/[^A-Z0-9.\-]+/).filter(function(x){return x&&TKRE.test(x);});
+   var w=loadWatch();var added=0;arr.forEach(function(t){if(w.indexOf(t)<0&&w.length<MAXW){w.push(t);added++;}});saveWatch(w);renderChips();
+   arr.forEach(function(t,i){if(!DATA[t])setTimeout(function(){loadTicker(t,false);},i*200);});
+   st('imported '+added+' new ('+arr.length+' parsed)','var(--pass)');}
+ function refreshAll(){var w=loadWatch();if(!w.length)return;st('refreshing '+w.length+' …','var(--accent)');w.forEach(function(t,i){setTimeout(function(){loadTicker(t,false,true);},i*200);});}
+ function renderChips(){
+   var box=document.getElementById('liveWatch');if(!box)return;var w=loadWatch();
+   if(!w.length){box.innerHTML='<span style="font-size:9px;color:var(--muted)">no saved tickers — type one above</span>';return;}
+   box.innerHTML='<span style="font-size:9px;color:var(--muted);display:block;margin-bottom:2px">★ my watchlist ('+w.length+'/'+MAXW+') · drag to reorder</span>'+w.map(function(t){
+     return '<span class="lwchip" draggable="true" data-tk="'+t+'" style="display:inline-flex;align-items:center;gap:3px;background:var(--panel2,#111721);border:1px solid var(--line);border-radius:10px;padding:1px 4px 1px 7px;margin:0 3px 3px 0;font-size:10px;cursor:grab"><span data-go="'+t+'" style="cursor:pointer">'+t+'</span><b data-rm="'+t+'" title="remove" style="color:var(--muted);cursor:pointer;font-weight:700">×</b></span>';
+   }).join('');
+   box.querySelectorAll('.lwchip').forEach(function(ch){
+     ch.addEventListener('dragstart',function(){_drag=ch.getAttribute('data-tk');ch.style.opacity='.5';});
+     ch.addEventListener('dragend',function(){ch.style.opacity='1';});
+     ch.addEventListener('dragover',function(e){e.preventDefault();});
+     ch.addEventListener('drop',function(e){e.preventDefault();var tgt=ch.getAttribute('data-tk');if(_drag&&_drag!==tgt)reorderTo(_drag,tgt);_drag=null;});});
+   box.querySelectorAll('[data-go]').forEach(function(s){s.onclick=function(){var t=s.getAttribute('data-go');if(DATA[t])selLoad(t);else loadTicker(t,true);};});
+   box.querySelectorAll('[data-rm]').forEach(function(b){b.onclick=function(ev){ev.stopPropagation();removeTicker(b.getAttribute('data-rm'));};});
+ }
+ function restoreWatch(){var w=loadWatch();renderChips();w.forEach(function(t,i){if(!DATA[t])setTimeout(function(){loadTicker(t,false);},i*200);});if(w.length)setTimeout(refreshTracker,Math.max(1500,w.length*200+600));}
+ function liveFund(t){
+  fetch(MRKT_API+'/fundamentals?ticker='+encodeURIComponent(t)).then(function(r){return r.ok?r.json():null;}).then(function(j){
+   if(!j||typeof FUND!=='object'||!FUND)return;var yrs={};
+   yrs[j.fy]={eps:j.eps,ebitda:j.ebitda,ebitdaMethod:j.ebitdaBasis,ebitdaMargin:j.ebitdaMargin,netMargin:j.netMargin,_rev:j.revenue,_shares:j.shares,_debt:j.debt,_cash:j.cash,fcf:j.fcf};
+   if(j.priorFy)yrs[j.priorFy]={eps:j.epsPrior,_rev:j.revenuePrior};
+   FUND[t]={name:t+' (live)',lens:'GAAP',taxonomy:'us-gaap',years:yrs,summary:{latestFY:j.fy},quarters:[]};
+   if(typeof renderFundFocus==='function')renderFundFocus(t);
+   fetch(MRKT_API+'/estimates?ticker='+encodeURIComponent(t)).then(function(r){return r.ok?r.json():null;}).then(function(e){if(e&&FUND[t]){FUND[t].estimates=e;if(typeof buildInsightTiles==='function'&&typeof CUR!=='undefined'&&CUR&&CUR.sym===t)buildInsightTiles(t);}}).catch(function(){});
+  }).catch(function(){});
+ }
+
+ /* #4 live macro exposure: fetch FRED factors once, align to the ticker, regress (shrinkage+FDR) */
+ var MACRO_FACTORS={DGS10:'10y',DGS2:'2y',DCOILWTICO:'WTI',DCOILBRENTEU:'Brent',DHHNGSP:'NatGas'},_macroRows={};
+ function alignFactor(dates,rows){var map={};rows.forEach(function(r){map[r[0]]=+r[1];});var vals=[],last=null;
+   for(var i=0;i<dates.length;i++){if(map[dates[i]]!=null)last=map[dates[i]];vals.push(last);}
+   var d=[];for(var i=1;i<vals.length;i++)d.push((vals[i]!=null&&vals[i-1]!=null)?(vals[i]-vals[i-1]):NaN);return d;}
+ function ensureMacro(cb){var need=Object.keys(MACRO_FACTORS).filter(function(k){return !_macroRows[k];});if(!need.length){cb();return;}
+   Promise.all(need.map(function(k){return fetchJSON(MRKT_API+'/macro?series='+k).then(function(j){_macroRows[k]=(j&&j.rows)||[];}).catch(function(){_macroRows[k]=[];});})).then(cb);}
+ function computeMacro(sym){if(typeof CUR!=='object'||!CUR||!CUR.c||CUR.sym!==sym)return;
+   ensureMacro(function(){if(!CUR||CUR.sym!==sym)return;var c=CUR.c,dates=CUR.d,rets=[];for(var i=1;i<c.length;i++)rets.push(c[i-1]>0?Math.log(c[i]/c[i-1]):0);
+    var F={};Object.keys(MACRO_FACTORS).forEach(function(k){var rows=_macroRows[k];if(rows&&rows.length)F[MACRO_FACTORS[k]]=alignFactor(dates,rows);});
+    if(typeof macroBetas==='function'&&Object.keys(F).length){try{CUR.macro=macroBetas(rets,F);if(typeof renderMacro==='function')renderMacro(sym);}catch(e){}}});}
+ function mount(){
+  var ctrls=document.querySelector('.ctrls');if(!ctrls)return;
+  var d=document.createElement('div');d.className='ctrl';
+  d.innerHTML='<label>⚡ Add ticker (saved &amp; tracked)</label><div style="display:flex;gap:4px;align-items:center">'+
+    '<input id="liveTk" placeholder="e.g. AAPL" style="width:78px;text-transform:uppercase">'+
+    '<button class="ghost" id="liveGo" title="pull, save &amp; track" style="padding:5px 7px">Add</button>'+
+    '<button class="ghost" id="liveRefresh" title="refresh whole watchlist" style="padding:5px 6px">⟳</button>'+
+    '<button class="ghost" id="liveImp" title="import list" style="padding:5px 6px">⇪</button>'+
+    '<button class="ghost" id="liveExp" title="export list" style="padding:5px 6px">⇩</button></div>'+
+    '<div id="liveWatch" style="margin-top:4px;max-width:236px;line-height:1.5"></div>'+
+    '<span id="liveStatus" style="font-size:9px;color:var(--muted);margin-top:2px;display:block"></span>';
+  ctrls.insertBefore(d,ctrls.firstChild);
+  document.getElementById('liveGo').onclick=go;
+  document.getElementById('liveRefresh').onclick=refreshAll;
+  document.getElementById('liveImp').onclick=importWatch;
+  document.getElementById('liveExp').onclick=exportWatch;
+  document.getElementById('liveTk').addEventListener('keydown',function(e){if(e.key==='Enter')go();});
+  st('live data: '+MRKT_API.replace(/^https?:\/\//,'')+' · watchlist saved locally');
+  restoreWatch();
+ }
+ if(document.readyState!=='loading')mount();else document.addEventListener('DOMContentLoaded',mount);
+})();
+</script>
+
+</body></html>

@@ -482,6 +482,57 @@ function ouFit(x){const n=x.length;if(n<30)return null;const Y=x.slice(1),Xl=x.s
  const sigmaX2=Math.abs(phi)<1?s2/(1-phi*phi):Infinity;const last=x[n-1];
  const z=(sigmaX2>0&&isFinite(sigmaX2))?(last-mu)/Math.sqrt(sigmaX2):0;
  return{phi,sePhi,theta,mu,muPrice:Math.exp(mu),halfLife,sigmaX2,meanRev,z,last};}
+function _gaussSolve(A,b){var n=b.length,M=[];for(var i=0;i<n;i++)M.push(A[i].slice().concat([b[i]]));
+ for(var col=0;col<n;col++){var piv=col;for(var r=col+1;r<n;r++)if(Math.abs(M[r][col])>Math.abs(M[piv][col]))piv=r;
+  var tmp=M[col];M[col]=M[piv];M[piv]=tmp;if(Math.abs(M[col][col])<1e-12)return null;
+  for(var r=0;r<n;r++){if(r===col)continue;var f=M[r][col]/M[col][col];for(var k=col;k<=n;k++)M[r][k]-=f*M[col][k];}}
+ var x=new Array(n);for(var i=0;i<n;i++)x[i]=M[i][n]/M[i][i];return x;}
+function fitLogit(X,y,iter){var n=X.length;if(!n)return null;var pp=X[0].length,b=new Array(pp).fill(0);
+ for(var it=0;it<(iter||30);it++){var g=new Array(pp).fill(0),H=[];for(var a=0;a<pp;a++)H.push(new Array(pp).fill(0));
+  for(var i=0;i<n;i++){var z=0;for(var j=0;j<pp;j++)z+=b[j]*X[i][j];if(z>30)z=30;if(z<-30)z=-30;var mu=1/(1+Math.exp(-z)),w=Math.max(mu*(1-mu),1e-6);
+   for(var j=0;j<pp;j++){g[j]+=(y[i]-mu)*X[i][j];for(var k=0;k<pp;k++)H[j][k]+=w*X[i][j]*X[i][k];}}
+  for(var j=0;j<pp;j++)H[j][j]+=1e-2;var d=_gaussSolve(H,g);if(!d)break;var sm=0;for(var j=0;j<pp;j++){b[j]+=d[j];sm+=Math.abs(d[j]);}if(sm<1e-7)break;}
+ return b;}
+function _aucPY(p,y){var pos=[],neg=[];for(var i=0;i<y.length;i++){(y[i]?pos:neg).push(p[i]);}if(!pos.length||!neg.length)return 0.5;
+ var c=0;for(var a=0;a<pos.length;a++)for(var bb=0;bb<neg.length;bb++){if(pos[a]>neg[bb])c++;else if(pos[a]===neg[bb])c+=0.5;}return c/(pos.length*neg.length);}
+/* MCS: fit a logistic on the name's OWN history (features: EMA21-distance, EMA21-slope, RVOL, realized-vol),
+   walk-forward OOS, gate by a permutation p-value on OOS AUC. Emits a number ONLY when validated. Honest. */
+function momentumContinuation(c,v,H){
+ H=H||20;var n=c.length;if(n<140)return{validated:false,reason:'short history',score:null};
+ var e=ema(c,21),rows=[],ys=[],warm=30;
+ for(var i=warm;i<n-H;i++){
+  var dist=e[i]?(c[i]/e[i]-1):0,slope=(e[i-1]&&c[i])?(e[i]-e[i-1])/c[i]:0;
+  var s4=0;for(var k=i-19;k<=i;k++)s4+=v[k]||0;var rv=s4>0?(v[i]||0)/(s4/20)-1:0;
+  var m=0,cn=0;for(var k=i-19;k<=i;k++){if(c[k]>0&&c[k-1]>0){m+=Math.log(c[k]/c[k-1]);cn++;}}m=cn?m/cn:0;
+  var vv=0,c2=0;for(var k=i-19;k<=i;k++){if(c[k]>0&&c[k-1]>0){var lr=Math.log(c[k]/c[k-1]);vv+=(lr-m)*(lr-m);c2++;}}var rvol=c2?Math.sqrt(vv/c2):0;
+  rows.push([dist,slope,rv,rvol]);ys.push(c[i+H]>c[i]?1:0);
+ }
+ if(rows.length<80)return{validated:false,reason:'few events',score:null};
+ var P=rows[0].length,mu=new Array(P).fill(0),sd=new Array(P).fill(0);
+ for(var j=0;j<P;j++){var sx=0;for(var i=0;i<rows.length;i++)sx+=rows[i][j];mu[j]=sx/rows.length;}
+ for(var j=0;j<P;j++){var sx=0;for(var i=0;i<rows.length;i++){var d=rows[i][j]-mu[j];sx+=d*d;}sd[j]=Math.sqrt(sx/rows.length)||1;}
+ function feat(row){var x=[1];for(var j=0;j<P;j++)x.push((row[j]-mu[j])/sd[j]);return x;}
+ var oosP=[],oosY=[],folds=4,nR=rows.length;
+ for(var f=1;f<folds;f++){var split=Math.floor(nR*f/folds),trEnd=split-H;if(trEnd<50)continue;
+  var Xtr=[],ytr=[];for(var i=0;i<trEnd;i++){Xtr.push(feat(rows[i]));ytr.push(ys[i]);}
+  var b=fitLogit(Xtr,ytr);if(!b)continue;var teEnd=Math.floor(nR*(f+1)/folds);
+  for(var i=split;i<teEnd;i++){var x=feat(rows[i]),z=0;for(var j=0;j<x.length;j++)z+=b[j]*x[j];oosP.push(1/(1+Math.exp(-z)));oosY.push(ys[i]);}}
+ if(oosP.length<40)return{validated:false,reason:'thin OOS',score:null};
+ var auc=_aucPY(oosP,oosY);
+ var _seed=(n*2654435761)>>>0;for(var k=0;k<8;k++)_seed=(_seed^Math.floor((c[Math.floor(k*n/8)]||1)*1000))>>>0;
+ function _rnd(){_seed=(1103515245*_seed+12345)>>>0;return _seed/4294967296;}
+ var perms=300,ge=0,ysh=oosY.slice();
+ for(var pmn=0;pmn<perms;pmn++){for(var i=ysh.length-1;i>0;i--){var jj=Math.floor(_rnd()*(i+1));var t=ysh[i];ysh[i]=ysh[jj];ysh[jj]=t;}if(_aucPY(oosP,ysh)>=auc)ge++;}
+ var pval=(ge+1)/(perms+1),validated=(auc>0.5&&pval<0.05);
+ var Xall=rows.map(feat),ball=fitLogit(Xall,ys);
+ var dN=e[n-1]?(c[n-1]/e[n-1]-1):0,slN=(e[n-2]&&c[n-1])?(e[n-1]-e[n-2])/c[n-1]:0;
+ var s4=0;for(var k=n-20;k<n;k++)s4+=v[k]||0;var rvN=s4>0?(v[n-1]||0)/(s4/20)-1:0;
+ var m=0,cn=0;for(var k=n-20;k<n;k++){if(c[k]>0&&c[k-1]>0){m+=Math.log(c[k]/c[k-1]);cn++;}}m=cn?m/cn:0;
+ var vv=0,c2=0;for(var k=n-20;k<n;k++){if(c[k]>0&&c[k-1]>0){var lr=Math.log(c[k]/c[k-1]);vv+=(lr-m)*(lr-m);c2++;}}var rvolN=c2?Math.sqrt(vv/c2):0;
+ var xn=feat([dN,slN,rvN,rvolN]),zn=0;for(var j=0;j<xn.length;j++)zn+=(ball?ball[j]:0)*xn[j];var prob=1/(1+Math.exp(-zn));
+ var score=Math.round(prob*100),state=score>=70?'accelerating':score>=58?'constructive':score>=45?'extended':score>=33?'fading':'weak';
+ return{validated:validated,score:score,prob:prob,state:state,auc:auc,pval:pval,nOOS:oosP.length};
+}
 function projectOU(P0,H,ou,asym){asym=asym||{dn:1,up:1};const X0=Math.log(P0),phi=ou.phi,mu=ou.mu;const path=[],p80=[],p95=[];
  for(let t=1;t<=H;t++){const xh=mu+Math.pow(phi,t)*(X0-mu);const vv=ou.sigmaX2*(1-Math.pow(phi,2*t));const sdl=Math.sqrt(Math.max(vv,0));
   const sdn=sdl*asym.dn,sup=sdl*asym.up;path.push({t,price:Math.exp(xh)});
@@ -898,7 +949,7 @@ function renderDecision(sym){
   +verdict
   +cell('price vs EMA21','<b style="color:'+stateCol+'">'+state+'</b> &middot; '+_fmtSign(dAbs,2)+' &middot; '+_fmtSign(dPct,1)+'% &middot; '+_fmtSign(dZ,2)+'sd')
   +cell('next upside',lvl(ab[0]))+cell('resistance',lvl(ab[1]))+cell('downside invalidate',lvl(bl[0]))
-  +cell('next event',ev)+cell('confidence','<b style="color:'+confCol+'">'+conf+'/100</b>')
+  +cell('next event',ev)+cell('confidence','<b style="color:'+confCol+'">'+conf+'/100</b>')+cell('momentum (validated)',(CUR.mcs&&CUR.mcs.validated&&CUR.mcs.score!=null)?('<b style="color:'+(CUR.mcs.score>=58?'var(--up)':CUR.mcs.score<=42?'var(--down)':'var(--muted)')+'">'+CUR.mcs.score+'/100 '+CUR.mcs.state+'</b> <span style="color:var(--faint)">AUC '+CUR.mcs.auc.toFixed(2)+'&middot;p'+(CUR.mcs.pval<0.001?'&lt;.001':('='+CUR.mcs.pval.toFixed(3)))+'</span>'):'<span style="color:var(--faint)">none &middot; no validated edge</span>')
   +cell('freshness','<span style="color:'+fcol+'">&#9679;</span> '+asof+' &middot; '+(live?'live':'EOD')+' &middot; '+flbl)
   +'</div>';
  if(conflict>=0.5){html+='<div style="padding:4px 10px;margin:-2px 0 6px;background:rgba(230,180,80,.12);border:1px solid rgba(230,180,80,.4);border-radius:8px;font-size:11px;color:var(--caution)">&#9888; <b>Signals disagree</b> (conflict '+(conflict*100).toFixed(0)+'%): price '+(above?'above':'below')+' EMA21, trend '+(emaSl>=0?'up':'down')+', forecast '+((TR&&TR.directional)?(TR.consensus>=0?'up':'down'):'indeterminate')+' &mdash; treat as range / low-conviction, not a clean '+direction+'.</div>';}
@@ -1248,8 +1299,9 @@ function load(sym,s){const c=s.closes,d=s.dates,vol=s.volumes||c.map(()=>0);cons
  const emaM={};EMAP.forEach(N=>emaM[N]=emaMetrics(c,N));
  const bestTrack=EMAP.reduce((a,b)=>emaM[b].rmse<emaM[a].rmse?b:a);
  const bestFit=EMAP.reduce((a,b)=>emaM[b].r2>emaM[a].r2?b:a);
+ const _mcs=(function(){try{return momentumContinuation(c,vol,20);}catch(e){return{validated:false,score:null};}})();
  CUR={sym,c,d,vol,r,last,rvDaily:sd(r),garch:g,icss:ic,curRms,roll:rollVol(r,21),dds:ddSeries(c),sk,
-   va,v20,rvolS,ao,hvT,cone,rvAnn,cv,dd,emaM,bestTrack,bestFit,sma20,std20,bbU2,bbL2,bbU1,bbL1,z:zS,obv:obvS,mfi:mfiS,macd:macdS,rsi:rsiS,vp,obvDiv,ou,avgVol20,vwStd,integrity};
+   va,v20,rvolS,ao,hvT,cone,rvAnn,cv,dd,emaM,bestTrack,bestFit,sma20,std20,bbU2,bbL2,bbU1,bbL1,z:zS,obv:obvS,mfi:mfiS,macd:macdS,rsi:rsiS,vp,obvDiv,ou,avgVol20,vwStd,integrity,mcs:_mcs};
  document.getElementById('px').textContent=last.toFixed(2);
  const ce=document.getElementById('chg');ce.textContent=(chg>=0?'+':'')+(chg*100).toFixed(2)+'%';ce.className='chg '+(chg>=0?'up':'down');
  document.getElementById('sym').textContent=sym;document.getElementById('asof').textContent='as of '+d[d.length-1];

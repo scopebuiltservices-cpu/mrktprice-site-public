@@ -1,0 +1,67 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>mrktprice.com — enter</title>
+<style>
+:root{--bg:#0a0d12;--muted:#8a93a0;--line:rgba(255,255,255,.30)}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:#fff;
+  font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+.wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:24px}
+.title{font-size:clamp(34px,7.5vw,72px);font-weight:300;letter-spacing:.02em;line-height:1;color:#fff}
+.title b{font-weight:600}
+.tag{margin-top:10px;font-size:11px;letter-spacing:.42em;text-transform:uppercase;color:var(--muted)}
+.card{width:min(320px,86vw);margin-top:30px;display:flex;flex-direction:column;gap:10px}
+.card input{background:rgba(255,255,255,.03);border:1.5px solid var(--line);border-radius:10px;color:#fff;
+  padding:11px 13px;font-size:14px;outline:none}
+.card input::placeholder{color:#717a86}
+.card input:focus{border-color:#fff}
+.card button{background:transparent;border:1.5px solid #fff;border-radius:10px;color:#fff;
+  padding:11px 13px;font-size:14px;font-weight:600;letter-spacing:.04em;cursor:pointer}
+.card button:hover{background:#fff;color:#0a0d12}
+.card button:disabled{opacity:.5;cursor:default}
+.msg{min-height:16px;font-size:12px;color:var(--muted)}.msg.err{color:#ef9a9a}.msg.ok{color:#7fd1a8}
+.note{margin-top:34px;max-width:440px;font-size:11px;line-height:1.6;color:#5f6772}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="title"><b>mrkt</b>price<span style="color:var(--muted)">.com</span></div>
+  <div class="tag">research terminal</div>
+  <form class="card" id="gate" autocomplete="off">
+    <input id="u" placeholder="Username" autocomplete="username"/>
+    <input id="p" type="password" placeholder="Access code" autocomplete="current-password"/>
+    <button type="submit" id="go">Enter</button>
+    <div class="msg" id="msg"></div>
+  </form>
+  <div class="note">Access is verified against the data service before the terminal will load any
+    quotes. Research only; not investment advice.</div>
+</div>
+<script>
+(function(){
+  // Same-host dev uses the local service; production uses the hosted data API.
+  var API=(location.hostname==='localhost'||location.hostname==='127.0.0.1')
+    ? 'http://localhost:8000' : 'https://mrktprice-data.onrender.com';
+  var form=document.getElementById('gate'),btn=document.getElementById('go'),
+      msg=document.getElementById('msg'),uEl=document.getElementById('u'),pEl=document.getElementById('p');
+  function set(t,cls){msg.textContent=t;msg.className='msg'+(cls?' '+cls:'');}
+  form.addEventListener('submit',function(e){
+    e.preventDefault();
+    var u=uEl.value.trim(),p=pEl.value;
+    if(!u||!p){set('Enter a username and access code.','err');return;}
+    btn.disabled=true;set('Checking…');
+    // Validate the code against the data service. The code is the real key: the terminal
+    // sends it on every data request, and the API rejects anything without it.
+    fetch(API+'/auth',{headers:{'X-Access-Code':p},cache:'no-store'})
+      .then(function(r){
+        if(r.status===401){set('Incorrect access code.','err');btn.disabled=false;return;}
+        if(!r.ok){set('Service unavailable — try again shortly.','err');btn.disabled=false;return;}
+        try{sessionStorage.setItem('mrkt.code',p);sessionStorage.setItem('mrkt.user',u);
+            sessionStorage.setItem('mrkt.ok','1');}catch(x){}
+        set('Welcome — loading terminal…','ok');
+        location.href='index.html';
+      })
+      .catch(function(){set('Could not reach the data service. Check your connection.','err');btn.disabled=false;});
+  });
+  uEl.focus();
+})();
+</script></body></html>

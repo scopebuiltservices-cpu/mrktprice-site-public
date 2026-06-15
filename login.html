@@ -10,12 +10,15 @@ html,body{margin:0;height:100%;background:var(--bg);color:#fff;font:15px/1.5 -ap
 .title b{font-weight:600}
 .tag{margin-top:8px;font-size:11px;letter-spacing:.36em;text-transform:uppercase;color:var(--muted)}
 .card{width:min(330px,88vw);margin-top:26px;display:flex;flex-direction:column;gap:9px}
+.gbtn{display:flex;align-items:center;justify-content:center;gap:9px;background:#fff;color:#0a0d12;border:1.5px solid #fff;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;transition:box-shadow .15s,border-color .15s}
+.gbtn.hot{border-color:var(--accent);box-shadow:0 0 0 3px rgba(22,199,154,.45)}
+.ghint{font-size:11px;color:var(--accent);margin:-3px 0 2px}
 .card input{background:rgba(255,255,255,.03);border:1.5px solid var(--line);border-radius:10px;color:#fff;padding:11px 13px;font-size:14px;outline:none}
 .card input:focus{border-color:#fff}
-.card button{border-radius:10px;padding:11px 13px;font-size:14px;font-weight:600;cursor:pointer;border:1.5px solid #fff;background:#fff;color:#0a0d12}
-.card button.ghost{background:transparent;color:#fff}
-.card button.ghost:hover{background:rgba(255,255,255,.08)}
-.divider{color:var(--muted);font-size:11px;margin:4px 0;letter-spacing:.2em}
+.card button.act{border-radius:10px;padding:11px 13px;font-size:14px;font-weight:600;cursor:pointer;border:1.5px solid #fff;background:#fff;color:#0a0d12}
+.card button.ghost{border-radius:10px;padding:11px 13px;font-size:14px;font-weight:600;cursor:pointer;border:1.5px solid var(--line);background:transparent;color:#fff}
+.card button.ghost:hover{border-color:#fff}
+.divider{color:var(--muted);font-size:11px;margin:6px 0 2px;letter-spacing:.16em}
 .msg{min-height:16px;font-size:12px;color:var(--muted)}.msg.err{color:#ef9a9a}.msg.ok{color:#7fd1a8}
 .back{margin-top:22px;font-size:12px;color:var(--muted);text-decoration:none}
 .back:hover{color:#fff}
@@ -25,13 +28,14 @@ html,body{margin:0;height:100%;background:var(--bg);color:#fff;font:15px/1.5 -ap
   <a class="title" href="index.html"><b>mrkt</b>price<span style="color:var(--muted)">.com</span></a>
   <div class="tag">sign in to search live data</div>
   <div class="card">
+    <button id="google" class="gbtn"><svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.4 29.3 35 24 35c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 20-7.6 20-21 0-1.2-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 16 3 9.1 7.6 6.3 14.7z"/><path fill="#4CAF50" d="M24 45c5.2 0 10-2 13.6-5.2l-6.3-5.2C29.2 35.5 26.7 36.5 24 36.5c-5.3 0-9.7-2.6-11.3-7l-6.5 5C9 40.3 15.9 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.6l6.3 5.2C41.5 36.6 44 31 44 24c0-1.2-.1-2.3-.4-3.5z"/></svg>Continue with Google</button>
+    <div class="ghint" id="ghint" style="display:none">Gmail detected — one-tap sign-in, no password needed.</div>
+    <div class="divider">— or with email —</div>
     <input id="email" placeholder="Email" autocomplete="email"/>
     <input id="pw" type="password" placeholder="Password" autocomplete="current-password"/>
-    <button id="signin">Sign in</button>
+    <button id="signin" class="act">Sign in</button>
     <button id="signup" class="ghost">Create account</button>
-    <div class="divider">— or —</div>
     <button id="magic" class="ghost">Email me a sign-in link</button>
-    <button id="google" class="ghost">Continue with Google</button>
     <div class="msg" id="msg"></div>
   </div>
   <a class="back" href="index.html">&larr; Back to the terminal (free to view)</a>
@@ -40,18 +44,33 @@ html,body{margin:0;height:100%;background:var(--bg);color:#fff;font:15px/1.5 -ap
 <script>
 (function(){
   var SUPABASE_URL='https://jnatyouqlrdhmghnluzv.supabase.co', SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpuYXR5b3VxbHJkaG1naG5sdXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0NzY0MzgsImV4cCI6MjA5NzA1MjQzOH0.AdJLcTE46ci7XSKckxv2cQWIFWPp6BXdHrIspay4Ajg', NEXT='index.html';
-  var email=document.getElementById('email'),pw=document.getElementById('pw');
+  var email=document.getElementById('email'),pw=document.getElementById('pw'),gbtn=document.getElementById('google'),ghint=document.getElementById('ghint');
   function msgset(t,c){var m=document.getElementById('msg');m.textContent=t;m.className='msg'+(c?' '+c:'');}
   if(!/^https:\/\//.test(SUPABASE_URL)||!window.supabase){msgset('Sign-in is not configured yet.','err');return;}
   var sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
   function persist(s){try{localStorage.setItem('mrkt.token',s.access_token);localStorage.setItem('mrkt.refresh',s.refresh_token||'');localStorage.setItem('mrkt.email',(s.user&&s.user.email)||'');}catch(e){}}
   function done(s){persist(s);location.replace(NEXT);}
+  function google(){msgset('Redirecting to Google…');sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+'/login.html'}}).then(function(r){if(r&&r.error)msgset(r.error.message,'err');});}
   sb.auth.onAuthStateChange(function(_e,session){if(session)done(session);});
-  sb.auth.getSession().then(function(r){if(r.data&&r.data.session)done(r.data.session);}); // returns from magic-link / OAuth
-  document.getElementById('signin').onclick=function(){var e=email.value.trim(),p=pw.value;if(!e||!p){msgset('Enter email and password.','err');return;}msgset('Signing in…');sb.auth.signInWithPassword({email:e,password:p}).then(function(r){if(r.error)msgset(r.error.message,'err');});};
-  document.getElementById('signup').onclick=function(){var e=email.value.trim(),p=pw.value;if(!e||p.length<8){msgset('Use a valid email and an 8+ character password.','err');return;}msgset('Creating account…');sb.auth.signUp({email:e,password:p}).then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Account created — check your email to confirm, then sign in.','ok');});};
-  document.getElementById('magic').onclick=function(){var e=email.value.trim();if(!e){msgset('Enter your email first.','err');return;}msgset('Sending link…');sb.auth.signInWithOtp({email:e,options:{emailRedirectTo:location.origin+'/login.html'}}).then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Check your email for a one-time sign-in link.','ok');});};
-  document.getElementById('google').onclick=function(){sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+'/login.html'}});};
+  sb.auth.getSession().then(function(r){if(r.data&&r.data.session)done(r.data.session);});
+  gbtn.onclick=google;
+  function isGoogle(v){return /@(gmail|googlemail)\.com\s*$/i.test(v);}
+  email.addEventListener('input',function(){
+    var hot=isGoogle(email.value.trim());
+    ghint.style.display=hot?'block':'none';
+    gbtn.classList.toggle('hot',hot);
+  });
+  document.getElementById('signin').onclick=function(){var e=email.value.trim(),p=pw.value;
+    if(isGoogle(e)&&!p){google();return;}
+    if(!e||!p){msgset('Enter email and password — or use Google above.','err');return;}
+    msgset('Signing in…');sb.auth.signInWithPassword({email:e,password:p}).then(function(r){if(r.error)msgset(r.error.message,'err');});};
+  document.getElementById('signup').onclick=function(){var e=email.value.trim(),p=pw.value;
+    if(isGoogle(e)){msgset('That is a Google account — use “Continue with Google” above (no password to create).','ok');gbtn.classList.add('hot');return;}
+    if(!e||p.length<8){msgset('Use a valid email and an 8+ character password.','err');return;}
+    msgset('Creating account…');sb.auth.signUp({email:e,password:p}).then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Account created — you can sign in now.','ok');});};
+  document.getElementById('magic').onclick=function(){var e=email.value.trim();if(!e){msgset('Enter your email first.','err');return;}
+    if(isGoogle(e)){google();return;}
+    msgset('Sending link…');sb.auth.signInWithOtp({email:e,options:{emailRedirectTo:location.origin+'/login.html'}}).then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Check your email for a one-time sign-in link.','ok');});};
   email.focus();
 })();
 </script></body></html>

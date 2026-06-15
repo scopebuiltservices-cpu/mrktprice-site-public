@@ -1,0 +1,63 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>mrktprice.com — pricing</title>
+<style>
+:root{--bg:#0a0d12;--muted:#8a93a0;--accent:#16c79a;--line:rgba(255,255,255,.30)}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:#fff;font:15px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+.wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px 20px}
+.title{font-size:clamp(28px,5.5vw,48px);font-weight:300;color:#fff;text-decoration:none}
+.title b{font-weight:600}
+.sub{margin-top:8px;color:var(--muted);font-size:14px;max-width:460px}
+.plans{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:28px}
+.plan{width:248px;background:rgba(255,255,255,.03);border:1.5px solid var(--line);border-radius:14px;padding:22px 20px;text-align:left}
+.plan.best{border-color:var(--accent)}
+.badge{display:inline-block;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:20px;padding:2px 8px;margin-bottom:8px}
+.pname{font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.price{font-size:38px;font-weight:600;margin:6px 0 0}
+.price small{font-size:14px;color:var(--muted);font-weight:400}
+.note{font-size:12px;color:var(--muted);min-height:18px;margin-top:2px}
+.feat{list-style:none;padding:0;margin:14px 0 18px;font-size:13px;color:#cfd6df}
+.feat li{margin:6px 0;padding-left:18px;position:relative}
+.feat li:before{content:"\2713";color:var(--accent);position:absolute;left:0}
+.buy{width:100%;border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;border:1.5px solid #fff;background:#fff;color:#0a0d12}
+.plan.best .buy{background:var(--accent);border-color:var(--accent);color:#06281f}
+.foot{margin-top:24px;font-size:12px;color:var(--muted)}
+.foot a{color:var(--muted)}
+.back{margin-top:18px;font-size:12px;color:var(--muted);text-decoration:none}
+</style></head>
+<body>
+<div class="wrap">
+  <a class="title" href="index.html"><b>mrkt</b>price<span style="color:var(--muted)">.com</span></a>
+  <div class="sub">Viewing the terminal is free. A subscription unlocks <b>live search</b> — any ticker, fresh prices, fundamentals, and rates.</div>
+  <div class="plans">
+    <div class="plan">
+      <div class="pname">Monthly</div>
+      <div class="price">$10<small>/mo</small></div>
+      <div class="note">Billed monthly. Cancel anytime.</div>
+      <ul class="feat"><li>Live search, any ticker</li><li>Fresh prices &amp; fundamentals</li><li>Treasury rates &amp; macro board</li><li>Saved watchlist</li></ul>
+      <button class="buy" id="buyMonthly">Subscribe</button>
+    </div>
+    <div class="plan best">
+      <span class="badge">Best value</span>
+      <div class="pname">Annual</div>
+      <div class="price">$84<small>/yr</small></div>
+      <div class="note">Just $7/mo — 2 months free.</div>
+      <ul class="feat"><li>Everything in Monthly</li><li>Two months free vs. monthly</li><li>One yearly charge</li><li>Cancel anytime</li></ul>
+      <button class="buy" id="buyAnnual">Subscribe &amp; save</button>
+    </div>
+  </div>
+  <div class="foot">Secure checkout by Lemon Squeezy (handles tax &amp; invoices). Research only; not investment advice.<br/>Already subscribed? <a href="account.html">Your account</a></div>
+  <a class="back" href="index.html">&larr; Back to the terminal</a>
+</div>
+<script>
+(function(){
+  var CHECKOUT_MONTHLY='__LS_CHECKOUT_MONTHLY__', CHECKOUT_ANNUAL='__LS_CHECKOUT_ANNUAL__';
+  function email(){try{return localStorage.getItem('mrkt.email')||'';}catch(e){return '';}}
+  function go(url){if(!/^https:\/\//.test(url)){alert('Checkout is not configured yet.');return;}
+    var e=email();if(e)url+=(url.indexOf('?')>=0?'&':'?')+'checkout[email]='+encodeURIComponent(e);
+    location.href=url;}
+  document.getElementById('buyMonthly').onclick=function(){go(CHECKOUT_MONTHLY);};
+  document.getElementById('buyAnnual').onclick=function(){go(CHECKOUT_ANNUAL);};
+})();
+</script></body></html>

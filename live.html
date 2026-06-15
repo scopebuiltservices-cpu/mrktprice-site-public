@@ -1686,11 +1686,21 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
    staggered restore, import/export, drag-reorder, refresh-all, size/symbol guards. */
 (function(){
  var MRKT_API="https://mrktprice-data.onrender.com".replace(/\/+$/,'');
- /* access gate: the code set by splash.html travels on every data request; a 401 bounces back to the gate */
- var MRKT_CODE=(function(){try{return sessionStorage.getItem('mrkt.code')||'';}catch(e){return '';}})();
- function _hdrs(){return MRKT_CODE?{'X-Access-Code':MRKT_CODE}:{};}
- var _gated=false;
- function gate(){if(_gated)return;_gated=true;try{sessionStorage.removeItem('mrkt.ok');}catch(e){}location.href='splash.html';}
+ /* Open terminal: viewing is free. Live SEARCH + data usage require a signed-in, subscribed user.
+    login.html (Supabase) stores the access token here; we send it as a Bearer header. The data API
+    returns 401 (not signed in) or 402 (no active subscription). We prompt inline — never wall the page. */
+ function _ls(k){try{return localStorage.getItem(k)||'';}catch(e){return '';}}
+ var MRKT_TOKEN=_ls('mrkt.token'), MRKT_CODE=_ls('mrkt.code');   /* mrkt.code = optional admin override */
+ function _hdrs(){var h={};if(MRKT_TOKEN)h['Authorization']='Bearer '+MRKT_TOKEN;if(MRKT_CODE)h['X-Access-Code']=MRKT_CODE;return h;}
+ var _prompted=false;
+ function needAuth(kind){   /* 'signin' (401) or 'subscribe' (402) — inline, non-blocking */
+   var box=document.getElementById('liveStatus');
+   var msg=(kind==='subscribe')
+     ? 'Live search is a subscriber feature — <a href="pricing.html" style="color:var(--accent)">subscribe to unlock</a>.'
+     : '<a href="login.html" style="color:var(--accent)">Sign in</a> to search live data.';
+   if(box){box.innerHTML=msg;box.style.color='var(--warn)';}
+   _prompted=true;
+ }
  var IDB_DB="mrktprice",IDB_STORE="hist",IDB_VER=1,_db=null;
  var WATCH_KEY="mrkt.watchlist",CAP=520,MAXW=50,TKRE=/^[A-Z0-9.\-]{1,12}$/,_drag=null;
  function st(m,c){var s=document.getElementById('liveStatus');if(s){s.textContent=m;s.style.color=c||'var(--muted)';}}
@@ -1722,7 +1732,7 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
  function mergeLatest(cached,rows){var d=cached.dates.slice(),c=cached.closes.slice(),v=cached.volumes.slice();var last=d.length?d[d.length-1]:'';
    rows.forEach(function(r){var dt=r[0];if(dt>last){d.push(dt);c.push(+r[1]);v.push(+r[2]||0);}else if(dt===last){c[c.length-1]=+r[1];v[v.length-1]=+r[2]||0;}});
    return{dates:d.slice(-CAP),closes:c.slice(-CAP),volumes:v.slice(-CAP)};}
- function fetchJSON(url){return fetch(url,{headers:_hdrs()}).then(function(r){if(r.status===401){gate();throw new Error('access code required');}if(!r.ok)return r.json().then(function(j){throw new Error(j.detail||('HTTP '+r.status));});return r.json();});}
+ function fetchJSON(url){return fetch(url,{headers:_hdrs()}).then(function(r){if(r.status===401){needAuth('signin');throw new Error('sign in required');}if(r.status===402){needAuth('subscribe');throw new Error('subscription required');}if(!r.ok)return r.json().then(function(j){throw new Error(j.detail||('HTTP '+r.status));});return r.json();});}
  function loadTicker(t,select,force){
   if(!force&&typeof DATA==='object'&&DATA[t]){if(select){selLoad(t);addToWatch(t);st(t+' ✓ (in memory)','var(--pass)');}return;}
   if(select)st('loading '+t+' …','var(--accent)');
@@ -1777,7 +1787,7 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
  }
  function restoreWatch(){var w=loadWatch();renderChips();w.forEach(function(t,i){if(!DATA[t])setTimeout(function(){loadTicker(t,false);},i*200);});if(w.length)setTimeout(refreshTracker,Math.max(1500,w.length*200+600));}
  function liveFund(t){
-  fetch(MRKT_API+'/fundamentals?ticker='+encodeURIComponent(t),{headers:_hdrs()}).then(function(r){if(r.status===401){gate();return null;}return r.ok?r.json():null;}).then(function(j){
+  fetch(MRKT_API+'/fundamentals?ticker='+encodeURIComponent(t),{headers:_hdrs()}).then(function(r){if(r.status===401){needAuth('signin');return null;}if(r.status===402){needAuth('subscribe');return null;}return r.ok?r.json():null;}).then(function(j){
    if(!j||typeof FUND!=='object'||!FUND)return;var yrs={};
    yrs[j.fy]={eps:j.eps,ebitda:j.ebitda,ebitdaMethod:j.ebitdaBasis,ebitdaMargin:j.ebitdaMargin,netMargin:j.netMargin,_rev:j.revenue,_shares:j.shares,_debt:j.debt,_cash:j.cash,fcf:j.fcf};
    if(j.priorFy)yrs[j.priorFy]={eps:j.epsPrior,_rev:j.revenuePrior};
@@ -1833,8 +1843,6 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
    });
  }
  function mount(){
-  /* gate: no verified session -> go to the access page before any data (incl. the baked snapshot) renders */
-  try{if(!sessionStorage.getItem('mrkt.ok')){location.replace('splash.html');return;}}catch(e){}
   var ctrls=document.querySelector('.ctrls');if(!ctrls)return;
   var d=document.createElement('div');d.className='ctrl';
   d.innerHTML='<label>⚡ Add ticker (saved &amp; tracked)</label><div style="display:flex;gap:4px;align-items:center">'+
@@ -1843,5 +1851,20 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
     '<button class="ghost" id="liveRefresh" title="refresh whole watchlist" style="padding:5px 6px">⟳</button>'+
     '<button class="ghost" id="liveImp" title="import list" style="padding:5px 6px">⇪</button>'+
     '<button class="ghost" id="liveExp" title="export list" style="padding:5px 6px">⇩</button></div>'+
-    '<div id="li
+    '<div id="liveWatch" style="margin-top:4px;max-width:236px;line-height:1.5"></div>'+
+    '<span id="liveStatus" style="font-size:9px;color:var(--muted);margin-top:2px;display:block"></span>';
+  ctrls.insertBefore(d,ctrls.firstChild);
+  document.getElementById('liveGo').onclick=go;
+  document.getElementById('liveRefresh').onclick=refreshAll;
+  document.getElementById('liveImp').onclick=importWatch;
+  document.getElementById('liveExp').onclick=exportWatch;
+  document.getElementById('liveTk').addEventListener('keydown',function(e){if(e.key==='Enter')go();});
+  st(MRKT_TOKEN?('signed in'+(_ls('mrkt.email')?' · '+_ls('mrkt.email'):'')+' · live search ready'):'free snapshot — sign in to search live data');
+  restoreWatch();
+  refreshIdxBoard();
+ }
+ if(document.readyState!=='loading')mount();else document.addEventListener('DOMContentLoaded',mount);
+})();
+</script>
+
 </body></html>

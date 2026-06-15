@@ -1,0 +1,57 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>mrktprice.com — sign in</title>
+<style>
+:root{--bg:#0a0d12;--muted:#8a93a0;--accent:#16c79a;--line:rgba(255,255,255,.30)}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:#fff;font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+.wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px}
+.title{font-size:clamp(30px,6vw,56px);font-weight:300;letter-spacing:.02em;color:#fff;text-decoration:none}
+.title b{font-weight:600}
+.tag{margin-top:8px;font-size:11px;letter-spacing:.36em;text-transform:uppercase;color:var(--muted)}
+.card{width:min(330px,88vw);margin-top:26px;display:flex;flex-direction:column;gap:9px}
+.card input{background:rgba(255,255,255,.03);border:1.5px solid var(--line);border-radius:10px;color:#fff;padding:11px 13px;font-size:14px;outline:none}
+.card input:focus{border-color:#fff}
+.card button{border-radius:10px;padding:11px 13px;font-size:14px;font-weight:600;cursor:pointer;border:1.5px solid #fff;background:#fff;color:#0a0d12}
+.card button.ghost{background:transparent;color:#fff}
+.card button.ghost:hover{background:rgba(255,255,255,.08)}
+.divider{color:var(--muted);font-size:11px;margin:4px 0;letter-spacing:.2em}
+.msg{min-height:16px;font-size:12px;color:var(--muted)}.msg.err{color:#ef9a9a}.msg.ok{color:#7fd1a8}
+.back{margin-top:22px;font-size:12px;color:var(--muted);text-decoration:none}
+.back:hover{color:#fff}
+</style></head>
+<body>
+<div class="wrap">
+  <a class="title" href="index.html"><b>mrkt</b>price<span style="color:var(--muted)">.com</span></a>
+  <div class="tag">sign in to search live data</div>
+  <div class="card">
+    <input id="email" placeholder="Email" autocomplete="email"/>
+    <input id="pw" type="password" placeholder="Password" autocomplete="current-password"/>
+    <button id="signin">Sign in</button>
+    <button id="signup" class="ghost">Create account</button>
+    <div class="divider">— or —</div>
+    <button id="magic" class="ghost">Email me a sign-in link</button>
+    <button id="google" class="ghost">Continue with Google</button>
+    <div class="msg" id="msg"></div>
+  </div>
+  <a class="back" href="index.html">&larr; Back to the terminal (free to view)</a>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+  var SUPABASE_URL='https://jnatyouqlrdhmghnluzv.supabase.co', SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpuYXR5b3VxbHJkaG1naG5sdXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0NzY0MzgsImV4cCI6MjA5NzA1MjQzOH0.AdJLcTE46ci7XSKckxv2cQWIFWPp6BXdHrIspay4Ajg', NEXT='index.html';
+  var email=document.getElementById('email'),pw=document.getElementById('pw');
+  function msgset(t,c){var m=document.getElementById('msg');m.textContent=t;m.className='msg'+(c?' '+c:'');}
+  if(!/^https:\/\//.test(SUPABASE_URL)||!window.supabase){msgset('Sign-in is not configured yet.','err');return;}
+  var sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
+  function persist(s){try{localStorage.setItem('mrkt.token',s.access_token);localStorage.setItem('mrkt.refresh',s.refresh_token||'');localStorage.setItem('mrkt.email',(s.user&&s.user.email)||'');}catch(e){}}
+  function done(s){persist(s);location.replace(NEXT);}
+  sb.auth.onAuthStateChange(function(_e,session){if(session)done(session);});
+  sb.auth.getSession().then(function(r){if(r.data&&r.data.session)done(r.data.session);}); // returns from magic-link / OAuth
+  document.getElementById('signin').onclick=function(){var e=email.value.trim(),p=pw.value;if(!e||!p){msgset('Enter email and password.','err');return;}msgset('Signing in…');sb.auth.signInWithPassword({email:e,password:p}).then(function(r){if(r.error)msgset(r.error.message,'err');});};
+  document.getElementById('signup').onclick=function(){var e=email.value.trim(),p=pw.value;if(!e||p.length<8){msgset('Use a valid email and an 8+ character password.','err');return;}msgset('Creating account…');sb.auth.signUp({email:e,password:p}).then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Account created — check your email to confirm, then sign in.','ok');});};
+  document.getElementById('magic').onclick=function(){var e=email.value.trim();if(!e){msgset('Enter your email first.','err');return;}msgset('Sending link…');sb.auth.signInWithOtp({email:e,options:{emailRedirectTo:location.origin+'/login.html'}}).then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Check your email for a one-time sign-in link.','ok');});};
+  document.getElementById('google').onclick=function(){sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+'/login.html'}});};
+  email.focus();
+})();
+</script></body></html>

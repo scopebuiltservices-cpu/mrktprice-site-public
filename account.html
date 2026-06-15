@@ -1,0 +1,60 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>mrktprice.com — account</title>
+<style>
+:root{--bg:#0a0d12;--muted:#8a93a0;--accent:#16c79a;--line:rgba(255,255,255,.30)}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:#fff;font:15px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+.wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px 20px}
+.title{font-size:clamp(26px,5vw,44px);font-weight:300;color:#fff;text-decoration:none}
+.title b{font-weight:600}
+.card{width:min(360px,90vw);margin-top:24px;background:rgba(255,255,255,.03);border:1.5px solid var(--line);border-radius:14px;padding:22px;text-align:left}
+.row{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:14px}
+.row:last-of-type{border-bottom:none}
+.k{color:var(--muted)}
+.v{font-weight:600}
+.pill{font-size:11px;padding:2px 9px;border-radius:20px;border:1px solid var(--line)}
+.pill.ok{color:var(--accent);border-color:var(--accent)}
+.pill.no{color:#ef9a9a;border-color:#ef9a9a}
+.btn{display:block;width:100%;text-align:center;margin-top:12px;border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;border:1.5px solid #fff;background:transparent;color:#fff}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#06281f}
+.back{margin-top:18px;font-size:12px;color:var(--muted);text-decoration:none}
+</style></head>
+<body>
+<div class="wrap">
+  <a class="title" href="index.html"><b>mrkt</b>price<span style="color:var(--muted)">.com</span></a>
+  <div class="card">
+    <div class="row"><span class="k">Signed in</span><span class="v" id="email">…</span></div>
+    <div class="row"><span class="k">Subscription</span><span class="pill" id="status">checking…</span></div>
+    <a class="btn primary" id="subscribe" href="pricing.html" style="display:none">Subscribe to unlock live search</a>
+    <a class="btn" id="manage" href="__LS_PORTAL__" style="display:none">Manage billing</a>
+    <button class="btn" id="signout">Sign out</button>
+  </div>
+  <a class="back" href="index.html">&larr; Back to the terminal</a>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+  var SUPABASE_URL='https://jnatyouqlrdhmghnluzv.supabase.co', SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpuYXR5b3VxbHJkaG1naG5sdXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0NzY0MzgsImV4cCI6MjA5NzA1MjQzOH0.AdJLcTE46ci7XSKckxv2cQWIFWPp6BXdHrIspay4Ajg';
+  var API=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:8000':'https://mrktprice-data.onrender.com';
+  var LS_PORTAL='__LS_PORTAL__';
+  if(!/^https:\/\//.test(SUPABASE_URL)||!window.supabase){document.getElementById('email').textContent='not configured';return;}
+  var sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
+  function setPill(el,txt,cls){el.textContent=txt;el.className='pill '+(cls||'');}
+  sb.auth.getSession().then(function(r){
+    var s=r.data&&r.data.session;
+    if(!s){location.replace('login.html');return;}
+    try{localStorage.setItem('mrkt.token',s.access_token);localStorage.setItem('mrkt.email',(s.user&&s.user.email)||'');}catch(e){}
+    document.getElementById('email').textContent=(s.user&&s.user.email)||'—';
+    fetch(API+'/auth',{headers:{'Authorization':'Bearer '+s.access_token},cache:'no-store'}).then(function(rr){
+      var st=document.getElementById('status');
+      if(rr.status===200){setPill(st,'Active','ok');if(/^https:\/\//.test(LS_PORTAL))document.getElementById('manage').style.display='block';}
+      else if(rr.status===402){setPill(st,'No subscription','no');document.getElementById('subscribe').style.display='block';}
+      else{setPill(st,'Unknown','');}
+    }).catch(function(){setPill(document.getElementById('status'),'offline','');});
+  });
+  document.getElementById('signout').onclick=function(){
+    sb.auth.signOut().then(function(){try{localStorage.removeItem('mrkt.token');localStorage.removeItem('mrkt.refresh');localStorage.removeItem('mrkt.email');}catch(e){}location.replace('index.html');});
+  };
+})();
+</script></body></html>

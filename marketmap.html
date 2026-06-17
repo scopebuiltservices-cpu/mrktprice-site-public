@@ -1,0 +1,121 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>mrktprice.com — Market Map</title>
+<style>
+:root{--bg:#0a0d12;--panel:#11161f;--muted:#8a93a0;--accent:#16c79a;--line:rgba(255,255,255,.14)}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:#e7ecf2;font:13px/1.4 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+.top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line)}
+.brand{font-size:18px;font-weight:300}.brand b{font-weight:700}
+.sub{color:var(--muted);font-size:11px;letter-spacing:.04em}.spacer{flex:1}
+a.home{color:var(--muted);text-decoration:none;font-size:12px}a.home:hover{color:#fff}
+.tabs{display:flex;gap:6px;padding:10px 16px 0;flex-wrap:wrap}
+.tab{padding:7px 12px;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:transparent;color:var(--muted);cursor:pointer;font-size:12px}
+.tab.on{background:var(--panel);color:#fff}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--line);background:var(--panel)}
+.bar label{color:var(--muted);font-size:11px}
+select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radius:8px;padding:6px 9px;font-size:12px;cursor:pointer}
+.wrap{padding:12px 16px 28px}
+.cv{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;display:block}
+.legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:5px}.dot{width:9px;height:9px;border-radius:50%}
+.tip{position:fixed;pointer-events:none;background:#0d121b;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:11px;display:none;z-index:9;max-width:240px}
+.tip b{color:#fff}.note{color:var(--muted);font-size:11px;margin:8px 2px}.hidden{display:none}
+</style></head>
+<body>
+<div class="top">
+  <div class="brand"><b>mrkt</b>price<span style="color:var(--muted)">.com</span> &nbsp;Market Map</div>
+  <div class="sub" id="asof">loading…</div><div class="spacer"></div>
+  <a class="home" href="index.html">&larr; Terminal</a>
+</div>
+<div class="tabs">
+  <button class="tab on" data-v="scatter">Scatter</button>
+  <button class="tab" data-v="treemap">Return treemap</button>
+  <button class="tab" data-v="corr">Correlation</button>
+  <button class="tab" data-v="grid">Sector × factor</button>
+</div>
+<div class="bar">
+  <label>Index</label>
+  <select id="idx"><option value="ALL">All (big-3)</option><option value="DOW">Dow 30</option><option value="NDX">Nasdaq-100</option><option value="SPX">S&P 500</option></select>
+  <span id="scatterCtl"><label>Plot</label>
+    <select id="mode"><option value="rr">Risk vs Return</option><option value="vm">Value vs Momentum</option><option value="fy">FCF yield vs Momentum</option><option value="mf">Money flow vs Return</option><option value="ff">Factor map (Size vs Value)</option></select></span>
+  <span id="periodCtl" class="hidden"><label>Colour</label>
+    <select id="period"><option value="ret1m" selected>1-month return</option><option value="ret1w">1-week return</option><option value="ret3m">3-month return</option><option value="ret12m">12-month return</option><option value="flow">Money flow (1m)</option></select></span>
+  <div class="spacer"></div><span class="note" id="count"></span>
+</div>
+<div class="wrap"><canvas id="cv" class="cv"></canvas><div class="legend" id="legend"></div><div class="note" id="src"></div></div>
+<div class="tip" id="tip"></div>
+<script>
+(function(){
+  var SECCOL={"Technology":"#4f9cff","Financials":"#16c79a","Health Care":"#e06ee0","Consumer Disc.":"#ffb04d","Communication":"#7ad1ff","Industrials":"#c0c7d0","Consumer Staples":"#8bd17c","Energy":"#ef6a6a","Utilities":"#9aa0ff","Materials":"#d9c14a","Real Estate":"#ff8fb3"};
+  var D=null, view="scatter", cv=document.getElementById('cv'), g=cv.getContext('2d'), tip=document.getElementById('tip'), pts=[];
+  function $(id){return document.getElementById(id);}
+  function dpr(){return Math.min(window.devicePixelRatio||1,2);}
+  function size(h){var w=cv.clientWidth;cv.width=w*dpr();cv.height=h*dpr();cv.style.height=h+'px';g.setTransform(dpr(),0,0,dpr(),0,0);return [w,h];}
+  function filtered(){var ix=$('idx').value;return D.names.filter(function(n){return ix==='ALL'||n.idx.indexOf(ix)>=0;});}
+  function fmtB(v){return v>=1e12?(v/1e12).toFixed(2)+'T':v>=1e9?(v/1e9).toFixed(0)+'B':(v/1e6).toFixed(0)+'M';}
+  function ext(a){var v=a.filter(function(x){return x===x;});if(!v.length)return[0,1];var lo=Math.min.apply(0,v),hi=Math.max.apply(0,v);if(lo===hi){lo-=1;hi+=1;}var p=(hi-lo)*0.06;return[lo-p,hi+p];}
+  function axes(w,h,pad,xr,yr,xl,yl,x0,y0){g.clearRect(0,0,w,h);g.fillStyle='#0d121b';g.fillRect(0,0,w,h);g.strokeStyle='rgba(255,255,255,.10)';g.fillStyle='#8a93a0';g.font='10px sans-serif';
+    for(var i=0;i<=4;i++){var x=pad+i/4*(w-pad-12);g.beginPath();g.moveTo(x,8);g.lineTo(x,h-pad);g.stroke();g.fillText((xr[0]+i/4*(xr[1]-xr[0])).toFixed(1),x-8,h-pad+12);}
+    for(var j=0;j<=4;j++){var y=8+j/4*(h-pad-8);g.beginPath();g.moveTo(pad,y);g.lineTo(w-12,y);g.stroke();g.fillText((yr[1]-j/4*(yr[1]-yr[0])).toFixed(1),4,y+3);}
+    g.fillStyle='#c0c7d0';g.fillText(xl,w/2-20,h-4);g.save();g.translate(10,h/2+20);g.rotate(-Math.PI/2);g.fillText(yl,0,0);g.restore();
+    if(x0!=null){var xz=pad+(x0-xr[0])/(xr[1]-xr[0])*(w-pad-12);g.strokeStyle='rgba(255,255,255,.22)';g.beginPath();g.moveTo(xz,8);g.lineTo(xz,h-pad);g.stroke();}
+    if(y0!=null){var yz=8+(yr[1]-y0)/(yr[1]-yr[0])*(h-pad-8);g.strokeStyle='rgba(255,255,255,.22)';g.beginPath();g.moveTo(pad,yz);g.lineTo(w-12,yz);g.stroke();}}
+  function netflow(n){return (n.flow&&n.flow.net1m===n.flow.net1m)?n.flow.net1m:0;}
+  function scatter(){
+    var ns=filtered(),d=size(Math.max(420,Math.min(640,cv.clientWidth*0.62))),W=d[0],H=d[1],pad=44,mode=$('mode').value,xs,ys,xl,yl,x0=null,y0=null;
+    if(mode==='rr'){xs=ns.map(function(n){return n.beta;});ys=ns.map(function(n){return n.ret['12m'];});xl='Beta (market risk)';yl='12-month return %';x0=1;y0=0;}
+    else if(mode==='vm'){xs=ns.map(function(n){return n.z.val;});ys=ns.map(function(n){return n.z.mom;});xl='Value z (cheap →)';yl='Momentum z';x0=0;y0=0;}
+    else if(mode==='fy'){xs=ns.map(function(n){return n.fcfY;});ys=ns.map(function(n){return n.z.mom;});xl='Free cash flow yield %';yl='Momentum z';x0=0;y0=0;}
+    else if(mode==='mf'){xs=ns.map(netflow);ys=ns.map(function(n){return n.ret['12m'];});xl='Money flow (1m net, inflow →)';yl='12-month return %';x0=0;y0=0;}
+    else {xs=ns.map(function(n){return n.z.size;});ys=ns.map(function(n){return n.ff.HML;});xl='Size z (large →)';yl='Value loading (HML)';x0=0;y0=0;}
+    var xr=ext(xs),yr=ext(ys);axes(W,H,pad,xr,yr,xl,yl,x0,y0);pts=[];var mc=ns.map(function(n){return Math.log(n.mcap);}),mcr=ext(mc);
+    ns.forEach(function(n,i){var px=pad+(xs[i]-xr[0])/(xr[1]-xr[0]||1)*(W-pad-12),py=8+(yr[1]-ys[i])/(yr[1]-yr[0]||1)*(H-pad-8),r=3+7*(mc[i]-mcr[0])/((mcr[1]-mcr[0])||1);
+      g.beginPath();g.arc(px,py,r,0,7);g.fillStyle=(SECCOL[n.sec]||'#9aa')+'cc';g.fill();pts.push({x:px,y:py,r:r+2,n:n});});
+    legend(true);$('count').textContent=ns.length+' names';}
+  function treemap(){
+    var ns=filtered().filter(function(n){return n.mcap;}),metric=$('period').value,d=size(Math.max(440,Math.min(680,cv.clientWidth*0.66))),W=d[0],H=d[1];g.clearRect(0,0,W,H);
+    var bySec={};ns.forEach(function(n){(bySec[n.sec]=bySec[n.sec]||[]).push(n);});function sum(a){return a.reduce(function(s,n){return s+n.mcap;},0);}
+    var secs=Object.keys(bySec).sort(function(a,b){return sum(bySec[b])-sum(bySec[a]);}),tot=sum(ns),cx=2;pts=[];
+    function mval(n){return metric==='flow'?netflow(n)*10:(n.ret[metric.replace('ret','')]||0);}
+    secs.forEach(function(s){var arr=bySec[s].slice().sort(function(a,b){return b.mcap-a.mcap;}),cw=Math.max(60,(sum(arr)/tot)*(W-4));
+      g.fillStyle='#0d121b';g.fillRect(cx,2,cw-2,16);g.fillStyle=SECCOL[s]||'#9aa';g.font='10px sans-serif';g.fillText(s.slice(0,Math.floor(cw/6)),cx+4,14);
+      var yy=20,ah=H-22,asum=sum(arr);arr.forEach(function(n){var hh=Math.max(8,(n.mcap/asum)*ah);g.fillStyle=col(mval(n));g.fillRect(cx+1,yy,cw-3,hh-1);
+        if(hh>16&&cw>44){g.fillStyle='#0a0d12';g.font='bold 10px sans-serif';g.fillText(n.t,cx+4,yy+12);}pts.push({x:cx+1,y:yy,w:cw-3,h:hh-1,n:n,rect:1});yy+=hh;});cx+=cw;});
+    legend(false);$('count').textContent=ns.length+' names · tile colour = '+(metric==='flow'?'money flow':metric.replace('ret','')+' return');}
+  function col(v){var t=Math.max(-1,Math.min(1,v/8));return t>=0?'rgba(22,199,154,'+(0.25+0.6*t)+')':'rgba(239,106,106,'+(0.25+0.6*-t)+')';}
+  function corr(){var o=D.sectorCorr.order,M=D.sectorCorr.m,n=o.length,d=size(Math.max(380,Math.min(560,cv.clientWidth*0.6))),W=d[0],H=d[1];g.clearRect(0,0,W,H);g.fillStyle='#0d121b';g.fillRect(0,0,W,H);
+    var pad=96,cell=Math.min((W-pad-10)/n,(H-pad-10)/n);
+    for(var i=0;i<n;i++)for(var j=0;j<n;j++){var v=M[i][j];g.fillStyle=cc(v);g.fillRect(pad+j*cell,pad+i*cell,cell-1,cell-1);if(cell>26){g.fillStyle='rgba(0,0,0,.6)';g.font='9px sans-serif';g.fillText(v.toFixed(2),pad+j*cell+3,pad+i*cell+cell/2+3);}}
+    g.fillStyle='#c0c7d0';g.font='9px sans-serif';for(var k=0;k<n;k++){g.fillText(o[k].slice(0,11),3,pad+k*cell+cell/2+3);g.save();g.translate(pad+k*cell+cell/2,pad-4);g.rotate(-Math.PI/3);g.fillText(o[k].slice(0,11),0,0);g.restore();}
+    legend(false,true);$('count').textContent='Sector return correlation (clustered)';}
+  function cc(v){var t=(v+1)/2;return 'rgb('+Math.round(40+(1-t)*200)+','+Math.round(40+t*150)+','+Math.round(70+t*100)+')';}
+  function grid(){var ns=filtered(),secs=D.sectors.filter(function(s){return ns.some(function(n){return n.sec===s;});}),cols=[['val','Value'],['mom','Momentum'],['risk','Risk (β)'],['size','Size'],['fcf','FCF yld'],['flow','Money flow']];
+    var d=size(Math.max(40+secs.length*30,300)),W=d[0],H=d[1];g.clearRect(0,0,W,H);g.fillStyle='#0d121b';g.fillRect(0,0,W,H);
+    var pL=118,pT=30,cw=Math.min(120,(W-pL-8)/cols.length),rh=Math.min(30,(H-pT-6)/secs.length);g.fillStyle='#c0c7d0';g.font='10px sans-serif';
+    cols.forEach(function(c,j){g.fillText(c[1],pL+j*cw+6,pT-10);});
+    secs.forEach(function(s,i){g.fillStyle=SECCOL[s]||'#9aa';g.font='10px sans-serif';g.fillText(s.slice(0,15),6,pT+i*rh+rh/2+3);
+      cols.forEach(function(c,j){var m=ns.filter(function(n){return n.sec===s;}).map(function(n){return n.z[c[0]];}),z=m.reduce(function(a,b){return a+b;},0)/(m.length||1);
+        g.fillStyle=zc(z);g.fillRect(pL+j*cw+2,pT+i*rh+2,cw-4,rh-3);g.fillStyle='rgba(0,0,0,.72)';g.fillText(z.toFixed(2),pL+j*cw+6,pT+i*rh+rh/2+3);});});
+    legend(false,true);$('count').textContent='Average cross-sectional z-score by sector';}
+  function zc(z){var t=Math.max(-1,Math.min(1,z/2));return t>=0?'rgba(22,199,154,'+(0.2+0.6*t)+')':'rgba(239,106,106,'+(0.2+0.6*-t)+')';}
+  function legend(sec,scale){var L=$('legend');L.innerHTML='';if(sec){Object.keys(SECCOL).forEach(function(s){L.innerHTML+='<span><i class="dot" style="background:'+SECCOL[s]+'"></i>'+s+'</span>';});L.innerHTML+='<span style="color:#8a93a0">• dot size = market cap</span>';}
+    else if(scale){L.innerHTML='<span><i class="dot" style="background:#ef6a6a"></i>low / negative</span><span><i class="dot" style="background:#16c79a"></i>high / positive</span>';}
+    else{L.innerHTML='<span><i class="dot" style="background:#ef6a6a"></i>down / outflow</span><span><i class="dot" style="background:#16c79a"></i>up / inflow</span><span style="color:#8a93a0">tile size = market cap</span>';}}
+  function render(){$('scatterCtl').className=view==='scatter'?'':'hidden';$('periodCtl').className=view==='treemap'?'':'hidden';if(view==='scatter')scatter();else if(view==='treemap')treemap();else if(view==='corr')corr();else grid();}
+  cv.addEventListener('mousemove',function(e){var r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top,hit=null;
+    for(var i=0;i<pts.length;i++){var p=pts[i];if(p.rect){if(mx>=p.x&&mx<=p.x+p.w&&my>=p.y&&my<=p.y+p.h){hit=p;break;}}else{var dx=mx-p.x,dy=my-p.y;if(dx*dx+dy*dy<=p.r*p.r){hit=p;break;}}}
+    if(hit){var n=hit.n,fl=(n.flow&&n.flow.net1m===n.flow.net1m)?((n.flow.net1m>0?'+':'')+n.flow.net1m):'—';tip.style.display='block';tip.style.left=(e.clientX+12)+'px';tip.style.top=(e.clientY+12)+'px';
+      tip.innerHTML='<b>'+n.t+'</b> '+n.n+'<br>'+n.sec+' · '+fmtB(n.mcap)+'<br>β '+n.beta+' · vol '+n.vol+'% · 12m '+n.ret['12m']+'%<br>FCF yld '+(n.fcfY==null?'—':n.fcfY+'%')+' · money flow '+fl;}else tip.style.display='none';});
+  cv.addEventListener('mouseleave',function(){tip.style.display='none';});
+  cv.addEventListener('click',function(e){var r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+    for(var i=0;i<pts.length;i++){var p=pts[i],ok;if(p.rect)ok=(mx>=p.x&&mx<=p.x+p.w&&my>=p.y&&my<=p.y+p.h);else{var dx=mx-p.x,dy=my-p.y;ok=dx*dx+dy*dy<=p.r*p.r;}
+      if(ok){try{localStorage.setItem('mrkt.jump',p.n.t);}catch(_){}location.href='index.html';return;}}});
+  document.querySelectorAll('.tab').forEach(function(t){t.onclick=function(){document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on');});t.classList.add('on');view=t.getAttribute('data-v');render();};});
+  ['idx','mode','period'].forEach(function(id){var el=$(id);if(el)el.onchange=render;});
+  window.addEventListener('resize',function(){clearTimeout(window._rt);window._rt=setTimeout(render,150);});
+  function start(d){D=d;$('asof').textContent='as of '+D.asof+' · big-3 universe';$('src').textContent=D.source+' · research/illustrative only, not investment advice.';render();}
+  if(window.MARKETMAP)start(window.MARKETMAP);
+  else fetch('marketmap.json',{cache:'no-store'}).then(function(r){return r.json();}).then(start).catch(function(){$('asof').textContent='market map data not available yet';});
+})();
+</script></body></html>

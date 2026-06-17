@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# rev: NaN-safe live build (yfinance gap handling + JSON allow_nan guard)
 """MrktPrice Market Map — daily cross-sectional precompute for the index universes.
 
 Computes, per constituent, a coherent metric matrix and writes a compact snapshot the
@@ -167,6 +166,13 @@ def aggregate(wr):
     return {"1w":round(wr[-1]*100,2) if wr else 0,"1m":round(cum(4),2),"3m":round(cum(13),2),"6m":round(cum(26),2),"12m":round(cum(52),2)}
 
 def build(names,mkt,ff):
+    # Normalize every series to a common trailing length so real-data tickers with
+    # different listing histories align (synthetic data is already uniform). Guards the
+    # OLS factor regression (mkt[w]) and the sector-mean loop against ragged arrays.
+    L=min([len(mkt)]+[len(n["wr"]) for n in names if n.get("wr")] or [0])
+    if L>2:
+        mkt=mkt[-L:]; ff={k:(v[-L:] if len(v)>=L else v+[0.0]*(L-len(v))) for k,v in ff.items()}
+        for n in names: n["wr"]=n["wr"][-L:]
     for n in names:
         wr=[x if (x is not None and x==x) else 0.0 for x in n["wr"]]; n["wr"]=wr; n["ret"]=aggregate(wr)
         _v=ann_vol(wr); _b=beta(wr,mkt)

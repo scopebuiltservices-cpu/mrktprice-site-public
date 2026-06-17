@@ -95,6 +95,75 @@ def money_flow(closes, vols):
     net=(infl-outfl)/tot if tot>0 else float("nan")
     return net, infl, outfl, last_in, last_out
 
+# ---------- analytics added from cash-flow analysis review (all pure-python, unit-tested) ------
+MACROF=["MKT","DXY","RATE","VIX","OIL"]   # macro factor panel for the sparse attribution
+
+def _ok(*xs):
+    for x in xs:
+        if x is None or x!=x: return False
+    return True
+
+def mfi(highs, lows, closes, vols, period=14):
+    """Money Flow Index (0..100): bounded money-flow oscillator on typical price.
+    TP=(H+L+C)/3; RMF=TP*Vol; up-day RMF is positive flow, down-day negative; MFI=100-100/(1+pos/neg)."""
+    tp=[((h+l+c)/3.0 if _ok(h,l,c) else None) for h,l,c in zip(highs,lows,closes)]
+    flows=[]
+    for i in range(1,len(tp)):
+        if tp[i] is None or tp[i-1] is None or not _ok(vols[i]): continue
+        rmf=tp[i]*vols[i]
+        if tp[i]>tp[i-1]: flows.append((rmf,0.0))
+        elif tp[i]<tp[i-1]: flows.append((0.0,rmf))
+        else: flows.append((0.0,0.0))
+    flows=flows[-period:]
+    pos=sum(f[0] for f in flows); neg=sum(f[1] for f in flows)
+    if neg<=0: return 100.0 if pos>0 else 50.0
+    return 100.0-100.0/(1.0+pos/neg)
+
+def atr(highs, lows, closes, period=14):
+    """Average True Range over `period` days (Wilder true range, simple mean)."""
+    trs=[]
+    for i in range(1,len(closes)):
+        h,l,pc=highs[i],lows[i],closes[i-1]
+        if not _ok(h,l,pc): continue
+        trs.append(max(h-l,abs(h-pc),abs(l-pc)))
+    trs=trs[-period:]
+    return sum(trs)/len(trs) if trs else float("nan")
+
+def zstd(col):
+    v=[x for x in col if _ok(x)]
+    if len(v)<2: return [0.0 for _ in col],0.0,1.0
+    m=sum(v)/len(v); sd=(sum((x-m)**2 for x in v)/len(v))**0.5 or 1.0
+    return [((x-m)/sd if _ok(x) else 0.0) for x in col],m,sd
+
+def lasso_cd(y, X, alpha=0.08, iters=300):
+    """Lasso via coordinate descent on STANDARDIZED y and X (so betas are comparable,
+    L1 penalises predictive power not raw scale). Returns sparse standardized betas.
+    Objective: (1/2n)||y-Xb||^2 + lambda*||b||_1, lambda=alpha*n. Gram-matrix CD for speed."""
+    n=len(y); k=len(X[0]) if (n and X) else 0
+    if n<6 or k==0: return [0.0]*k
+    ys,_,_=zstd(y)
+    cols=[[X[r][j] for r in range(n)] for j in range(k)]
+    Z=[zstd(c)[0] for c in cols]                       # standardized columns
+    G=[[sum(Z[a][r]*Z[b][r] for r in range(n)) for b in range(k)] for a in range(k)]
+    Zty=[sum(Z[a][r]*ys[r] for r in range(n)) for a in range(k)]
+    lam=alpha*n; beta=[0.0]*k
+    for _ in range(iters):
+        for j in range(k):
+            rho=Zty[j]-sum(G[j][t]*beta[t] for t in range(k))+G[j][j]*beta[j]
+            d=G[j][j] or 1.0; z=rho/d; g=lam/d
+            beta[j]= z-g if z>g else (z+g if z<-g else 0.0)
+    return beta
+
+def macro_fit(y, factors):
+    """OLS fit of y on the macro factor columns (list of equal-length series); returns
+    (fitted, residuals). Used for the dislocation residual after Lasso flags active drivers."""
+    n=len(y); k=len(factors)
+    if n<6 or k==0: return list(y),[0.0]*n
+    X=[[1.0]+[factors[j][r] for j in range(k)] for r in range(n)]
+    b=ols_betas(y,X)
+    fit=[sum(X[r][c]*b[c] for c in range(k+1)) for r in range(n)]
+    return fit,[y[r]-fit[r] for r in range(n)]
+
 # ---------- synthetic seed (recognisable names, illustrative numbers) -------------------------
 SEED=[("AAPL","Apple","Technology","ND S"),("MSFT","Microsoft","Technology","ND S"),("NVDA","NVIDIA","Technology","ND S"),
 ("AVGO","Broadcom","Technology","ND S"),("ORCL","Oracle","Technology","S"),("CRM","Salesforce","Technology","D S"),
@@ -156,43 +225,44 @@ def membership(code):
     if "R" in p: idx.append("RUT")
     return sorted(set(idx)) or ["SPX"]
 
+SECMACRO={"Energy":{"OIL":1.10,"DXY":-0.20},"Financials":{"RATE":0.55,"DXY":0.10},
+ "Materials":{"OIL":0.45,"DXY":-0.30},"Utilities":{"RATE":-0.55},"Real Estate":{"RATE":-0.60},
+ "Technology":{"RATE":-0.30,"VIX":-0.25},"Consumer Disc.":{"RATE":-0.20,"VIX":-0.25},
+ "Communication":{"VIX":-0.20},"Industrials":{"OIL":0.25},"Consumer Staples":{"VIX":0.10},"Health Care":{}}
+
 def synth(seed=7):
     rng=random.Random(seed); W=53
     mkt=[rng.gauss(0.002,0.022) for _ in range(W)]
     secf={s:[rng.gauss(0,0.012) for _ in range(W)] for s in SECTORS}
     ff={"SMB":[rng.gauss(0,0.01) for _ in range(W)],"HML":[rng.gauss(0,0.01) for _ in range(W)],"MOM":[rng.gauss(0,0.01) for _ in range(W)]}
+    macro={"DXY":[rng.gauss(0,0.008) for _ in range(W)],"RATE":[rng.gauss(0,0.012) for _ in range(W)],
+           "VIX":[rng.gauss(0,0.05) for _ in range(W)],"OIL":[rng.gauss(0,0.03) for _ in range(W)]}
     names=[]
+    def mk(sym,nm,sec,idx,mcaprange,idiorange,liquid):
+        b=rng.uniform(*[0.6,1.6] if liquid else [0.7,1.9]); sl=rng.uniform(0.5,1.2)
+        cs,ch,cm=rng.uniform(-0.8,0.8),rng.uniform(-0.8,0.8),rng.uniform(-0.6,0.6); idio=rng.uniform(*idiorange)
+        mb={f:SECMACRO.get(sec,{}).get(f,0.0)+rng.gauss(0,0.12) for f in ("DXY","RATE","VIX","OIL")}
+        wr=[b*mkt[w]+sl*secf[sec][w]+cs*ff["SMB"][w]+ch*ff["HML"][w]+cm*ff["MOM"][w]
+            +sum(mb[f]*macro[f][w] for f in mb)+rng.gauss(0,idio) for w in range(W)]
+        mcap=math.exp(rng.uniform(*mcaprange))
+        px=100.0; closes=[]; highs=[]; lows=[]; vols=[]
+        for w in range(W):
+            for _ in range(5):
+                dr=wr[w]/5+rng.gauss(0,idio/2); px*=(1+dr); u=rng.uniform(0.003,0.02)
+                closes.append(px); highs.append(px*(1+u)); lows.append(px*(1-u))
+                vols.append(rng.uniform(0.6,1.8)*mcap*(0.0008 if liquid else 0.0012)*(1+abs(dr)*8))
+        fcf=mcap*rng.uniform(-0.02,0.08) if liquid else mcap*rng.uniform(-0.05,0.07)
+        rec={"t":sym,"n":nm,"sec":sec,"idx":idx,"mcap":round(mcap),
+             "wr":[round(x,5) for x in wr],"_cl":closes,"_hi":highs,"_lo":lows,"_vol":vols,"_fcf":fcf}
+        if liquid and rng.random()<0.85:                 # liquid names carry an options chain
+            sp=closes[-1]; rec["_opt"]={"pw":round(sp*rng.uniform(0.88,0.97),2),"cw":round(sp*rng.uniform(1.03,1.12),2),
+                                        "pcr":round(rng.uniform(0.6,1.7),2),"gex":round(sp*rng.uniform(0.97,1.03),2)}
+        return rec
     for sym,nm,sec,code in SEED:
-        b=rng.uniform(0.6,1.6); sl=rng.uniform(0.5,1.2)
-        cs,ch,cm=rng.uniform(-0.8,0.8),rng.uniform(-0.8,0.8),rng.uniform(-0.6,0.6); idio=rng.uniform(0.01,0.03)
-        wr=[b*mkt[w]+sl*secf[sec][w]+cs*ff["SMB"][w]+ch*ff["HML"][w]+cm*ff["MOM"][w]+rng.gauss(0,idio) for w in range(W)]
-        mcap=math.exp(rng.uniform(23.5,28.8))
-        # synthetic daily closes+volumes (for money flow) consistent with weekly direction
-        px=100.0; closes=[px]; vols=[]
-        for w in range(W):
-            for _ in range(5):
-                dr=wr[w]/5+rng.gauss(0,idio/2); px*=(1+dr); closes.append(px)
-                vols.append(rng.uniform(0.6,1.6)*mcap*0.0008*(1+abs(dr)*8))
-        closes=closes[1:]
-        fcf=mcap*rng.uniform(-0.02,0.08)            # synthetic free cash flow ($)
-        names.append({"t":sym,"n":nm,"sec":sec,"idx":membership(code),"mcap":round(mcap),
-                      "wr":[round(x,5) for x in wr],"_cl":closes,"_vol":vols,"_fcf":fcf})
-    # Russell 2000 small/mid-cap cohort: smaller caps, higher idiosyncratic vol, positive SMB tilt
+        names.append(mk(sym,nm,sec,membership(code),[23.5,28.8],[0.01,0.03],True))
     for sym,nm,sec in RUSSELL_SEED:
-        b=rng.uniform(0.7,1.9); sl=rng.uniform(0.4,1.1)
-        cs=rng.uniform(0.3,1.3); ch=rng.uniform(-0.9,0.9); cm=rng.uniform(-0.7,0.7); idio=rng.uniform(0.025,0.055)
-        wr=[b*mkt[w]+sl*secf[sec][w]+cs*ff["SMB"][w]+ch*ff["HML"][w]+cm*ff["MOM"][w]+rng.gauss(0,idio) for w in range(W)]
-        mcap=math.exp(rng.uniform(20.4,24.2))          # ~$0.7B..$32B
-        px=100.0; closes=[px]; vols=[]
-        for w in range(W):
-            for _ in range(5):
-                dr=wr[w]/5+rng.gauss(0,idio/2); px*=(1+dr); closes.append(px)
-                vols.append(rng.uniform(0.6,1.8)*mcap*0.0012*(1+abs(dr)*9))
-        closes=closes[1:]
-        fcf=mcap*rng.uniform(-0.05,0.07)
-        names.append({"t":sym,"n":nm,"sec":sec,"idx":["RUT"],"mcap":round(mcap),
-                      "wr":[round(x,5) for x in wr],"_cl":closes,"_vol":vols,"_fcf":fcf})
-    return names,mkt,ff
+        names.append(mk(sym,nm,sec,["RUT"],[20.4,24.2],[0.025,0.055],False))
+    return names,mkt,ff,macro
 
 def aggregate(wr):
     def cum(k):
@@ -201,14 +271,17 @@ def aggregate(wr):
         return (p-1)*100
     return {"1w":round(wr[-1]*100,2) if wr else 0,"1m":round(cum(4),2),"3m":round(cum(13),2),"6m":round(cum(26),2),"12m":round(cum(52),2)}
 
-def build(names,mkt,ff):
+def build(names,mkt,ff,macro=None):
+    macro=macro or {}
     # Normalize every series to a common trailing length so real-data tickers with
     # different listing histories align (synthetic data is already uniform). Guards the
     # OLS factor regression (mkt[w]) and the sector-mean loop against ragged arrays.
     L=min([len(mkt)]+[len(n["wr"]) for n in names if n.get("wr")] or [0])
     if L>2:
         mkt=mkt[-L:]; ff={k:(v[-L:] if len(v)>=L else v+[0.0]*(L-len(v))) for k,v in ff.items()}
+        macro={k:(v[-L:] if len(v)>=L else v+[0.0]*(L-len(v))) for k,v in macro.items()}
         for n in names: n["wr"]=n["wr"][-L:]
+    MFAC=[f for f in ("DXY","RATE","VIX","OIL") if f in macro and len(macro[f])==len(mkt)]
     for n in names:
         wr=[x if (x is not None and x==x) else 0.0 for x in n["wr"]]; n["wr"]=wr; n["ret"]=aggregate(wr)
         _v=ann_vol(wr); _b=beta(wr,mkt)
@@ -227,13 +300,38 @@ def build(names,mkt,ff):
             n["flow"]={"net1m":0.0,"net3m":0.0,"in":0,"out":0,"din":0,"dout":0}
         fcf=n.pop("_fcf",None); n["fcf"]=round(fcf) if fcf is not None else None
         n["fcfY"]=round(fcf/n["mcap"]*100,2) if (fcf is not None and n["mcap"]) else None
+        # MFI (0..100) + ATR% + breakout flag from daily High/Low/Close/Volume
+        hi=n.pop("_hi",None); lo=n.pop("_lo",None); n["opt"]=n.pop("_opt",None)
+        if cl and lo and hi and vo and len(cl)>15:
+            mv=mfi(hi,lo,cl,vo,14); a=atr(hi,lo,cl,14)
+            n["mfi"]=round(mv,1) if mv==mv else 50.0
+            n["atr"]=round(a/cl[-1]*100,2) if (a==a and cl[-1]) else 0.0
+            n["brk"]=1 if (len(cl)>=2 and a==a and cl[-1]<cl[-2]-a) else 0
+        else:
+            n["mfi"]=50.0; n["atr"]=0.0; n["brk"]=0
+        # Sparse macro attribution (Lasso) + dislocation residual (decoupling from macro beta)
+        if MFAC and len(wr)>=8:
+            cols=[mkt]+[macro[f] for f in MFAC]; fac=["MKT"]+MFAC
+            Xr=[[cols[c][w] for c in range(len(cols))] for w in range(len(wr))]
+            bl=lasso_cd(wr,Xr,alpha=0.08)
+            n["mb"]={fac[c]:round(bl[c],2) for c in range(len(fac)) if abs(bl[c])>=0.05}
+            n["drv"]=max(n["mb"],key=lambda f:abs(n["mb"][f])) if n["mb"] else None
+            _,res=macro_fit(wr,cols)
+            rmean=sum(res)/len(res); rstd=(sum((x-rmean)**2 for x in res)/len(res))**0.5 or 1.0
+            n["_disloc"]=(sum(res[-4:])/4.0)/rstd*2.0
+        else:
+            n["mb"]={}; n["drv"]=None; n["_disloc"]=0.0
     val=[ -n["ret"]["12m"]/(n["vol"] or 1) for n in names]; mom=[n["ret"]["6m"] for n in names]
     risk=[n["beta"] for n in names]; size=[math.log(n["mcap"]) for n in names]
     fcy=[n["fcfY"] for n in names]; flw=[n["flow"]["net1m"] for n in names]
+    dis=[n.get("_disloc",0.0) for n in names]; mfv=[n.get("mfi",50.0) for n in names]
     Z=lambda a:zscores(winsorize(a))
     zV,zM,zR,zS,zF,zL=Z(val),Z(mom),Z(risk),Z(size),Z(fcy),Z(flw)
+    zD,zMF=Z(dis),Z(mfv)
     for i,n in enumerate(names):
-        n["z"]={"val":round(zV[i],2),"mom":round(zM[i],2),"risk":round(zR[i],2),"size":round(zS[i],2),"fcf":round(zF[i],2),"flow":round(zL[i],2)}
+        n["z"]={"val":round(zV[i],2),"mom":round(zM[i],2),"risk":round(zR[i],2),"size":round(zS[i],2),
+                "fcf":round(zF[i],2),"flow":round(zL[i],2),"disloc":round(zD[i],2),"mfi":round(zMF[i],2)}
+        n["disloc"]=round(zD[i],2); n.pop("_disloc",None)
     secmean={}
     for s in SECTORS:
         mem=[n["wr"] for n in names if n["sec"]==s]
@@ -242,7 +340,7 @@ def build(names,mkt,ff):
     M=[[round(pearson(secmean[a],secmean[b]),3) for b in osec] for a in osec]
     oi=cluster_order(M); osec=[osec[i] for i in oi]; M=[[M[i][j] for j in oi] for i in oi]
     return {"asof":dt.date.today().isoformat(),"source":"SAMPLE (synthetic, illustrative) — replaced by the nightly job",
-            "indices":{"DOW":"Dow Jones 30","NDX":"Nasdaq-100","SPX":"S&P 500","RUT":"Russell 2000"},"sectors":SECTORS,"factors":FACTORS,
+            "indices":{"DOW":"Dow Jones 30","NDX":"Nasdaq-100","SPX":"S&P 500","RUT":"Russell 2000"},"sectors":SECTORS,"factors":FACTORS,"macrof":["MKT"]+MFAC,
             "names":names,"sectorCorr":{"order":osec,"m":M}}
 
 # ---------- real fetch (nightly Action only; needs network) ------------------------------------
@@ -289,14 +387,16 @@ def fetch_russell(yf, limit, UA):
         for tk,nm,sec,mv in ch:
             try:
                 sub=data[tk] if len(syms)>1 else data
-                cl=[];vo=[]
-                for c,v in zip(sub["Close"].tolist(), sub["Volume"].tolist()):
+                cl=[];vo=[];hi=[];lo=[]
+                for c,v,H,Lw in zip(sub["Close"].tolist(), sub["Volume"].tolist(), sub["High"].tolist(), sub["Low"].tolist()):
                     c=float(c); v=float(v)
-                    if c==c and c>0: cl.append(c); vo.append(v if v==v else 0.0)
+                    if c==c and c>0:
+                        cl.append(c); vo.append(v if v==v else 0.0)
+                        H=float(H); Lw=float(Lw); hi.append(H if H==H else c); lo.append(Lw if Lw==Lw else c)
                 if len(cl)<30: continue
                 wk=cl[::5]; wr=[(wk[i]/wk[i-1]-1) for i in range(1,len(wk)) if wk[i-1]]
                 out.append({"t":tk,"n":nm,"sec":sec,"idx":["RUT"],"mcap":round(mv or 1e9),
-                            "wr":[round(x,5) for x in wr],"_cl":cl,"_vol":vo,"_fcf":None})
+                            "wr":[round(x,5) for x in wr],"_cl":cl,"_hi":hi,"_lo":lo,"_vol":vo,"_fcf":None})
             except Exception: continue
     return out
 
@@ -326,17 +426,18 @@ def real_universe():
     for sym,nm,sec_name,code in SEED:        # phase-1 universe (extend to full big-3 once holdings parse is wired)
         try:
             h=yf.Ticker(sym).history(period="1y",interval="1d",auto_adjust=True)
-            cl=[];vo=[]
-            for c,v in zip(h["Close"].tolist(), h["Volume"].tolist()):
+            cl=[];vo=[];hi=[];lo=[]
+            for c,v,H,Lw in zip(h["Close"].tolist(), h["Volume"].tolist(), h["High"].tolist(), h["Low"].tolist()):
                 c=float(c); v=float(v)
                 if c==c and c>0:                     # drop NaN / non-positive closes, keep alignment
                     cl.append(c); vo.append(v if v==v else 0.0)
+                    H=float(H); Lw=float(Lw); hi.append(H if H==H else c); lo.append(Lw if Lw==Lw else c)
             if len(cl)<10: raise ValueError("insufficient history")
             wk=cl[::5]; wr=[(wk[i]/wk[i-1]-1) for i in range(1,len(wk)) if wk[i-1]]
             info=yf.Ticker(sym).get_info(); mcap=float(info.get("marketCap") or 0) or (cl[-1]*float(info.get("sharesOutstanding") or 0))
             fcf=info.get("freeCashflow")
             names.append({"t":sym,"n":nm,"sec":sec_name,"idx":membership(code),"mcap":round(mcap or 1e9),
-                          "wr":[round(x,5) for x in wr],"_cl":cl,"_vol":vo,"_fcf":float(fcf) if fcf else None})
+                          "wr":[round(x,5) for x in wr],"_cl":cl,"_hi":hi,"_lo":lo,"_vol":vo,"_fcf":float(fcf) if fcf else None})
         except Exception as e:
             sys.stderr.write(f"skip {sym}: {e}\n")
     # ---- Russell 2000 (phase 2): iShares IWM holdings, batch-downloaded (env RUSSELL_LIMIT caps size; 0 = all) ----
@@ -347,21 +448,53 @@ def real_universe():
     except Exception as e:
         sys.stderr.write(f"russell skip: {e}\n")
     # market proxy = SPY weekly
-    try:
-        h=yf.Ticker("SPY").history(period="1y",interval="1d",auto_adjust=True)
-        spc=[float(x) for x in h["Close"].tolist() if float(x)==float(x) and float(x)>0]
-        spw=spc[::5]; mkt=[(spw[i]/spw[i-1]-1) for i in range(1,len(spw)) if spw[i-1]]
-    except Exception: mkt=[0.0]*52
+    def _wret(sym):
+        try:
+            h=yf.Ticker(sym).history(period="1y",interval="1d",auto_adjust=True)
+            c=[float(x) for x in h["Close"].tolist() if float(x)==float(x) and float(x)>0]
+            w=c[::5]; return [(w[i]/w[i-1]-1) for i in range(1,len(w)) if w[i-1]]
+        except Exception: return []
+    mkt=_wret("SPY") or [0.0]*52
     ff={"SMB":[0.0]*len(mkt),"HML":[0.0]*len(mkt),"MOM":[0.0]*len(mkt)}  # FF factors optional; default 0 if no source
-    return names,mkt,ff
+    # ---- macro factor panel (free proxies) for the sparse Lasso attribution + dislocation ----
+    macro={"DXY":_wret("DX-Y.NYB") or _wret("UUP"),"RATE":_wret("^TNX"),
+           "VIX":_wret("^VIX"),"OIL":_wret("CL=F") or _wret("USO")}
+    macro={k:(v if len(v)==len(mkt) else (v[-len(mkt):] if len(v)>len(mkt) else v+[0.0]*(len(mkt)-len(v)))) for k,v in macro.items()}
+    # ---- options walls (gamma) for the most liquid names only (capped; OPT_LIMIT, default 40) ----
+    def fetch_opt(sym, spot):
+        try:
+            tk=yf.Ticker(sym); exps=tk.options
+            if not exps: return None
+            ch=tk.option_chain(exps[0])
+            def wall(df):
+                best=None; bo=-1.0
+                for k,oi in zip(df["strike"].tolist(), df["openInterest"].tolist()):
+                    oi=float(oi) if oi==oi else 0.0
+                    if oi>bo: bo=oi; best=float(k)
+                return best
+            cw=wall(ch.calls); pw=wall(ch.puts)
+            tc=sum(float(x) if x==x else 0 for x in ch.calls["openInterest"].tolist())
+            tp=sum(float(x) if x==x else 0 for x in ch.puts["openInterest"].tolist())
+            pcr=round(tp/tc,2) if tc>0 else None
+            gex=round((pw+cw)/2.0,2) if (pw and cw) else None
+            return {"pw":round(pw,2) if pw else None,"cw":round(cw,2) if cw else None,"pcr":pcr,"gex":gex}
+        except Exception: return None
+    try:
+        optlim=int(os.environ.get("OPT_LIMIT","40"))
+        big=sorted([n for n in names if "RUT" not in n["idx"] and n.get("_cl")], key=lambda n:-n["mcap"])
+        for n in big[:optlim]:
+            n["_opt"]=fetch_opt(n["t"], n["_cl"][-1])
+    except Exception as e:
+        sys.stderr.write(f"opt skip: {e}\n")
+    return names,mkt,ff,macro
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--demo",action="store_true"); ap.add_argument("--real",action="store_true")
     ap.add_argument("--out",default="../../marketmap.json"); a=ap.parse_args()
     if a.real:
-        names,mkt,ff=real_universe(); snap=build(names,mkt,ff); snap["source"]="Live (yfinance prices/volume + EDGAR FCF) — research only"
+        names,mkt,ff,macro=real_universe(); snap=build(names,mkt,ff,macro); snap["source"]="Live (yfinance + macro factors + options OI) — research only"
     else:
-        names,mkt,ff=synth(); snap=build(names,mkt,ff)
+        names,mkt,ff,macro=synth(); snap=build(names,mkt,ff,macro)
     def _finite(o):
         if isinstance(o,float): return o if (o==o and o not in (float("inf"),float("-inf"))) else 0.0
         if isinstance(o,list): return [_finite(x) for x in o]

@@ -36,7 +36,7 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
 </div>
 <div class="bar">
   <label>Index</label>
-  <select id="idx"><option value="ALL">All (big-3)</option><option value="DOW">Dow 30</option><option value="NDX">Nasdaq-100</option><option value="SPX">S&P 500</option></select>
+  <select id="idx"><option value="BIG3">Big-3 (Dow+Nasdaq-100+S&amp;P 500)</option><option value="DOW">Dow 30</option><option value="NDX">Nasdaq-100</option><option value="SPX">S&amp;P 500</option><option value="RUT">Russell 2000</option><option value="ALL">Entire universe</option></select>
   <span id="scatterCtl"><label>Plot</label>
     <select id="mode"><option value="rr">Risk vs Return</option><option value="vm">Value vs Momentum</option><option value="fy">FCF yield vs Momentum</option><option value="mf">Money flow vs Return</option><option value="ff">Factor map (Size vs Value)</option></select></span>
   <span id="periodCtl" class="hidden"><label>Colour</label>
@@ -52,7 +52,10 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
   function $(id){return document.getElementById(id);}
   function dpr(){return Math.min(window.devicePixelRatio||1,2);}
   function size(h){var w=cv.clientWidth;cv.width=w*dpr();cv.height=h*dpr();cv.style.height=h+'px';g.setTransform(dpr(),0,0,dpr(),0,0);return [w,h];}
-  function filtered(){var ix=$('idx').value;return D.names.filter(function(n){return ix==='ALL'||n.idx.indexOf(ix)>=0;});}
+  function filtered(){var ix=$('idx').value;return D.names.filter(function(n){
+    if(ix==='ALL')return true;
+    if(ix==='BIG3')return n.idx.indexOf('DOW')>=0||n.idx.indexOf('NDX')>=0||n.idx.indexOf('SPX')>=0;
+    return n.idx.indexOf(ix)>=0;});}
   function fmtB(v){return v>=1e12?(v/1e12).toFixed(2)+'T':v>=1e9?(v/1e9).toFixed(0)+'B':(v/1e6).toFixed(0)+'M';}
   function ext(a){var v=a.filter(function(x){return x===x;});if(!v.length)return[0,1];var lo=Math.min.apply(0,v),hi=Math.max.apply(0,v);if(lo===hi){lo-=1;hi+=1;}var p=(hi-lo)*0.06;return[lo-p,hi+p];}
   function axes(w,h,pad,xr,yr,xl,yl,x0,y0){g.clearRect(0,0,w,h);g.fillStyle='#0d121b';g.fillRect(0,0,w,h);g.strokeStyle='rgba(255,255,255,.10)';g.fillStyle='#8a93a0';g.font='10px sans-serif';
@@ -114,7 +117,7 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
   document.querySelectorAll('.tab').forEach(function(t){t.onclick=function(){document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on');});t.classList.add('on');view=t.getAttribute('data-v');render();};});
   ['idx','mode','period'].forEach(function(id){var el=$(id);if(el)el.onchange=render;});
   window.addEventListener('resize',function(){clearTimeout(window._rt);window._rt=setTimeout(render,150);});
-  function start(d){D=d;$('asof').textContent='as of '+D.asof+' · big-3 universe';$('src').textContent=D.source+' · research/illustrative only, not investment advice.';render();}
+  function start(d){D=d;var hasR=D.indices&&D.indices.RUT;$('asof').textContent='as of '+D.asof+' · '+D.names.length+' names · '+(hasR?'Dow+Nasdaq-100+S&P 500 + Russell 2000':'big-3 universe');$('src').textContent=D.source+' · research/illustrative only, not investment advice.';render();}
   if(window.MARKETMAP)start(window.MARKETMAP);
   else fetch('marketmap.json',{cache:'no-store'}).then(function(r){return r.json();}).then(start).catch(function(){$('asof').textContent='market map data not available yet';});
 })();

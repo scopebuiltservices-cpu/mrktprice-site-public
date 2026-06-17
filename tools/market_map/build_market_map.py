@@ -128,11 +128,32 @@ SEED=[("AAPL","Apple","Technology","ND S"),("MSFT","Microsoft","Technology","ND 
 ("AMT","American Tower","Real Estate","S"),("EQIX","Equinix","Real Estate","ND S"),("SPG","Simon Property","Real Estate","S"),
 ("O","Realty Income","Real Estate","S"),("CCI","Crown Castle","Real Estate","S")]
 
+# Representative Russell 2000 small/mid-cap cohort (illustrative for the sample; the nightly
+# --real job replaces this with the actual iShares IWM holdings).
+RUSSELL_SEED=[("RMBS","Rambus","Technology"),("FORM","FormFactor","Technology"),("POWI","Power Integrations","Technology"),
+("SMTC","Semtech","Technology"),("CALX","Calix","Technology"),("EXTR","Extreme Networks","Technology"),
+("PB","Prosperity Bancshares","Financials"),("GBCI","Glacier Bancorp","Financials"),("CADE","Cadence Bank","Financials"),
+("UCBI","United Community Banks","Financials"),("ABCB","Ameris Bancorp","Financials"),("BANF","BancFirst","Financials"),
+("HALO","Halozyme","Health Care"),("MMSI","Merit Medical","Health Care"),("CYTK","Cytokinetics","Health Care"),
+("ARWR","Arrowhead Pharma","Health Care"),("KRYS","Krystal Biotech","Health Care"),("VCEL","Vericel","Health Care"),
+("SHAK","Shake Shack","Consumer Disc."),("CROX","Crocs","Consumer Disc."),("BOOT","Boot Barn","Consumer Disc."),
+("CAKE","Cheesecake Factory","Consumer Disc."),("TXRH","Texas Roadhouse","Consumer Disc."),("WING","Wingstop","Consumer Disc."),
+("SAIA","Saia","Industrials"),("AAON","AAON","Industrials"),("MLI","Mueller Industries","Industrials"),
+("AIT","Applied Industrial","Industrials"),("GVA","Granite Construction","Industrials"),("HRI","Herc Holdings","Industrials"),
+("OLN","Olin","Materials"),("CMP","Compass Minerals","Materials"),("AVNT","Avient","Materials"),
+("PR","Permian Resources","Energy"),("CIVI","Civitas Resources","Energy"),("MGY","Magnolia Oil & Gas","Energy"),
+("CRK","Comstock Resources","Energy"),("NWE","NorthWestern Energy","Utilities"),("POR","Portland General","Utilities"),
+("OGS","ONE Gas","Utilities"),("SR","Spire","Utilities"),("CARG","CarGurus","Communication"),
+("CNK","Cinemark","Communication"),("TDS","Telephone & Data","Communication"),("IRT","Independence Realty","Real Estate"),
+("STAG","Stag Industrial","Real Estate"),("CUZ","Cousins Properties","Real Estate"),("EPR","EPR Properties","Real Estate"),
+("CENT","Central Garden","Consumer Staples"),("JJSF","J&J Snack Foods","Consumer Staples"),("FRPT","Freshpet","Consumer Staples")]
+
 def membership(code):
     p=code.split(); idx=[]
     if "ND" in p: idx.append("NDX")
     if "D" in p: idx.append("DOW")
     if "S" in p: idx.append("SPX")
+    if "R" in p: idx.append("RUT")
     return sorted(set(idx)) or ["SPX"]
 
 def synth(seed=7):
@@ -155,6 +176,21 @@ def synth(seed=7):
         closes=closes[1:]
         fcf=mcap*rng.uniform(-0.02,0.08)            # synthetic free cash flow ($)
         names.append({"t":sym,"n":nm,"sec":sec,"idx":membership(code),"mcap":round(mcap),
+                      "wr":[round(x,5) for x in wr],"_cl":closes,"_vol":vols,"_fcf":fcf})
+    # Russell 2000 small/mid-cap cohort: smaller caps, higher idiosyncratic vol, positive SMB tilt
+    for sym,nm,sec in RUSSELL_SEED:
+        b=rng.uniform(0.7,1.9); sl=rng.uniform(0.4,1.1)
+        cs=rng.uniform(0.3,1.3); ch=rng.uniform(-0.9,0.9); cm=rng.uniform(-0.7,0.7); idio=rng.uniform(0.025,0.055)
+        wr=[b*mkt[w]+sl*secf[sec][w]+cs*ff["SMB"][w]+ch*ff["HML"][w]+cm*ff["MOM"][w]+rng.gauss(0,idio) for w in range(W)]
+        mcap=math.exp(rng.uniform(20.4,24.2))          # ~$0.7B..$32B
+        px=100.0; closes=[px]; vols=[]
+        for w in range(W):
+            for _ in range(5):
+                dr=wr[w]/5+rng.gauss(0,idio/2); px*=(1+dr); closes.append(px)
+                vols.append(rng.uniform(0.6,1.8)*mcap*0.0012*(1+abs(dr)*9))
+        closes=closes[1:]
+        fcf=mcap*rng.uniform(-0.05,0.07)
+        names.append({"t":sym,"n":nm,"sec":sec,"idx":["RUT"],"mcap":round(mcap),
                       "wr":[round(x,5) for x in wr],"_cl":closes,"_vol":vols,"_fcf":fcf})
     return names,mkt,ff
 
@@ -206,10 +242,64 @@ def build(names,mkt,ff):
     M=[[round(pearson(secmean[a],secmean[b]),3) for b in osec] for a in osec]
     oi=cluster_order(M); osec=[osec[i] for i in oi]; M=[[M[i][j] for j in oi] for i in oi]
     return {"asof":dt.date.today().isoformat(),"source":"SAMPLE (synthetic, illustrative) — replaced by the nightly job",
-            "indices":{"DOW":"Dow Jones 30","NDX":"Nasdaq-100","SPX":"S&P 500"},"sectors":SECTORS,"factors":FACTORS,
+            "indices":{"DOW":"Dow Jones 30","NDX":"Nasdaq-100","SPX":"S&P 500","RUT":"Russell 2000"},"sectors":SECTORS,"factors":FACTORS,
             "names":names,"sectorCorr":{"order":osec,"m":M}}
 
 # ---------- real fetch (nightly Action only; needs network) ------------------------------------
+SECMAP={"Information Technology":"Technology","Technology":"Technology","Financials":"Financials",
+        "Health Care":"Health Care","Consumer Discretionary":"Consumer Disc.","Communication":"Communication",
+        "Communication Services":"Communication","Industrials":"Industrials","Consumer Staples":"Consumer Staples",
+        "Energy":"Energy","Utilities":"Utilities","Materials":"Materials","Real Estate":"Real Estate"}
+
+def fetch_russell(yf, limit, UA):
+    """Russell 2000 constituents from the iShares IWM daily holdings CSV, batch-downloaded
+    via yfinance (one request per 100 tickers). Returns names tagged idx=["RUT"]. Best-effort:
+    chunks that fail are skipped so a partial universe still publishes."""
+    import requests, csv, io
+    IWM="https://www.ishares.com/us/products/239710/ishares-russell-2000-etf/1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund&asOfDate="
+    t=requests.get(IWM,timeout=60,headers=UA).text
+    rows=list(csv.reader(io.StringIO(t)))
+    hdr=None
+    for i,r in enumerate(rows):
+        if "Ticker" in r and "Sector" in r: hdr=i; break
+    if hdr is None: return []
+    H=rows[hdr]; ci=H.index("Ticker"); ni=H.index("Name"); si=H.index("Sector")
+    mi=H.index("Market Value") if "Market Value" in H else -1
+    cons=[]
+    for r in rows[hdr+1:]:
+        if len(r)<=max(ci,ni,si): continue
+        tk=r[ci].strip().upper().replace(".","-")        # yfinance class-share convention
+        if not tk or not tk[0].isalpha() or len(tk)>5: continue
+        sec=SECMAP.get(r[si].strip())
+        if not sec: continue
+        mv=0.0
+        if mi>=0:
+            try: mv=float(r[mi].replace(",","").replace("$","") or 0)
+            except Exception: mv=0.0
+        cons.append((tk, (r[ni].strip()[:24] or tk), sec, mv))
+    if limit: cons=cons[:limit]
+    out=[]
+    for k in range(0,len(cons),100):
+        ch=cons[k:k+100]; syms=[c[0] for c in ch]
+        try:
+            data=yf.download(syms, period="1y", interval="1d", auto_adjust=True,
+                             group_by="ticker", threads=True, progress=False)
+        except Exception as e:
+            sys.stderr.write(f"russell chunk fail @ {k}: {e}\n"); continue
+        for tk,nm,sec,mv in ch:
+            try:
+                sub=data[tk] if len(syms)>1 else data
+                cl=[];vo=[]
+                for c,v in zip(sub["Close"].tolist(), sub["Volume"].tolist()):
+                    c=float(c); v=float(v)
+                    if c==c and c>0: cl.append(c); vo.append(v if v==v else 0.0)
+                if len(cl)<30: continue
+                wk=cl[::5]; wr=[(wk[i]/wk[i-1]-1) for i in range(1,len(wk)) if wk[i-1]]
+                out.append({"t":tk,"n":nm,"sec":sec,"idx":["RUT"],"mcap":round(mv or 1e9),
+                            "wr":[round(x,5) for x in wr],"_cl":cl,"_vol":vo,"_fcf":None})
+            except Exception: continue
+    return out
+
 def real_universe():
     import requests
     UA={"User-Agent":"MrktPrice marketmap/1.0 (research; contact scopebuiltservices@gmail.com)"}
@@ -249,6 +339,13 @@ def real_universe():
                           "wr":[round(x,5) for x in wr],"_cl":cl,"_vol":vo,"_fcf":float(fcf) if fcf else None})
         except Exception as e:
             sys.stderr.write(f"skip {sym}: {e}\n")
+    # ---- Russell 2000 (phase 2): iShares IWM holdings, batch-downloaded (env RUSSELL_LIMIT caps size; 0 = all) ----
+    try:
+        lim=int(os.environ.get("RUSSELL_LIMIT","2000")); lim=lim or None
+        rus=fetch_russell(yf, lim, UA)
+        sys.stderr.write(f"russell: fetched {len(rus)} constituents\n"); names+=rus
+    except Exception as e:
+        sys.stderr.write(f"russell skip: {e}\n")
     # market proxy = SPY weekly
     try:
         h=yf.Ticker("SPY").history(period="1y",interval="1d",auto_adjust=True)

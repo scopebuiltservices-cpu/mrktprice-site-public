@@ -2,11 +2,13 @@ name: Deploy MrktPrice site
 
 # Publishes mrktprice.com to GitHub Pages on every push to main.
 # Rebuilds the Opportunity News index from reports/, then deploys the dashboard + reports.
-# This repo is self-contained: no build tools or secrets required.
+# On a nightly cron it also refreshes the Market Map from live data (no secret required).
 
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: "20 6 * * 1-6"   # nightly Mon-Sat 06:20 UTC: refresh Market Map with live data
   workflow_dispatch:
 
 permissions:
@@ -38,10 +40,21 @@ jobs:
           mkdir -p _site/reports
           cp index.html _site/index.html
           cp -r reports/*.html _site/reports/ 2>/dev/null || true
-          rm -f _site/reports/report-template.html   # never publish the blank template
+          rm -f _site/reports/report-template.html
           for f in 404.html robots.txt live.html login.html pricing.html account.html marketmap.html marketmap.json; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
           [ -f CNAME ] && cp CNAME _site/CNAME || echo "mrktprice.com" > _site/CNAME
           touch _site/.nojekyll
+
+      - name: Refresh Market Map (live data)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          python -m pip install --quiet --upgrade pip
+          pip install --quiet yfinance requests || { echo "::warning::deps install failed - keeping sample"; exit 0; }
+          if python tools/market_map/build_market_map.py --real --out /tmp/mm_live.json; then
+            python tools/market_map/validate_publish.py /tmp/mm_live.json _site/marketmap.json
+          else
+            echo "::warning::live build failed - keeping committed sample marketmap.json"
+          fi
 
       - name: Upload site
         uses: actions/upload-pages-artifact@v3

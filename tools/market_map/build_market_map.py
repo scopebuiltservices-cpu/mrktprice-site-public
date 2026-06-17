@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# rev: NaN-safe live build (yfinance gap handling + JSON allow_nan guard)
 """MrktPrice Market Map — daily cross-sectional precompute for the index universes.
 
 Computes, per constituent, a coherent metric matrix and writes a compact snapshot the
@@ -85,8 +86,10 @@ def money_flow(closes, vols):
     Inflow = up-day $volume, Outflow = down-day $volume; net = (in-out)/(in+out) in [-1,1]."""
     infl=outfl=0.0; last_in=last_out=0.0
     for i in range(1,len(closes)):
-        if closes[i] is None or closes[i-1] is None or vols[i] is None: continue
-        dv=closes[i]*vols[i]; r=closes[i]-closes[i-1]
+        c0,c1,v=closes[i-1],closes[i],vols[i]
+        if c0 is None or c1 is None or v is None: continue
+        if c0!=c0 or c1!=c1 or v!=v: continue            # skip NaN bars (yfinance gaps)
+        dv=c1*v; r=c1-c0
         if r>=0: infl+=dv; last_in=dv; last_out=0.0
         else: outfl+=dv; last_out=dv; last_in=0.0
     tot=infl+outfl
@@ -165,15 +168,21 @@ def aggregate(wr):
 
 def build(names,mkt,ff):
     for n in names:
-        wr=n["wr"]; n["ret"]=aggregate(wr); n["vol"]=round(ann_vol(wr)*100,1); n["beta"]=round(beta(wr,mkt),2)
+        wr=[x if (x is not None and x==x) else 0.0 for x in n["wr"]]; n["wr"]=wr; n["ret"]=aggregate(wr)
+        _v=ann_vol(wr); _b=beta(wr,mkt)
+        n["vol"]=round(_v*100,1) if _v==_v else 0.0; n["beta"]=round(_b,2) if _b==_b else 1.0
         X=[[mkt[w],ff["SMB"][w],ff["HML"][w],ff["MOM"][w]] for w in range(len(wr))]
-        bc=ols_betas(wr,X); n["ff"]={f:round(bc[i],2) for i,f in enumerate(FACTORS)}
+        bc=ols_betas(wr,X); n["ff"]={f:(round(bc[i],2) if bc[i]==bc[i] else 0.0) for i,f in enumerate(FACTORS)}
         cl=n.pop("_cl",None); vo=n.pop("_vol",None)
+        def _ri(x):                                          # NaN-safe int round
+            return round(x) if (x is not None and x==x) else 0
+        def _rf(x,nd):                                       # NaN-safe float round
+            return round(x,nd) if (x is not None and x==x) else 0.0
         if cl and vo:
             net1,i1,o1,li,lo=money_flow(cl[-21:],vo[-21:]); net3,_,_,_,_=money_flow(cl[-63:],vo[-63:])
-            n["flow"]={"net1m":round(net1,3),"net3m":round(net3,3),"in":round(i1),"out":round(o1),"din":round(li),"dout":round(lo)}
+            n["flow"]={"net1m":_rf(net1,3),"net3m":_rf(net3,3),"in":_ri(i1),"out":_ri(o1),"din":_ri(li),"dout":_ri(lo)}
         else:
-            n["flow"]={"net1m":float("nan"),"net3m":float("nan")}
+            n["flow"]={"net1m":0.0,"net3m":0.0,"in":0,"out":0,"din":0,"dout":0}
         fcf=n.pop("_fcf",None); n["fcf"]=round(fcf) if fcf is not None else None
         n["fcfY"]=round(fcf/n["mcap"]*100,2) if (fcf is not None and n["mcap"]) else None
     val=[ -n["ret"]["12m"]/(n["vol"] or 1) for n in names]; mom=[n["ret"]["6m"] for n in names]
@@ -221,8 +230,13 @@ def real_universe():
     for sym,nm,sec_name,code in SEED:        # phase-1 universe (extend to full big-3 once holdings parse is wired)
         try:
             h=yf.Ticker(sym).history(period="1y",interval="1d",auto_adjust=True)
-            cl=[float(x) for x in h["Close"].tolist()]; vo=[float(x) for x in h["Volume"].tolist()]
-            wk=cl[::5]; wr=[(wk[i]/wk[i-1]-1) for i in range(1,len(wk))]
+            cl=[];vo=[]
+            for c,v in zip(h["Close"].tolist(), h["Volume"].tolist()):
+                c=float(c); v=float(v)
+                if c==c and c>0:                     # drop NaN / non-positive closes, keep alignment
+                    cl.append(c); vo.append(v if v==v else 0.0)
+            if len(cl)<10: raise ValueError("insufficient history")
+            wk=cl[::5]; wr=[(wk[i]/wk[i-1]-1) for i in range(1,len(wk)) if wk[i-1]]
             info=yf.Ticker(sym).get_info(); mcap=float(info.get("marketCap") or 0) or (cl[-1]*float(info.get("sharesOutstanding") or 0))
             fcf=info.get("freeCashflow")
             names.append({"t":sym,"n":nm,"sec":sec_name,"idx":membership(code),"mcap":round(mcap or 1e9),
@@ -231,8 +245,9 @@ def real_universe():
             sys.stderr.write(f"skip {sym}: {e}\n")
     # market proxy = SPY weekly
     try:
-        h=yf.Ticker("SPY").history(period="1y",interval="1d",auto_adjust=True); spw=[float(x) for x in h["Close"].tolist()][::5]
-        mkt=[(spw[i]/spw[i-1]-1) for i in range(1,len(spw))]
+        h=yf.Ticker("SPY").history(period="1y",interval="1d",auto_adjust=True)
+        spc=[float(x) for x in h["Close"].tolist() if float(x)==float(x) and float(x)>0]
+        spw=spc[::5]; mkt=[(spw[i]/spw[i-1]-1) for i in range(1,len(spw)) if spw[i-1]]
     except Exception: mkt=[0.0]*52
     ff={"SMB":[0.0]*len(mkt),"HML":[0.0]*len(mkt),"MOM":[0.0]*len(mkt)}  # FF factors optional; default 0 if no source
     return names,mkt,ff
@@ -244,7 +259,13 @@ def main():
         names,mkt,ff=real_universe(); snap=build(names,mkt,ff); snap["source"]="Live (yfinance prices/volume + EDGAR FCF) — research only"
     else:
         names,mkt,ff=synth(); snap=build(names,mkt,ff)
-    json.dump(snap,open(a.out,"w"),separators=(",",":"))
+    def _finite(o):
+        if isinstance(o,float): return o if (o==o and o not in (float("inf"),float("-inf"))) else 0.0
+        if isinstance(o,list): return [_finite(x) for x in o]
+        if isinstance(o,dict): return {k:_finite(v) for k,v in o.items()}
+        return o
+    snap=_finite(snap)
+    json.dump(snap,open(a.out,"w"),separators=(",",":"),allow_nan=False)   # allow_nan=False = hard guard: never emit invalid JSON
     print(f"wrote {a.out}: {len(names)} names, asof {snap['asof']}, source={snap['source'][:24]}")
 
 if __name__=="__main__":

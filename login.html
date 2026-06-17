@@ -21,7 +21,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:#fff;font:15px/1.5 -ap
 .divider{color:var(--muted);font-size:11px;margin:6px 0 2px;letter-spacing:.16em}
 .msg{min-height:16px;font-size:12px;color:var(--muted)}.msg.err{color:#ef9a9a}.msg.ok{color:#7fd1a8}
 .linkrow{font-size:12px;margin-top:4px}.linkrow a{color:var(--muted);cursor:pointer;text-decoration:underline}
-#pwbox{display:none;flex-direction:column;gap:9px;margin-top:2px}
+#pwbox,#codebox{display:none;flex-direction:column;gap:9px;margin-top:2px}
 .back{margin-top:22px;font-size:12px;color:var(--muted);text-decoration:none}
 .back:hover{color:#fff}
 </style></head>
@@ -35,11 +35,15 @@ html,body{margin:0;height:100%;background:var(--bg);color:#fff;font:15px/1.5 -ap
     <div class="divider">— or with your email —</div>
     <input id="email" placeholder="you@gmail.com" autocomplete="email"/>
     <button id="magic" class="act">Email me a one-tap sign-in link</button>
-    <div class="linkrow"><a id="pwtoggle">Use a password instead</a></div>
+    <div class="linkrow"><a id="pwtoggle">Use a password instead</a> &nbsp;·&nbsp; <a id="codetoggle">Have an access code?</a></div>
     <div id="pwbox">
       <input id="pw" type="password" placeholder="Password" autocomplete="current-password"/>
       <button id="signin" class="ghost">Sign in</button>
       <button id="signup" class="ghost">Create account</button>
+    </div>
+    <div id="codebox">
+      <input id="code" placeholder="Owner / team access code" autocomplete="off"/>
+      <button id="codego" class="ghost">Enter with code</button>
     </div>
     <div class="msg" id="msg"></div>
   </div>
@@ -49,6 +53,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:#fff;font:15px/1.5 -ap
 <script>
 (function(){
   var SUPABASE_URL='https://jnatyouqlrdhmghnluzv.supabase.co', SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpuYXR5b3VxbHJkaG1naG5sdXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0NzY0MzgsImV4cCI6MjA5NzA1MjQzOH0.AdJLcTE46ci7XSKckxv2cQWIFWPp6BXdHrIspay4Ajg', NEXT='index.html';
+  var API=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:8000':'https://mrktprice-data.onrender.com';
   var email=document.getElementById('email'),gbtn=document.getElementById('google'),ghint=document.getElementById('ghint');
   function msgset(t,c){var m=document.getElementById('msg');m.textContent=t;m.className='msg'+(c?' '+c:'');}
   if(!/^https:\/\//.test(SUPABASE_URL)||!window.supabase){msgset('Sign-in is not configured yet.','err');return;}
@@ -58,7 +63,6 @@ html,body{margin:0;height:100%;background:var(--bg);color:#fff;font:15px/1.5 -ap
   sb.auth.onAuthStateChange(function(_e,session){if(session)done(session);});
   sb.auth.getSession().then(function(r){if(r.data&&r.data.session)done(r.data.session);});
   function isGoogle(v){return /@(gmail|googlemail)\.com\s*$/i.test(v);}
-  /* expedited passwordless: emails a one-tap sign-in link — works for any address, instant for Gmail */
   function magic(){var e=email.value.trim();if(!e){msgset('Enter your email first.','err');email.focus();return;}
     msgset('Sending your sign-in link…');
     sb.auth.signInWithOtp({email:e,options:{emailRedirectTo:location.origin+'/login.html',shouldCreateUser:true}})
@@ -66,13 +70,22 @@ html,body{margin:0;height:100%;background:var(--bg);color:#fff;font:15px/1.5 -ap
   document.getElementById('magic').onclick=magic;
   gbtn.onclick=function(){msgset('Redirecting to Google…');sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+'/login.html'}}).then(function(r){if(r&&r.error)msgset(r.error.message+' (Google sign-in not enabled yet — use the email link).','err');});};
   email.addEventListener('input',function(){var hot=isGoogle(email.value.trim());ghint.style.display=hot?'block':'none';gbtn.classList.toggle('hot',hot);});
-  document.getElementById('pwtoggle').onclick=function(){var b=document.getElementById('pwbox');b.style.display=b.style.display==='flex'?'none':'flex';};
+  function toggle(id){var b=document.getElementById(id);b.style.display=b.style.display==='flex'?'none':'flex';return b;}
+  document.getElementById('pwtoggle').onclick=function(){toggle('pwbox');};
+  document.getElementById('codetoggle').onclick=function(){var b=toggle('codebox');if(b.style.display==='flex')document.getElementById('code').focus();};
   document.getElementById('signin').onclick=function(){var e=email.value.trim(),p=document.getElementById('pw').value;
     if(!e||!p){msgset('Enter email and password — or use the link above.','err');return;}
     msgset('Signing in…');sb.auth.signInWithPassword({email:e,password:p}).then(function(r){if(r.error)msgset(r.error.message,'err');});};
   document.getElementById('signup').onclick=function(){var e=email.value.trim(),p=document.getElementById('pw').value;
     if(!e||p.length<8){msgset('Use a valid email and an 8+ character password.','err');return;}
     msgset('Creating account…');sb.auth.signUp({email:e,password:p}).then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Account created — you can sign in now.','ok');});};
+  document.getElementById('codego').onclick=function(){var c=document.getElementById('code').value.trim();
+    if(!c){msgset('Enter your access code.','err');return;}
+    msgset('Checking code…');
+    fetch(API+'/auth',{headers:{'X-Access-Code':c},cache:'no-store'}).then(function(r){
+      if(r.status===200){try{localStorage.setItem('mrkt.code',c);localStorage.setItem('mrkt.ok','1');}catch(e){}location.replace(NEXT);}
+      else{msgset('That access code was not accepted.','err');}
+    }).catch(function(){msgset('Could not reach the data service.','err');});};
   email.focus();
 })();
 </script></body></html>

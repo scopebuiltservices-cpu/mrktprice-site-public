@@ -47,6 +47,10 @@ jobs:
 
       - name: Refresh Market Map (live data)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:                       # optional FREE connectors — unset secrets pass through empty and are skipped
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
         run: |
           python -m pip install --quiet --upgrade pip
           pip install --quiet yfinance requests || { echo "::warning::deps install failed - keeping sample"; exit 0; }

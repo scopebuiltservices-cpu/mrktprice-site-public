@@ -318,10 +318,13 @@ def membership(code):
     if "R" in p: idx.append("RUT")
     return sorted(set(idx)) or ["SPX"]
 
-SECMACRO={"Energy":{"OIL":1.10,"DXY":-0.20},"Financials":{"RATE":0.55,"DXY":0.10},
- "Materials":{"OIL":0.45,"DXY":-0.30},"Utilities":{"RATE":-0.55},"Real Estate":{"RATE":-0.60},
- "Technology":{"RATE":-0.30,"VIX":-0.25},"Consumer Disc.":{"RATE":-0.20,"VIX":-0.25},
- "Communication":{"VIX":-0.20},"Industrials":{"OIL":0.25},"Consumer Staples":{"VIX":0.10},"Health Care":{}}
+SECMACRO={"Energy":{"OIL":1.10,"NATGAS":0.55,"DXY":-0.20,"HYG":0.30},
+ "Financials":{"RATE":0.55,"SLOPE":0.45,"DXY":0.10,"HYG":0.40},
+ "Materials":{"OIL":0.45,"GOLD":0.55,"COPPER":0.60,"DXY":-0.30},
+ "Utilities":{"RATE":-0.55,"NATGAS":0.25},"Real Estate":{"RATE":-0.60,"HYG":0.30},
+ "Technology":{"RATE":-0.30,"VIX":-0.25,"COPPER":0.20},"Consumer Disc.":{"RATE":-0.20,"VIX":-0.25,"OIL":-0.20},
+ "Communication":{"VIX":-0.20},"Industrials":{"OIL":0.25,"COPPER":0.45,"SLOPE":0.25},
+ "Consumer Staples":{"VIX":0.10,"GOLD":0.10},"Health Care":{}}
 
 def synth(seed=7):
     rng=random.Random(seed); W=53
@@ -329,12 +332,15 @@ def synth(seed=7):
     secf={s:[rng.gauss(0,0.012) for _ in range(W)] for s in SECTORS}
     ff={"SMB":[rng.gauss(0,0.01) for _ in range(W)],"HML":[rng.gauss(0,0.01) for _ in range(W)],"MOM":[rng.gauss(0,0.01) for _ in range(W)]}
     macro={"DXY":[rng.gauss(0,0.008) for _ in range(W)],"RATE":[rng.gauss(0,0.012) for _ in range(W)],
-           "VIX":[rng.gauss(0,0.05) for _ in range(W)],"OIL":[rng.gauss(0,0.03) for _ in range(W)]}
+           "VIX":[rng.gauss(0,0.05) for _ in range(W)],"OIL":[rng.gauss(0,0.03) for _ in range(W)],
+           "HYG":[rng.gauss(0,0.006) for _ in range(W)],"GOLD":[rng.gauss(0,0.02) for _ in range(W)],
+           "COPPER":[rng.gauss(0,0.025) for _ in range(W)],"NATGAS":[rng.gauss(0,0.05) for _ in range(W)],
+           "SLOPE":[rng.gauss(0,0.012) for _ in range(W)]}
     names=[]
     def mk(sym,nm,sec,idx,mcaprange,idiorange,liquid):
         b=rng.uniform(*[0.6,1.6] if liquid else [0.7,1.9]); sl=rng.uniform(0.5,1.2)
         cs,ch,cm=rng.uniform(-0.8,0.8),rng.uniform(-0.8,0.8),rng.uniform(-0.6,0.6); idio=rng.uniform(*idiorange)
-        mb={f:SECMACRO.get(sec,{}).get(f,0.0)+rng.gauss(0,0.12) for f in ("DXY","RATE","VIX","OIL")}
+        mb={f:SECMACRO.get(sec,{}).get(f,0.0)+rng.gauss(0,0.10) for f in ("DXY","RATE","VIX","OIL","HYG","GOLD","COPPER","NATGAS","SLOPE")}
         wr=[b*mkt[w]+sl*secf[sec][w]+cs*ff["SMB"][w]+ch*ff["HML"][w]+cm*ff["MOM"][w]
             +sum(mb[f]*macro[f][w] for f in mb)+rng.gauss(0,idio) for w in range(W)]
         mcap=math.exp(rng.uniform(*mcaprange))
@@ -492,33 +498,54 @@ def build(names,mkt,ff,macro=None):
     oi=cluster_order(M); osec=[osec[i] for i in oi]; M=[[M[i][j] for j in oi] for i in oi]
     # ---- directional dependency list: which macro deltas / sector the name moves WITH or AGAINST ----
     FACS=[("MKT",mkt,"S&P 500"),("RATE",macro.get("RATE"),"10Y yield"),("DXY",macro.get("DXY"),"US dollar"),
-          ("OIL",macro.get("OIL"),"WTI oil"),("VIX",macro.get("VIX"),"VIX")]
-    def _dep(wr,ser,lab,is_mkt=False):
+          ("OIL",macro.get("OIL"),"WTI oil"),("VIX",macro.get("VIX"),"VIX"),("HYG",macro.get("HYG"),"credit (HYG)"),
+          ("GOLD",macro.get("GOLD"),"gold"),("COPPER",macro.get("COPPER"),"copper"),
+          ("NATGAS",macro.get("NATGAS"),"nat gas"),("SLOPE",macro.get("SLOPE"),"2s10s slope")]
+    EXPSIGN={"_base":{"MKT":1,"VIX":-1,"HYG":1},
+      "Energy":{"OIL":1,"NATGAS":1,"DXY":-1},"Financials":{"RATE":1,"SLOPE":1,"DXY":1},
+      "Materials":{"OIL":1,"GOLD":1,"COPPER":1,"DXY":-1},"Utilities":{"RATE":-1},"Real Estate":{"RATE":-1},
+      "Technology":{"RATE":-1,"VIX":-1},"Consumer Disc.":{"RATE":-1,"VIX":-1},"Communication":{"VIX":-1},
+      "Industrials":{"OIL":1,"COPPER":1,"SLOPE":1},"Consumer Staples":{},"Health Care":{}}
+    def exp_sign(sec,fk):
+        if fk=="SECTOR": return 1
+        o=EXPSIGN.get(sec,{}).get(fk)
+        return o if o is not None else EXPSIGN["_base"].get(fk,0)
+    def best_lag(y,x,maxlag=2):
+        base=pearson(y,x); best=(0, base if base==base else 0.0)
+        for k in range(1,maxlag+1):
+            if len(y)>k+8:
+                c=pearson(y[k:], x[:len(x)-k])
+                if c==c and abs(c)>abs(best[1])+0.05: best=(k,c)   # require real improvement to claim a lead
+        return best
+    def _dep(wr,ser,lab,sec,fk,is_mkt=False):
         c=pearson(wr,ser); n_obs=len([1 for a,b in zip(wr,ser) if a==a and b==b])
         if c!=c or n_obs<8: return None
         t=c*math.sqrt(max(n_obs-2,1)/max(1-c*c,1e-9)) if abs(c)<0.999 else 9.9
-        sig=abs(t)>=1.96                                   # 2-sided significance gate (kills noise correlations)
-        pc=c if is_mkt else partial_corr(wr,ser,mkt)       # unique dependency after removing market leakage
-        sens=beta(wr,ser)*math.sqrt(_var(ser))             # weekly-return move per +1sigma of the factor
-        h=len(wr)//2; rc=pearson(wr[-h:],ser[-h:])         # recent-half corr for stability
+        sig=abs(t)>=1.96
+        pc=c if is_mkt else partial_corr(wr,ser,mkt)
+        sens=beta(wr,ser)*math.sqrt(_var(ser))
+        h=len(wr)//2; rc=pearson(wr[-h:],ser[-h:])
         if rc==rc and c!=0 and rc*c<0 and abs(rc)>0.1: stab="flipped"
         elif rc==rc and abs(rc)<0.5*abs(c): stab="fading"
         else: stab="stable"
+        lg,lc=best_lag(wr,ser)                              # lead/lag: factor leads stock by lg weeks
+        es=exp_sign(sec,fk); unexp=bool(es!=0 and ((1 if c>0 else -1)!=es))   # sign vs economic prior
         return {"f":lab,"corr":round(c,2),"pcorr":round(pc,2) if pc==pc else None,
-                "sens":round(sens*100,2),"sig":bool(sig),"stab":stab,"dir":("with" if c>0 else "against")}
+                "sens":round(sens*100,2),"sig":bool(sig),"stab":stab,"dir":("with" if c>0 else "against"),
+                "lag":lg,"unexp":unexp}
     for n in names:
         wr=n["wr"]; deps=[]
         for fk,ser,lab in FACS:
             if not ser: continue
-            d=_dep(wr,ser,lab,fk=="MKT")
+            d=_dep(wr,ser,lab,n["sec"],fk,fk=="MKT")
             if d: deps.append(d)
         sc=secmean.get(n["sec"])
         if sc:
-            d=_dep(wr,sc,n["sec"]+" sector")
+            d=_dep(wr,sc,n["sec"]+" sector",n["sec"],"SECTOR")
             if d: deps.append(d)
         keep=[d for d in deps if d["sig"]] or sorted(deps,key=lambda d:-abs(d["corr"]))[:1]
         keep.sort(key=lambda d:-(abs(d["pcorr"]) if d.get("pcorr") is not None else abs(d["corr"])))
-        n["deps"]=keep[:6]
+        n["deps"]=keep[:7]
         cols=[mkt]+[macro[f] for f in ("RATE","DXY","OIL","VIX") if macro.get(f)]
         _,res=macro_fit(wr,cols); vy=_var(wr)
         n["macroR2"]=int(round(max(0.0,1.0-_var(res)/vy)*100)) if vy>0 else 0
@@ -710,7 +737,13 @@ def real_universe():
     # ---- macro factor panel (free proxies) for the sparse Lasso attribution + dislocation ----
     macro={"DXY":_wret("DX-Y.NYB") or _wret("UUP"),"RATE":_wret("^TNX"),
            "VIX":_wret("^VIX"),"OIL":_wret("CL=F") or _wret("USO")}
-    macro={k:(v if len(v)==len(mkt) else (v[-len(mkt):] if len(v)>len(mkt) else v+[0.0]*(len(mkt)-len(v)))) for k,v in macro.items()}
+    # broader dependency factors (best-effort; missing ones just stay inactive)
+    macro["HYG"]=_wret("HYG"); macro["GOLD"]=_wret("GC=F") or _wret("GLD")
+    macro["COPPER"]=_wret("HG=F") or _wret("CPER"); macro["NATGAS"]=_wret("NG=F") or _wret("UNG")
+    _t10=_wret("^TNX"); _sh=_wret("^IRX")               # 2s10s steepness proxy = d(10y) - d(13wk)
+    if _t10 and _sh:
+        _L=min(len(_t10),len(_sh)); macro["SLOPE"]=[_t10[-_L:][i]-_sh[-_L:][i] for i in range(_L)]
+    macro={k:(v if len(v)==len(mkt) else (v[-len(mkt):] if len(v)>len(mkt) else v+[0.0]*(len(mkt)-len(v)))) for k,v in macro.items() if v}
     # ---- optional FREE connectors (gated by repo-secret keys; degrade gracefully when unset) ----
     fk=os.environ.get("FRED_API_KEY","").strip()
     if fk:

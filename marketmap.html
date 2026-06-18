@@ -122,7 +122,9 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
   var oppSort='oppPct';
   function oppList(){
     var ns=filtered().slice().sort(function(a,b){var f=oppSort;function gv(n){return (f==='opp'||f==='oppPct')?(n[f]||0):(f==='ev')?(n.ev||0):(f==='secRel')?(n.secRel||0):(f==='ema')?(n.ema21sig||0):(n.z&&n.z[f]!=null?n.z[f]:0);}return gv(b)-gv(a);});
-    function dchip(d){if(!d)return '';var col=d.dir==='with'?'var(--up)':'var(--down)';var mk=d.stab==='flipped'?' \u26a0':(d.sig?'':' \u00b7weak');return '<span style="color:'+col+'" title="corr '+d.corr+(d.pcorr!=null?', partial '+d.pcorr:'')+', '+d.stab+'">'+d.f+' '+(d.corr>0?'\u2191\u2192\u2191':'\u2191\u2192\u2193')+' '+(d.sens>0?'+':'')+d.sens+'%/\u03c3'+mk+'</span>';}
+    function dchip(d){if(!d)return '';var col=d.dir==='with'?'var(--up)':'var(--down)';
+      var mk=(d.unexp?' <span style="color:var(--caution)">\u26a0?</span>':'')+(d.lag>0?' <span style="color:var(--faint)">(leads '+d.lag+'w)</span>':'')+(d.stab==='flipped'?' <span style="color:var(--caution)">flipped</span>':(d.sig?'':' <span style="color:var(--faint)">weak</span>'));
+      return '<span style="color:'+col+'" title="corr '+d.corr+(d.pcorr!=null?', partial(ex-market) '+d.pcorr:'')+', '+d.stab+(d.lag>0?', factor leads '+d.lag+'w':'')+(d.unexp?', SIGN vs fundamentals UNEXPECTED':'')+'">'+d.f+' '+(d.corr>0?'\u2191\u2192\u2191':'\u2191\u2192\u2193')+' '+(d.sens>0?'+':'')+d.sens+'%/\u03c3'+mk+'</span>';}
     function HD(k,t){return '<th data-s="'+k+'" style="cursor:pointer;'+(oppSort===k?'color:#fff':'')+'">'+t+(oppSort===k?' \u25be':'')+'</th>';}
     var rows=ns.map(function(n,i){
       var deps=(n.deps||[]).slice(0,3).map(dchip).join(' &middot; ');
@@ -139,7 +141,7 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
         +'<td style="font-size:10px">'+(deps||'\u2014')+'</td></tr>';}).join('');
     $('opp').innerHTML='<table class="scan" style="width:100%;border-collapse:collapse;font-size:11px"><tr style="text-align:left;color:var(--muted)">'
       +'<th>#</th><th>ticker</th><th>sector</th>'+HD('oppPct','opp')+HD('ema','pos')+HD('mom','mom')+HD('secRel','sec-rel')+HD('ev','EV')+'<th>P(hi)</th><th>macro</th><th>depends on (\u2191factor \u2192 stock, sensitivity %/\u03c3)</th></tr>'+rows+'</table>'
-      +'<div class="note" style="margin-top:8px">Ranked by <b>opportunity score</b> = market position (EMA21\u03c3) + momentum + sector-relative strength + expected-value edge, as a cross-sectional percentile. <b>Depends on</b> = the macro deltas / sector this name is most correlated with and the direction it moves. Research only.</div>';
+      +'<div class="note" style="margin-top:8px">Ranked by <b>opportunity score</b> = market position (EMA21\u03c3) + momentum + sector-relative strength + expected-value edge, as a cross-sectional percentile. <b>Depends on</b> = the macro deltas / commodities / sector this name is most correlated with: <b>\u2191factor\u2192\u2191/\u2193 stock</b>, <b>%/\u03c3</b> = move per 1-sigma factor change (ex-market), <b>(leads Nw)</b> = factor leads the stock by N weeks, <b>\u26a0?</b> = sign contradicts the economic prior (possibly spurious), <b>flipped</b> = relationship inverted recently. Research only.</div>';
     Array.prototype.forEach.call($('opp').querySelectorAll('th[data-s]'),function(th){th.onclick=function(){oppSort=th.getAttribute('data-s');oppList();};});
     Array.prototype.forEach.call($('opp').querySelectorAll('b[data-t]'),function(b){b.onclick=function(){try{localStorage.setItem('mrkt.jump',b.getAttribute('data-t'));}catch(_){}location.href='index.html';};});
     $('count').textContent=ns.length+' names · ranked by opportunity';}
@@ -158,7 +160,7 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
         +(n.odds?('<br>odds 21d: '+(n.odds.emaDir==='reclaim'?'reclaim':'hold')+' EMA21 '+_pp(n.odds.ema)+' · new hi '+_pp(n.odds.hi)+_dr(n.odds.drift&&n.odds.drift.hi)+' · new lo '+_pp(n.odds.lo)+_dr(n.odds.drift&&n.odds.drift.lo)+' · revert '+_pp(n.odds.mean)+(n.odds.beat!=null?' · beat '+_pp(n.odds.beat):'')):'')
         +(n.odds?('<br>edge: EV '+(n.ev>0?'+':'')+n.ev+'% ('+n.evPct+'pct) · ~'+(n.odds.tmed&&n.odds.tmed.hi!=null?Math.round(n.odds.tmed.hi)+'d→high':'—')+' · if macro+ '+_pp(n.odds.condHi)+' · regime-flip '+_pp(n.odds.flip)):'')
         +((n.alerts&&n.alerts.length)?'<br><span style="color:var(--accent)">\u2691 '+n.alerts.join(' · ')+'</span>':'')
-        +((n.deps&&n.deps.length)?'<br>depends'+(n.macroR2!=null?' (macro '+n.macroR2+'% of moves)':'')+': '+n.deps.slice(0,4).map(function(d){return d.f+' '+(d.corr>0?'\u2191\u2192\u2191':'\u2191\u2192\u2193')+' '+(d.sens>0?'+':'')+d.sens+'%/\u03c3'+(d.stab==='flipped'?'\u26a0':'');}).join(' · '):'')
+        +((n.deps&&n.deps.length)?'<br>depends'+(n.macroR2!=null?' (macro '+n.macroR2+'% of moves)':'')+': '+n.deps.slice(0,5).map(function(d){return d.f+' '+(d.corr>0?'\u2191\u2192\u2191':'\u2191\u2192\u2193')+' '+(d.sens>0?'+':'')+d.sens+'%/\u03c3'+(d.lag>0?' leads'+d.lag+'w':'')+(d.unexp?' \u26a0?':'')+(d.stab==='flipped'?' flipped':'');}).join(' · '):'')
         +(n.ivol!=null?'<br>intraday vol: '+n.ivol+'%':'')
         +'<br>signals: '+cc
         +'<br>'+fmtB(n.mcap)+' · β '+n.beta+' · vol '+n.vol+'% · 12m '+n.ret['12m']+'%'

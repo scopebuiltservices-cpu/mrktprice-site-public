@@ -367,12 +367,18 @@ def build(names,mkt,ff,macro=None):
             n["ema21sig"]=round(((sp-e21)/e21)/(sdl*math.sqrt(21)),2) if (e21 and sdl==sdl and sdl>0) else 0.0
             e5=es[-6] if (len(es)>=6 and es[-6]) else None
             n["ema21sl"]=round((e21-e5)/e5*100,2) if e5 else 0.0
-            win=cl[-63:] if len(cl)>=63 else cl; Bhi=max(win); Blo=min(win)
+            win=cl[-63:] if len(cl)>=63 else cl; Bhi=max(win); Blo=min(win); mean63=sum(win)/len(win)
             au=(Bhi-sp)/a if (a==a and a>0) else None; ad=(sp-Blo)/a if (a==a and a>0) else None
             n["touch"]={"up":{"d":round(au,2) if au is not None else None,"p":round(prob_touch(sp,Bhi,sdl,21),2) if sdl==sdl else None},
                         "dn":{"d":round(ad,2) if ad is not None else None,"p":round(prob_touch(sp,Blo,sdl,21),2) if sdl==sdl else None}}
+            # ODDS LADDER: forward first-passage probabilities over a 21-day horizon (model-implied, driftless)
+            def _pt(B): return round(prob_touch(sp,B,sdl,21),2) if (sdl==sdl and sdl>0) else None
+            n["odds"]={"ema":_pt(e21),"emaDir":("reclaim" if sp<e21 else "lose-support"),
+                       "hi":_pt(Bhi),"lo":_pt(Blo),
+                       "mean":_pt(mean63),"meanDir":("up" if sp<mean63 else "down"),
+                       "beat":n.pop("_beat",None)}   # P(beat next earnings) when a Finnhub key is set
         else:
-            n["ema21d"]=0.0; n["ema21sig"]=0.0; n["ema21sl"]=0.0; n["touch"]=None
+            n["ema21d"]=0.0; n["ema21sig"]=0.0; n["ema21sl"]=0.0; n["touch"]=None; n["odds"]=None
     val=[ -n["ret"]["12m"]/(n["vol"] or 1) for n in names]; mom=[n["ret"]["6m"] for n in names]
     risk=[n["beta"] for n in names]; size=[math.log(n["mcap"]) for n in names]
     fcy=[n["fcfY"] for n in names]; flw=[n["flow"]["net1m"] for n in names]
@@ -460,6 +466,58 @@ def fetch_russell(yf, limit, UA):
             except Exception: continue
     return out
 
+def fred_series_weekly(key, sid):
+    """One FRED daily series -> weekly pct-change list (official, point-in-time-friendly)."""
+    import requests
+    try:
+        r=requests.get("https://api.stlouisfed.org/fred/series/observations",
+            params={"series_id":sid,"api_key":key,"file_type":"json",
+                    "observation_start":(dt.date.today()-dt.timedelta(days=400)).isoformat()},timeout=30)
+        obs=r.json().get("observations",[])
+        vals=[float(o["value"]) for o in obs if o.get("value") not in (".","",None)]
+        w=vals[::5]; return [(w[i]/w[i-1]-1) for i in range(1,len(w)) if w[i-1]]
+    except Exception: return []
+
+def fred_macro(key):
+    """Official macro panel from FRED (gated by FRED_API_KEY): broad-dollar, 10y, VIX, WTI."""
+    m={"DXY":fred_series_weekly(key,"DTWEXBGS"),"RATE":fred_series_weekly(key,"DGS10"),
+       "VIX":fred_series_weekly(key,"VIXCLS"),"OIL":fred_series_weekly(key,"DCOILWTICO")}
+    return {k:v for k,v in m.items() if v}
+
+def finnhub_beat(key, names, cap=60):
+    """Finnhub consensus earnings -> historical beat-rate -> P(beat next) (Bayesian-shrunk).
+    Sets n['_beat']; build() folds it into the odds ladder. Capped to the most-liquid big-3 names."""
+    import requests
+    big=[n for n in names if "RUT" not in n.get("idx",[])][:cap]
+    for n in big:
+        try:
+            r=requests.get("https://finnhub.io/api/v1/stock/earnings",
+                           params={"symbol":n["t"],"token":key},timeout=15)
+            arr=r.json()
+            if not isinstance(arr,list): continue
+            tot=[e for e in arr if e.get("surprisePercent") is not None]
+            if not tot: continue
+            beats=[e for e in tot if e["surprisePercent"]>=0]
+            n["_beat"]=round((len(beats)+1.0)/(len(tot)+2.0),2)   # shrink toward 0.5
+        except Exception: continue
+
+def twelvedata_ivol(key, names, cap=40):
+    """Twelve Data 1h bars -> annualized INTRADAY realized vol (P3-18 family). Sets n['ivol']."""
+    import requests
+    big=sorted([n for n in names if "RUT" not in n.get("idx",[])], key=lambda n:-n.get("mcap",0))[:cap]
+    for n in big:
+        try:
+            r=requests.get("https://api.twelvedata.com/time_series",
+                params={"symbol":n["t"],"interval":"1h","outputsize":"200","apikey":key},timeout=15)
+            v=r.json().get("values",[])
+            cl=[float(x["close"]) for x in v if x.get("close")][::-1]
+            if len(cl)<30: continue
+            rr=[math.log(cl[i]/cl[i-1]) for i in range(1,len(cl)) if cl[i-1]>0 and cl[i]>0]
+            if len(rr)<10: continue
+            mu=sum(rr)/len(rr); sd=(sum((x-mu)**2 for x in rr)/(len(rr)-1))**0.5
+            n["ivol"]=round(sd*math.sqrt(252*6.5)*100,1)
+        except Exception: continue
+
 def real_universe():
     import requests
     UA={"User-Agent":"MrktPrice marketmap/1.0 (research; contact scopebuiltservices@gmail.com)"}
@@ -520,6 +578,23 @@ def real_universe():
     macro={"DXY":_wret("DX-Y.NYB") or _wret("UUP"),"RATE":_wret("^TNX"),
            "VIX":_wret("^VIX"),"OIL":_wret("CL=F") or _wret("USO")}
     macro={k:(v if len(v)==len(mkt) else (v[-len(mkt):] if len(v)>len(mkt) else v+[0.0]*(len(mkt)-len(v)))) for k,v in macro.items()}
+    # ---- optional FREE connectors (gated by repo-secret keys; degrade gracefully when unset) ----
+    fk=os.environ.get("FRED_API_KEY","").strip()
+    if fk:
+        try:
+            fm=fred_macro(fk)
+            for k,v in fm.items():
+                macro[k]=(v if len(v)==len(mkt) else (v[-len(mkt):] if len(v)>len(mkt) else v+[0.0]*(len(mkt)-len(v))))
+            sys.stderr.write(f"FRED macro: {len(fm)} official series\n")
+        except Exception as e: sys.stderr.write(f"FRED skip: {e}\n")
+    ek=os.environ.get("FINNHUB_API_KEY","").strip()
+    if ek:
+        try: finnhub_beat(ek, names); sys.stderr.write("Finnhub estimates: beat-prob set\n")
+        except Exception as e: sys.stderr.write(f"Finnhub skip: {e}\n")
+    tk=os.environ.get("TWELVEDATA_API_KEY","").strip()
+    if tk:
+        try: twelvedata_ivol(tk, names); sys.stderr.write("Twelve Data: intraday vol set\n")
+        except Exception as e: sys.stderr.write(f"TwelveData skip: {e}\n")
     # ---- options walls (gamma) for the most liquid names only (capped; OPT_LIMIT, default 40) ----
     def fetch_opt(sym, spot):
         try:

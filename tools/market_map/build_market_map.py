@@ -192,6 +192,49 @@ def daily_logvol(closes):
     if len(r)<5: return float("nan")
     m=sum(r)/len(r); return (sum((x-m)**2 for x in r)/(len(r)-1))**0.5
 
+def _logret(closes,n=None):
+    r=[math.log(closes[i]/closes[i-1]) for i in range(1,len(closes))
+       if _ok(closes[i],closes[i-1]) and closes[i]>0 and closes[i-1]>0]
+    return r[-n:] if n else r
+
+def half_life(closes, cap=252):
+    """P3-33 mean-reversion half-life (Ornstein-Uhlenbeck). Regress dp on prior log-price:
+    dp_t = a + b*p_{t-1}; b<0 => mean-reverting, half-life = ln2/(-b) days. None if trending."""
+    p=[math.log(c) for c in closes if _ok(c) and c>0]
+    if len(p)<25: return None
+    dp=[p[i]-p[i-1] for i in range(1,len(p))]; lag=p[:-1]
+    b=beta(dp,lag)
+    if b!=b or b>=0: return None                       # b>=0 => no reversion (trending/random walk)
+    h=math.log(2)/(-b)
+    return round(min(h,cap),1) if h>0 else None
+
+def variance_ratio(closes, q=5):
+    """P3-25 Lo-MacKinlay variance ratio. VR=Var(q-sum)/(q*Var(1)). >1 trending, <1 mean-reverting, ~1 random walk."""
+    r=_logret(closes)
+    if len(r)<q*4: return None
+    v1=_var(r)
+    if v1<=0: return None
+    qs=[sum(r[i:i+q]) for i in range(0,len(r)-q+1)]
+    vq=_var(qs)
+    return round(vq/(q*v1),2) if v1>0 else None
+
+def parkinson_vol(highs, lows, n=21):
+    """P3-19 Parkinson range volatility (daily): sqrt( (1/(4 ln2 N)) * sum ln(H/L)^2 ). More efficient than close-to-close."""
+    pr=[(h,l) for h,l in zip(highs[-n:],lows[-n:]) if _ok(h,l) and l>0 and h>=l]
+    if len(pr)<5: return None
+    s=sum(math.log(h/l)**2 for h,l in pr)
+    return math.sqrt(s/(4.0*math.log(2)*len(pr)))      # daily sigma
+
+def jump_ratio(closes, n=21):
+    """P3-20 jump fraction from bipower variation. (RV-BV)/RV in [0,1]; high => recent discontinuous (event) moves."""
+    r=_logret(closes,n)
+    if len(r)<8: return None
+    rv=sum(x*x for x in r)
+    if rv<=0: return None
+    mu1=math.sqrt(2.0/math.pi)
+    bv=(mu1**-2)*sum(abs(r[i])*abs(r[i-1]) for i in range(1,len(r)))
+    return round(max(0.0,min(1.0,(rv-bv)/rv)),2)
+
 def _phi(x):  # standard-normal CDF
     return 0.5*(1.0+math.erf(x/math.sqrt(2.0)))
 
@@ -409,6 +452,16 @@ def build(names,mkt,ff,macro=None):
             n["brk"]=1 if (len(cl)>=2 and a==a and cl[-1]<cl[-2]-a) else 0
         else:
             n["mfi"]=50.0; n["atr"]=0.0; n["brk"]=0
+        # Phase-3 registry adds: half-life (P3-33), variance ratio (P3-25), Parkinson range vol (P3-19), jump fraction (P3-20)
+        n["hl"]=half_life(cl) if (cl and len(cl)>25) else None
+        n["vr"]=variance_ratio(cl) if (cl and len(cl)>=20) else None
+        n["jump"]=jump_ratio(cl) if (cl and len(cl)>=9) else None
+        _pv=parkinson_vol(hi,lo) if (hi and lo) else None
+        n["pvol"]=round(_pv*math.sqrt(252)*100,1) if _pv else None      # annualized Parkinson vol %
+        vr=n["vr"]
+        n["regime"]=("trending" if (vr is not None and vr>=1.15) else
+                     "mean-revert" if (vr is not None and vr<=0.85) else
+                     "random-walk" if vr is not None else None)
         # Sparse macro attribution (Lasso) + dislocation residual (decoupling from macro beta)
         if MFAC and len(wr)>=8:
             cols=[mkt]+[macro[f] for f in MFAC]; fac=["MKT"]+MFAC
@@ -487,8 +540,10 @@ def build(names,mkt,ff,macro=None):
         if o.get("beat") is not None and o["beat"]>=0.7: al.append("likely beat "+str(round(o["beat"]*100))+"%")
         if o.get("flip") is not None and o["flip"]>=0.7: al.append("vol regime shifting")
         if n.get("brk"): al.append("ATR breakout")
+        if n.get("jump") is not None and n["jump"]>=0.5: al.append("recent jump (event-driven)")
+        if n.get("regime")=="mean-revert" and abs(n.get("ema21d",0))>=4: al.append("mean-revert setup ("+("rich" if n.get("ema21d",0)>0 else "cheap")+" vs EMA21)")
         if n.get("contra") and n["contra"]["s"]<=0.2 and n.get("ema21d",0)>0: al.append("aligned uptrend")
-        n["alerts"]=al[:4]
+        n["alerts"]=al[:5]
     secmean={}
     for s in SECTORS:
         mem=[n["wr"] for n in names if n["sec"]==s]

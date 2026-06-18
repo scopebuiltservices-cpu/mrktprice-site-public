@@ -161,6 +161,7 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
         +(n.odds?('<br>edge: EV '+(n.ev>0?'+':'')+n.ev+'% ('+n.evPct+'pct) · ~'+(n.odds.tmed&&n.odds.tmed.hi!=null?Math.round(n.odds.tmed.hi)+'d→high':'—')+' · if macro+ '+_pp(n.odds.condHi)+' · regime-flip '+_pp(n.odds.flip)):'')
         +((n.alerts&&n.alerts.length)?'<br><span style="color:var(--accent)">\u2691 '+n.alerts.join(' · ')+'</span>':'')
         +((n.deps&&n.deps.length)?'<br>depends'+(n.macroR2!=null?' (macro '+n.macroR2+'% of moves)':'')+': '+n.deps.slice(0,5).map(function(d){return d.f+' '+(d.corr>0?'\u2191\u2192\u2191':'\u2191\u2192\u2193')+' '+(d.sens>0?'+':'')+d.sens+'%/\u03c3'+(d.lag>0?' leads'+d.lag+'w':'')+(d.unexp?' \u26a0?':'')+(d.stab==='flipped'?' flipped':'');}).join(' · '):'')
+        +((n.regime)?'<br>structure: <b>'+n.regime+'</b>'+((n.hl!=null&&n.hl<200)?' \u00b7 half-life '+n.hl+'d':'')+(n.vr!=null?' \u00b7 VR '+n.vr:'')+((n.jump!=null&&n.jump>=0.3)?' \u00b7 jump '+Math.round(n.jump*100)+'%':'')+(n.pvol!=null?' \u00b7 range-vol '+n.pvol+'%':''):'')
         +(n.ivol!=null?'<br>intraday vol: '+n.ivol+'%':'')
         +'<br>signals: '+cc
         +'<br>'+fmtB(n.mcap)+' · β '+n.beta+' · vol '+n.vol+'% · 12m '+n.ret['12m']+'%'

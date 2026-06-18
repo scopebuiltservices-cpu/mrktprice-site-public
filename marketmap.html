@@ -21,6 +21,21 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
 .legend span{display:inline-flex;align-items:center;gap:5px}.dot{width:9px;height:9px;border-radius:50%}
 .tip{position:fixed;pointer-events:none;background:#0d121b;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:11px;display:none;z-index:9;max-width:240px}
 .tip b{color:#fff}.note{color:var(--muted);font-size:11px;margin:8px 2px}.hidden{display:none}
+.xbtn{background:#1d2530;color:var(--accent,#4f9cff);border:1px solid var(--line,#2a2f3a);border-radius:4px;padding:2px 7px;font:inherit;font-size:10px;cursor:pointer}
+.brief{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px}
+.brief.hidden{display:none}
+.briefcard{background:var(--panel,#12161c);color:var(--fg,#dfe6ee);max-width:760px;width:100%;border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:16px 22px;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+.briefbar{display:flex;gap:8px;justify-content:flex-end;margin-bottom:8px}
+.briefbar button{background:var(--accent,#4f9cff);color:#06121f;border:0;border-radius:5px;padding:6px 12px;font:inherit;font-size:12px;cursor:pointer}
+.briefbar button#bclose{background:#39414f;color:#cfd6df}
+.brief h2{margin:.2em 0;font-size:18px}
+.brief h3{margin:.9em 0 .3em;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted,#8a93a0);border-bottom:1px solid var(--line,#2a2f3a);padding-bottom:3px}
+.brief table.kv{width:100%;border-collapse:collapse;font-size:12px}
+.brief table.kv td{padding:2px 6px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top}
+.brief td.k{color:var(--muted,#8a93a0);width:42%}
+.vbadge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600}
+.v-supported{background:#11331f;color:#5fd08a}.v-rejected{background:#3a1620;color:#ff8198}.v-mixed{background:#3a3416;color:#e0c14a}.v-na{background:#2a2f3a;color:#9aa}
+@media print{body *{visibility:hidden!important}.brief,.brief *{visibility:visible!important}.brief{position:absolute;inset:auto;background:#fff;padding:0}.briefcard{box-shadow:none;border:0;color:#000;background:#fff;max-width:100%}.briefbar{display:none!important}.brief h3{color:#333;border-color:#ccc}.brief td.k{color:#555}.vbadge{border:1px solid #999}}
 </style></head>
 <body>
 <div class="top">
@@ -138,12 +153,13 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
         +'<td style="color:'+((n.ev||0)>=0?'var(--up)':'var(--down)')+'">'+((n.ev||0)>0?'+':'')+(n.ev!=null?n.ev:0)+'%</td>'
         +'<td>'+((n.odds&&n.odds.hi!=null)?Math.round(n.odds.hi*100)+'%':'\u2014')+'</td>'
         +'<td style="color:var(--muted)">'+(n.macroR2!=null?n.macroR2+'%':'\u2014')+'</td>'
-        +'<td style="font-size:10px">'+(deps||'\u2014')+'</td></tr>';}).join('');
+        +'<td style="font-size:10px">'+(deps||'\u2014')+'</td>'+'<td><button class="xbtn" data-x="'+n.t+'">brief</button></td></tr>';}).join('');
     $('opp').innerHTML='<table class="scan" style="width:100%;border-collapse:collapse;font-size:11px"><tr style="text-align:left;color:var(--muted)">'
-      +'<th>#</th><th>ticker</th><th>sector</th>'+HD('oppPct','opp')+HD('ema','pos')+HD('mom','mom')+HD('secRel','sec-rel')+HD('ev','EV')+'<th>P(hi)</th><th>macro</th><th>depends on (\u2191factor \u2192 stock, sensitivity %/\u03c3)</th></tr>'+rows+'</table>'
+      +'<th>#</th><th>ticker</th><th>sector</th>'+HD('oppPct','opp')+HD('ema','pos')+HD('mom','mom')+HD('secRel','sec-rel')+HD('ev','EV')+'<th>P(hi)</th><th>macro</th><th>depends on (\u2191factor \u2192 stock, sensitivity %/\u03c3)</th><th>brief</th></tr>'+rows+'</table>'
       +'<div class="note" style="margin-top:8px">Ranked by <b>opportunity score</b> = market position (EMA21\u03c3) + momentum + sector-relative strength + expected-value edge, as a cross-sectional percentile. <b>Depends on</b> = the macro deltas / commodities / sector this name is most correlated with: <b>\u2191factor\u2192\u2191/\u2193 stock</b>, <b>%/\u03c3</b> = move per 1-sigma factor change (ex-market), <b>(leads Nw)</b> = factor leads the stock by N weeks, <b>\u26a0?</b> = sign contradicts the economic prior (possibly spurious), <b>flipped</b> = relationship inverted recently. Research only.</div>';
     Array.prototype.forEach.call($('opp').querySelectorAll('th[data-s]'),function(th){th.onclick=function(){oppSort=th.getAttribute('data-s');oppList();};});
     Array.prototype.forEach.call($('opp').querySelectorAll('b[data-t]'),function(b){b.onclick=function(){try{localStorage.setItem('mrkt.jump',b.getAttribute('data-t'));}catch(_){}location.href='index.html';};});
+    Array.prototype.forEach.call($('opp').querySelectorAll('button[data-x]'),function(bx){bx.onclick=function(){openBrief(bx.getAttribute('data-x'));};});
     $('count').textContent=ns.length+' names · ranked by opportunity';}
   cv.addEventListener('mousemove',function(e){var r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top,hit=null;
     for(var i=0;i<pts.length;i++){var p=pts[i];if(p.rect){if(mx>=p.x&&mx<=p.x+p.w&&my>=p.y&&my<=p.y+p.h){hit=p;break;}}else{var dx=mx-p.x,dy=my-p.y;if(dx*dx+dy*dy<=p.r*p.r){hit=p;break;}}}
@@ -181,4 +197,56 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
   if(window.MARKETMAP)start(window.MARKETMAP);
   else fetch('marketmap.json',{cache:'no-store'}).then(function(r){return r.json();}).then(start).catch(function(){$('asof').textContent='market map data not available yet';});
 })();
-</script></body></html>
+
+  function _vcls(v){return v==='supported'?'v-supported':v==='rejected'?'v-rejected':v==='mixed'?'v-mixed':'v-na';}
+  function briefCard(n){return {symbol:n.t,name:n.n,sector:n.sec,as_of:D.asof||'',
+    price_vs_ema21:{distance_pct:n.ema21d,distance_sigma:n.ema21sig,slope_5d_pct:n.ema21sl},
+    momentum_z:(n.z?n.z.mom:null),regime:n.regime,half_life_days:n.hl,variance_ratio:n.vr,jump_fraction:n.jump,range_vol_pct:n.pvol,
+    threshold_odds:n.odds,expected_value_pct:n.ev,ev_percentile:n.evPct,
+    macro:{r2_pct:n.macroR2,top_driver:n.drv,betas:n.mb,dependencies:n.deps},
+    contradiction:n.contra,valuation:n.val,
+    fundamentals:{market_cap:n.mcap,fcf_yield_pct:n.fcfY,beta:n.beta,ann_vol_pct:n.vol,mfi:n.mfi,atr_pct:n.atr},
+    alerts:n.alerts,provenance:{source:D.source||'',as_of:D.asof||''},disclaimer:'Research only; not investment advice.'};}
+  function renderBrief(n){
+    function row(k,v){return '<tr><td class="k">'+k+'</td><td>'+v+'</td></tr>';}
+    var o=n.odds||{},v=n.val,co=n.contra;
+    var h='<h2>'+n.t+' <span style="color:var(--muted,#8a93a0);font-weight:400;font-size:13px">'+(n.n||'')+' · '+n.sec+'</span></h2>';
+    h+='<div style="color:var(--muted,#8a93a0);font-size:11px;margin-bottom:4px">Decision card · as of '+(D.asof||'')+' · '+(D.source||'')+'</div>';
+    h+='<h3>Position vs EMA21 (lead KPI)</h3><table class="kv">';
+    h+=row('Distance to EMA21',(n.ema21d>0?'+':'')+n.ema21d+'% ('+(n.ema21sig>0?'+':'')+n.ema21sig+'σ)');
+    h+=row('EMA21 5-day slope',(n.ema21sl>0?'+':'')+n.ema21sl+'%');
+    h+=row('Momentum (z)',(n.z&&n.z.mom!=null?(n.z.mom>0?'+':'')+n.z.mom:'—'));
+    h+=row('Regime',(n.regime||'—')+(n.hl!=null&&n.hl<200?' · half-life '+n.hl+'d':'')+(n.vr!=null?' · VR '+n.vr:''));
+    h+=row('Recent jump fraction',(n.jump!=null?Math.round(n.jump*100)+'%':'—')+(n.pvol!=null?' · range-vol '+n.pvol+'%':''));
+    h+='</table><h3>Threshold ladder &amp; odds (21-day, model-implied)</h3><table class="kv">';
+    h+=row('Break to 3-mo high','P '+_pp(o.hi)+(o.tmed&&o.tmed.hi!=null?' · ~'+Math.round(o.tmed.hi)+'d':''));
+    h+=row('Break to 3-mo low','P '+_pp(o.lo)+(o.tmed&&o.tmed.lo!=null?' · ~'+Math.round(o.tmed.lo)+'d':''));
+    h+=row('Reclaim / lose EMA21','P '+_pp(o.ema));
+    h+=row('Expected-value edge',((n.ev||0)>0?'+':'')+(n.ev!=null?n.ev:0)+'% ('+(n.evPct!=null?n.evPct:'—')+'th pct)');
+    h+=row('If macro +1σ favorable','P(new high) '+_pp(o.condHi));
+    h+=row('Vol regime-flip odds',_pp(o.flip));
+    h+='</table><h3>Macro impulse</h3><table class="kv">';
+    h+=row('Macro share of moves',(n.macroR2!=null?n.macroR2+'%':'—')+(n.drv?' · lead driver '+n.drv:''));
+    if(n.deps&&n.deps.length)h+=row('Dependencies',n.deps.slice(0,5).map(function(d){return d.f+' '+(d.corr>0?'↑':'↓')+(d.sens>0?' +':' ')+d.sens+'%/σ'+(d.unexp?' ⚠?':'');}).join('<br>'));
+    h+='</table>';
+    if(co)h+='<h3>Contradiction</h3><table class="kv">'+row('Disagreement score',co.s+' ('+(co.s<=0.2?'aligned':co.s>=0.6?'conflicted':'mixed')+')')+((co.conf&&co.conf.length)?row('Top conflicts',co.conf.join(', ')):'')+'</table>';
+    h+='<h3>Valuation — P/E, PEG, EV / adj. EBITDA</h3>';
+    if(v){h+='<table class="kv">';
+      h+=row('Trailing P/E',(v.pe!=null?v.pe:'—')+(v.peSec!=null?' (sector '+v.peSec+')':'')+(v.peV?' <span class="vbadge '+_vcls(v.peV)+'">'+v.peV+'</span>':''));
+      h+=row('Forward P/E',(v.fpe!=null?v.fpe:'—'));
+      h+=row('PEG',(v.peg!=null?v.peg:'—')+(v.pegV?' <span class="vbadge '+_vcls(v.pegV)+'">'+v.pegV+'</span>':''));
+      h+=row('EV / adj. EBITDA',(v.evb!=null?v.evb:'—')+(v.evSec!=null?' (sector '+v.evSec+')':''));
+      h+=row('Earnings / rev growth',(v.epsg!=null?Math.round(v.epsg*100)+'%':'—')+' / '+(v.revg!=null?Math.round(v.revg*100)+'%':'—'));
+      h+=row('Overall verdict','<span class="vbadge '+_vcls(v.overall)+'">'+v.overall+'</span>');
+      h+='</table><div style="font-size:12px;margin-top:8px;line-height:1.5"><b>Aggregate reasoning:</b> '+v.reason+'</div>';
+    }else{h+='<div style="font-size:12px;color:var(--muted,#8a93a0)">No valuation data available for this name.</div>';}
+    if(n.alerts&&n.alerts.length)h+='<h3>Alerts</h3><div style="font-size:12px">'+n.alerts.join(' · ')+'</div>';
+    return h;}
+  function openBrief(t){var n=null,i;for(i=0;i<D.names.length;i++){if(D.names[i].t===t){n=D.names[i];break;}}if(!n)return;
+    $('briefBody').innerHTML=renderBrief(n);$('brief').classList.remove('hidden');
+    $('bjson').onclick=function(){var blob=new Blob([JSON.stringify(briefCard(n),null,2)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='brief_'+n.t+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(a.href);},1500);};
+    $('bprint').onclick=function(){window.print();};
+    $('bclose').onclick=function(){$('brief').classList.add('hidden');};}
+</script>
+<div id="brief" class="brief hidden"><div class="briefcard"><div class="briefbar"><button id="bjson">Download JSON</button><button id="bprint">Print / Save PDF</button><button id="bclose">Close</button></div><div id="briefBody"></div></div></div>
+</body></html>

@@ -369,6 +369,63 @@ SECMACRO={"Energy":{"OIL":1.10,"NATGAS":0.55,"DXY":-0.20,"HYG":0.30},
  "Communication":{"VIX":-0.20},"Industrials":{"OIL":0.25,"COPPER":0.45,"SLOPE":0.25},
  "Consumer Staples":{"VIX":0.10,"GOLD":0.10},"Health Care":{}}
 
+SECVAL={"Technology":(34,0.18,19),"Communication":(22,0.12,11),"Consumer Disc.":(26,0.14,14),
+        "Health Care":(24,0.10,15),"Industrials":(21,0.09,13),"Financials":(13,0.08,9),
+        "Consumer Staples":(22,0.06,15),"Energy":(11,0.05,6),"Utilities":(18,0.04,11),
+        "Materials":(15,0.07,8),"Real Estate":(30,0.05,18)}   # (base trailing P/E, earnings growth, base EV/EBITDA)
+
+def _median(xs):
+    xs=sorted(x for x in xs if x is not None and x==x)
+    if not xs: return None
+    m=len(xs)//2
+    return xs[m] if len(xs)%2 else (xs[m-1]+xs[m])/2.0
+
+def valuation_verdict(v, peSec, evSec):
+    """Aggregate P/E + PEG + EV/adjusted-EBITDA + forward-vs-trailing multiple into SUPPORTED/REJECTED
+    verdicts with full reasoning text. Pure deterministic; every clause is auditable."""
+    if not v: return None
+    pe=v.get("pe"); fpe=v.get("fpe"); peg=v.get("peg"); evb=v.get("evb"); epsg=v.get("epsg"); revg=v.get("revg")
+    if peg is None and pe and epsg and epsg>0.003: peg=round(pe/(epsg*100.0),2)   # derive PEG if absent
+    parts=[]; pegV=None; peV=None
+    # --- PEG ---
+    if peg is not None:
+        if peg<=1.0: pegV="supported"; parts.append("PEG "+str(peg)+" ≤ 1.0 — earnings growth more than covers the multiple (cheap for growth)")
+        elif peg<=2.0: pegV="supported"; parts.append("PEG "+str(peg)+" between 1.0 and 2.0 — multiple roughly fair for the growth rate")
+        else: pegV="rejected"; parts.append("PEG "+str(peg)+" > 2.0 — price NOT justified by earnings growth (stretched)")
+    elif pe is None:
+        parts.append("No positive trailing earnings — P/E and PEG not meaningful; judge on EV/EBITDA and cash flow")
+    else:
+        parts.append("Earnings growth not positive — PEG undefined; P/E must stand on sector-relative value, not growth")
+    # --- P/E vs sector + growth ---
+    if pe is not None and peSec:
+        rel=pe/peSec; relpct=int(round((rel-1)*100))
+        loc=str(abs(relpct))+"% "+("premium to" if relpct>=0 else "discount to")+" sector "+str(round(peSec,1))
+        if epsg is not None and epsg>0 and peg is not None and peg<=1.5:
+            peV="supported"; parts.append("P/E "+str(pe)+" ("+loc+") is SUPPORTED by "+str(int(round(epsg*100)))+"% earnings growth")
+        elif relpct>30 and (peg is None or peg>2.0):
+            peV="rejected"; parts.append("P/E "+str(pe)+" sits "+str(relpct)+"% above sector "+str(round(peSec,1))+" without commensurate growth — REJECTED as rich")
+        elif relpct< -10:
+            peV="supported"; parts.append("P/E "+str(pe)+" is a "+loc+" — relatively cheap, supported")
+        else:
+            peV="supported"; parts.append("P/E "+str(pe)+" broadly in line with sector "+str(round(peSec,1))+" — supported")
+    # --- projected (forward vs trailing) multiple ---
+    if pe and fpe and pe>0:
+        comp=int(round((fpe/pe-1)*100))
+        parts.append("Projected multiple: forward P/E "+str(fpe)+" vs trailing "+str(pe)+" ("+("" if comp<0 else "+")+str(comp)+"%) — market prices "+("multiple COMPRESSION, i.e. earnings expected to grow into the price" if comp<0 else "multiple EXPANSION, i.e. earnings expected to fall or a re-rate higher"))
+    # --- EV / adjusted EBITDA ---
+    if evb and evSec:
+        evrel=int(round((evb/evSec-1)*100))
+        parts.append("Price-to-(adjusted) EBITDA: EV/EBITDA "+str(evb)+" vs sector "+str(round(evSec,1))+" ("+("" if evrel<0 else "+")+str(evrel)+"%)")
+    if revg is not None and epsg is not None:
+        corr="corroborated by" if (revg>0 and epsg>0) else "NOT corroborated by"
+        parts.append("Earnings growth "+str(int(round(epsg*100)))+"% "+corr+" revenue growth "+str(int(round(revg*100)))+"%")
+    _vd=[x for x in (peV,pegV) if x]
+    overall=("n/a" if not _vd else "mixed" if ("rejected" in _vd and "supported" in _vd)
+             else "rejected" if "rejected" in _vd else "supported")
+    return {"pe":pe,"fpe":fpe,"peg":peg,"evb":evb,"epsg":epsg,"revg":revg,
+            "peSec":round(peSec,1) if peSec else None,"evSec":round(evSec,1) if evSec else None,
+            "peV":peV,"pegV":pegV,"overall":overall,"reason":". ".join(parts)+"."}
+
 def synth(seed=7):
     rng=random.Random(seed); W=53
     mkt=[rng.gauss(0.002,0.022) for _ in range(W)]
@@ -394,8 +451,15 @@ def synth(seed=7):
                 closes.append(px); highs.append(px*(1+u)); lows.append(px*(1-u))
                 vols.append(rng.uniform(0.6,1.8)*mcap*(0.0008 if liquid else 0.0012)*(1+abs(dr)*8))
         fcf=mcap*rng.uniform(-0.02,0.08) if liquid else mcap*rng.uniform(-0.05,0.07)
+        _bpe,_bg,_bev=SECVAL.get(sec,(20,0.08,12))
+        _pe=max(5.0,_bpe*rng.uniform(0.6,1.6)); _eg=max(-0.06,_bg+rng.gauss(0,0.05))
+        if rng.random()<0.10: _pe=None                      # ~10% unprofitable (no positive earnings)
+        _fpe=(round(_pe/(1+max(_eg,0.0)),1) if (_pe and _eg>0) else (round(_pe*rng.uniform(0.95,1.1),1) if _pe else None))
+        _peg=(round(_pe/(_eg*100.0),2) if (_pe and _eg>0.003) else None)
+        valr={"pe":round(_pe,1) if _pe else None,"fpe":_fpe,"peg":_peg,
+              "evb":round(max(3.0,_bev*rng.uniform(0.6,1.7)),1),"epsg":round(_eg,3),"revg":round(max(-0.06,_eg*rng.uniform(0.4,1.1)),3)}
         rec={"t":sym,"n":nm,"sec":sec,"idx":idx,"mcap":round(mcap),
-             "wr":[round(x,5) for x in wr],"_cl":closes,"_hi":highs,"_lo":lows,"_vol":vols,"_fcf":fcf}
+             "wr":[round(x,5) for x in wr],"_cl":closes,"_hi":highs,"_lo":lows,"_vol":vols,"_fcf":fcf,"_val":valr}
         if liquid and rng.random()<0.85:                 # liquid names carry an options chain
             sp=closes[-1]; rec["_opt"]={"pw":round(sp*rng.uniform(0.88,0.97),2),"cw":round(sp*rng.uniform(1.03,1.12),2),
                                         "pcr":round(rng.uniform(0.6,1.7),2),"gex":round(sp*rng.uniform(0.97,1.03),2)}
@@ -544,6 +608,14 @@ def build(names,mkt,ff,macro=None):
         if n.get("regime")=="mean-revert" and abs(n.get("ema21d",0))>=4: al.append("mean-revert setup ("+("rich" if n.get("ema21d",0)>0 else "cheap")+" vs EMA21)")
         if n.get("contra") and n["contra"]["s"]<=0.2 and n.get("ema21d",0)>0: al.append("aligned uptrend")
         n["alerts"]=al[:5]
+    peBySec={}; evBySec={}
+    for n in names:
+        v=n.get("_val") or {}
+        if v.get("pe") is not None: peBySec.setdefault(n["sec"],[]).append(v["pe"])
+        if v.get("evb") is not None: evBySec.setdefault(n["sec"],[]).append(v["evb"])
+    peMed={s:_median(xs) for s,xs in peBySec.items()}; evMed={s:_median(xs) for s,xs in evBySec.items()}
+    for n in names:
+        n["val"]=valuation_verdict(n.pop("_val",None), peMed.get(n["sec"]), evMed.get(n["sec"]))
     secmean={}
     for s in SECTORS:
         mem=[n["wr"] for n in names if n["sec"]==s]
@@ -769,8 +841,14 @@ def real_universe():
             wk=cl[::5]; wr=[(wk[i]/wk[i-1]-1) for i in range(1,len(wk)) if wk[i-1]]
             info=yf.Ticker(sym).get_info(); mcap=float(info.get("marketCap") or 0) or (cl[-1]*float(info.get("sharesOutstanding") or 0))
             fcf=info.get("freeCashflow")
+            def _fnum(x):
+                try: x=float(x); return x if (x==x and abs(x)<1e6) else None
+                except Exception: return None
+            valr={"pe":_fnum(info.get("trailingPE")),"fpe":_fnum(info.get("forwardPE")),
+                  "peg":_fnum(info.get("trailingPegRatio") or info.get("pegRatio")),"evb":_fnum(info.get("enterpriseToEbitda")),
+                  "epsg":_fnum(info.get("earningsGrowth")),"revg":_fnum(info.get("revenueGrowth"))}
             names.append({"t":sym,"n":nm,"sec":sec_name,"idx":membership(code),"mcap":round(mcap or 1e9),
-                          "wr":[round(x,5) for x in wr],"_cl":cl,"_hi":hi,"_lo":lo,"_vol":vo,"_fcf":float(fcf) if fcf else None})
+                          "wr":[round(x,5) for x in wr],"_cl":cl,"_hi":hi,"_lo":lo,"_vol":vo,"_fcf":float(fcf) if fcf else None,"_val":valr})
         except Exception as e:
             sys.stderr.write(f"skip {sym}: {e}\n")
     # ---- Russell 2000 (phase 2): iShares IWM holdings, batch-downloaded (env RUSSELL_LIMIT caps size; 0 = all) ----

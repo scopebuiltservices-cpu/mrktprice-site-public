@@ -53,12 +53,18 @@ def aggregate_infotable(fh, only_sh=True):
     for c in agg: agg[c]["holders"] = len(agg[c].pop("_h"))
     return agg
 
-def match_universe(agg, universe):
+def match_universe(agg, universe, cusip_map=None):
+    """Match by CUSIP first (exact, from the fails-to-deliver map), then fall back to normalized issuer name."""
     by_norm = {}
     for c, a in agg.items(): by_norm.setdefault(norm_name(a["issuer"]), c)
     out = {}
     for tk, nm in universe:
-        c = by_norm.get(norm_name(nm))
+        c = None
+        if cusip_map and cusip_map.get(tk):
+            cc = cusip_map[tk].upper()[:8]
+            for k in agg:
+                if k[:8] == cc: c = k; break
+        if not c: c = by_norm.get(norm_name(nm))
         if c and c in agg:
             a = agg[c]; out[tk] = {"cusip": c, "issuer": a["issuer"], "value": a["value"], "shares": a["shares"], "holders": a["holders"]}
     return out
@@ -104,6 +110,37 @@ def download_quarter(q):
         raise RuntimeError(f"download failed {url} ({r.status_code})")
     return load_infotable_from_zip(r.content)
 
+FTD_BASE = "https://www.sec.gov/files/data/fails-deliver-data"
+def parse_ftd_line(line):
+    """SEC fails-to-deliver row is pipe-delimited: DATE|CUSIP|SYMBOL|QTY|DESCRIPTION|PRICE -> (ticker, cusip)."""
+    p = line.split("|")
+    if len(p) < 3: return None, None
+    sym = p[2].strip().upper(); cusip = p[1].strip()
+    if not sym or not cusip or sym == "SYMBOL": return None, None
+    return sym, cusip
+
+def build_cusip_map(tickers, sess=None):
+    """ticker -> CUSIP from the SEC fails-to-deliver files (free, official). Tries the most recent half-months."""
+    import requests
+    s = sess or requests.Session()
+    want = {t.upper() for t in tickers}; out = {}
+    today = dt.date.today()
+    for back in range(0, 4):
+        y, m = today.year, today.month - back
+        while m <= 0: m += 12; y -= 1
+        for half in ("b", "a"):
+            url = f"{FTD_BASE}/cnsfails{y}{m:02d}{half}.zip"
+            try:
+                r = s.get(url, headers=UA, timeout=120)
+                if r.status_code != 200 or len(r.content) < 500: continue
+                zf = zipfile.ZipFile(io.BytesIO(r.content)); nm = zf.namelist()[0]
+                for line in io.TextIOWrapper(zf.open(nm), encoding="latin-1", errors="replace"):
+                    sym, cusip = parse_ftd_line(line)
+                    if sym and sym in want and sym not in out: out[sym] = cusip
+                if out: sys.stderr.write(f"cusip map: {len(out)}/{len(want)} from cnsfails{y}{m:02d}{half}\n"); return out
+            except Exception: continue
+    return out
+
 def universe_from_marketmap(path):
     with open(path) as f: d = json.load(f)
     return [(n["t"], n.get("n", n["t"])) for n in d.get("names", [])]
@@ -126,9 +163,10 @@ def main():
         ac = download_quarter(cq); ap_ = download_quarter(pq)
 
     uni = universe_from_marketmap(a.universe)
-    flow = institutional_flow(match_universe(ac, uni), match_universe(ap_, uni))
+    cmap = {} if (a.local_curr and a.local_prev) else build_cusip_map([t for t, _ in uni])
+    flow = institutional_flow(match_universe(ac, uni, cmap), match_universe(ap_, uni, cmap))
     flow["_meta"] = {"curr_q": cq, "prev_q": pq, "asof": dt.date.today().isoformat(),
-                     "matched": len([k for k in flow if not k.startswith("_")]), "universe": len(uni),
+                     "matched": len([k for k in flow if not k.startswith("_")]), "universe": len(uni), "cusip_mapped": len(cmap),
                      "source": "SEC Form 13F data sets (free)"}
     with open(a.out, "w") as f: json.dump(flow, f, allow_nan=False)
     sys.stderr.write(f"wrote {a.out}: {flow['_meta']['matched']}/{len(uni)} names matched\n")

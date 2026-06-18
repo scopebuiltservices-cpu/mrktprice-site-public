@@ -18,7 +18,8 @@ Output: ../../marketmap.json
 Stdlib-only math (self-tested); --real adds yfinance/requests. Research only; not advice.
 """
 from __future__ import annotations
-import argparse, json, math, os, random, sys, datetime as dt
+import argparse, json, math, os, random, re, sys, time, datetime as dt
+import xml.etree.ElementTree as ET
 
 SECTORS=["Technology","Financials","Health Care","Consumer Disc.","Communication",
          "Industrials","Consumer Staples","Energy","Utilities","Materials","Real Estate"]
@@ -460,6 +461,11 @@ def synth(seed=7):
               "evb":round(max(3.0,_bev*rng.uniform(0.6,1.7)),1),"epsg":round(_eg,3),"revg":round(max(-0.06,_eg*rng.uniform(0.4,1.1)),3)}
         rec={"t":sym,"n":nm,"sec":sec,"idx":idx,"mcap":round(mcap),
              "wr":[round(x,5) for x in wr],"_cl":closes,"_hi":highs,"_lo":lows,"_vol":vols,"_fcf":fcf,"_val":valr}
+        _iv=rng.random()
+        if _iv<0.22: rec["insider"]={"verdict":"insider buying (signal)","score":round(rng.uniform(0.3,1.0),2),"buy":int(rng.uniform(1,8)*1e6),"discSell":0,"planSell":int(rng.uniform(0,3)*1e6),"buyers":rng.randint(1,3),"sellers":0,"days":120}
+        elif _iv<0.5: rec["insider"]={"verdict":"routine 10b5-1 selling (noise)","score":0.0,"buy":0,"discSell":0,"planSell":int(rng.uniform(1,12)*1e6),"buyers":0,"sellers":0,"days":120}
+        elif _iv<0.64: rec["insider"]={"verdict":"discretionary selling (caution)","score":round(rng.uniform(-1.0,-0.2),2),"buy":0,"discSell":int(rng.uniform(1,9)*1e6),"planSell":int(rng.uniform(0,4)*1e6),"buyers":0,"sellers":rng.randint(1,3),"days":120}
+        else: rec["insider"]={"verdict":"quiet","score":0.0,"buy":0,"discSell":0,"planSell":0,"buyers":0,"sellers":0,"days":120}
         if liquid and rng.random()<0.85:                 # liquid names carry an options chain
             sp=closes[-1]; rec["_opt"]={"pw":round(sp*rng.uniform(0.88,0.97),2),"cw":round(sp*rng.uniform(1.03,1.12),2),
                                         "pcr":round(rng.uniform(0.6,1.7),2),"gex":round(sp*rng.uniform(0.97,1.03),2)}
@@ -606,6 +612,8 @@ def build(names,mkt,ff,macro=None):
         if n.get("brk"): al.append("ATR breakout")
         if n.get("jump") is not None and n["jump"]>=0.5: al.append("recent jump (event-driven)")
         if n.get("regime")=="mean-revert" and abs(n.get("ema21d",0))>=4: al.append("mean-revert setup ("+("rich" if n.get("ema21d",0)>0 else "cheap")+" vs EMA21)")
+        if n.get("insider") and n["insider"].get("verdict","").startswith("insider buying") and n["insider"].get("score",0)>=0.4: al.append("insider buying")
+        if n.get("insider") and "caution" in n["insider"].get("verdict",""): al.append("insider selling")
         if n.get("contra") and n["contra"]["s"]<=0.2 and n.get("ema21d",0)>0: al.append("aligned uptrend")
         n["alerts"]=al[:5]
     peBySec={}; evBySec={}
@@ -805,6 +813,77 @@ def twelvedata_ivol(key, names, cap=40):
             n["ivol"]=round(sd*math.sqrt(252*6.5)*100,1)
         except Exception: continue
 
+# ---- FREE SEC Form 4 insider engine (no paid tier): separates discretionary buys/sells (SIGNAL) from 10b5-1 planned sales (NOISE) ----
+_INS_UA={"User-Agent":"MrktPrice marketmap/1.0 (research; contact scopebuiltservices@gmail.com)"}
+_INS_PLAN=re.compile(r"10b5[\-\u2010\u2011\u2012\u2013\u2014]?\s*1|rule\s*10b5", re.I)
+_INS_CIK=None
+def _ins_g(node,path):
+    el=node.find(path); return (el.text or "").strip() if (el is not None and el.text) else ""
+def _ins_num(x):
+    try: return float(str(x).replace(",",""))
+    except Exception: return None
+def parse_form4(xml_bytes):
+    try: root=ET.fromstring(xml_bytes)
+    except Exception: return []
+    notes={fn.get("id",""):(fn.text or "") for fn in root.findall(".//footnotes/footnote")}
+    name=_ins_g(root,".//reportingOwner/reportingOwnerId/rptOwnerName")
+    rel=root.find(".//reportingOwner/reportingOwnerRelationship"); role=""
+    if rel is not None:
+        if _ins_g(rel,"isDirector") in ("1","true"): role="Director"
+        if _ins_g(rel,"isOfficer") in ("1","true"): role=_ins_g(rel,"officerTitle") or "Officer"
+        if _ins_g(rel,"isTenPercentOwner") in ("1","true"): role=role or "10% owner"
+    out=[]
+    for t in root.findall(".//nonDerivativeTransaction"):
+        code=_ins_g(t,"transactionCoding/transactionCode"); ad=_ins_g(t,"transactionAmounts/transactionAcquiredDisposedCode/value")
+        sh=_ins_num(_ins_g(t,"transactionAmounts/transactionShares/value")); px=_ins_num(_ins_g(t,"transactionAmounts/transactionPricePerShare/value"))
+        date=_ins_g(t,"transactionDate/value"); planned=False
+        for fr in t.findall(".//footnoteId"):
+            if _INS_PLAN.search(notes.get(fr.get("id",""),"")): planned=True
+        out.append({"name":name,"role":role,"date":date,"code":code,"ad":ad,"shares":sh,"price":px,
+                    "value":(sh*px if (sh and px) else None),"planned":planned})
+    return out
+def insider_signal(txns, days=120, asof=None):
+    asof=asof or dt.date.today(); cut=asof-dt.timedelta(days=days)
+    def rec(t):
+        try: return dt.date.fromisoformat(t["date"])>=cut
+        except Exception: return False
+    R=[t for t in txns if rec(t)]
+    buy=sum(t["value"] or 0 for t in R if t["code"]=="P" and t["ad"]=="A")
+    disc=sum(t["value"] or 0 for t in R if t["code"]=="S" and t["ad"]=="D" and not t["planned"])
+    plan=sum(t["value"] or 0 for t in R if t["code"]=="S" and t["ad"]=="D" and t["planned"])
+    nb=len({t["name"] for t in R if t["code"]=="P" and t["ad"]=="A"}); ns=len({t["name"] for t in R if t["code"]=="S" and t["ad"]=="D" and not t["planned"]})
+    gross=buy+disc; net=buy-disc; score=(net/gross) if gross>0 else 0.0
+    if buy>0 and net>0: v="insider buying (signal)"
+    elif disc>0 and net<0: v="discretionary selling (caution)"
+    elif plan>0 and disc==0 and buy==0: v="routine 10b5-1 selling (noise)"
+    else: v="quiet"
+    return {"days":days,"buy":round(buy),"discSell":round(disc),"planSell":round(plan),"buyers":nb,"sellers":ns,"score":round(score,2),"verdict":v}
+def fetch_insider(ticker, max_filings=15, sess=None):
+    try:
+        import requests
+        global _INS_CIK; s=sess or requests.Session()
+        if _INS_CIK is None:
+            j=s.get("https://www.sec.gov/files/company_tickers.json",headers=_INS_UA,timeout=20).json()
+            _INS_CIK={v["ticker"].upper():str(v["cik_str"]).zfill(10) for v in j.values()}
+        cik=_INS_CIK.get(ticker.upper())
+        if not cik: return None
+        sub=s.get("https://data.sec.gov/submissions/CIK%s.json"%cik,headers=_INS_UA,timeout=20).json()
+        r=sub.get("filings",{}).get("recent",{}); forms=r.get("form",[]); acc=r.get("accessionNumber",[]); pdoc=r.get("primaryDocument",[])
+        txns=[]; got=0; ci=str(int(cik))
+        for i in range(len(forms)):
+            if forms[i]!="4": continue
+            doc=pdoc[i] if i<len(pdoc) else ""
+            if not doc.endswith(".xml"): continue
+            try:
+                body=s.get("https://www.sec.gov/Archives/edgar/data/%s/%s/%s"%(ci,acc[i].replace("-",""),doc),headers=_INS_UA,timeout=20).content
+                time.sleep(0.12)
+                if b"ownershipDocument" in body: txns+=parse_form4(body)
+            except Exception: pass
+            got+=1
+            if got>=max_filings: break
+        return insider_signal(txns) if txns else None
+    except Exception: return None
+
 def real_universe():
     import requests
     UA={"User-Agent":"MrktPrice marketmap/1.0 (research; contact scopebuiltservices@gmail.com)"}
@@ -849,6 +928,8 @@ def real_universe():
                   "epsg":_fnum(info.get("earningsGrowth")),"revg":_fnum(info.get("revenueGrowth"))}
             names.append({"t":sym,"n":nm,"sec":sec_name,"idx":membership(code),"mcap":round(mcap or 1e9),
                           "wr":[round(x,5) for x in wr],"_cl":cl,"_hi":hi,"_lo":lo,"_vol":vo,"_fcf":float(fcf) if fcf else None,"_val":valr})
+            try: names[-1]["insider"]=fetch_insider(sym, max_filings=15)
+            except Exception: names[-1]["insider"]=None
         except Exception as e:
             sys.stderr.write(f"skip {sym}: {e}\n")
     # ---- Russell 2000 (phase 2): iShares IWM holdings, batch-downloaded (env RUSSELL_LIMIT caps size; 0 = all) ----

@@ -178,6 +178,7 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
         +((n.alerts&&n.alerts.length)?'<br><span style="color:var(--accent)">\u2691 '+n.alerts.join(' · ')+'</span>':'')
         +((n.deps&&n.deps.length)?'<br>depends'+(n.macroR2!=null?' (macro '+n.macroR2+'% of moves)':'')+': '+n.deps.slice(0,5).map(function(d){return d.f+' '+(d.corr>0?'\u2191\u2192\u2191':'\u2191\u2192\u2193')+' '+(d.sens>0?'+':'')+d.sens+'%/\u03c3'+(d.lag>0?' leads'+d.lag+'w':'')+(d.unexp?' \u26a0?':'')+(d.stab==='flipped'?' flipped':'');}).join(' · '):'')
         +((n.regime)?'<br>structure: <b>'+n.regime+'</b>'+((n.hl!=null&&n.hl<200)?' \u00b7 half-life '+n.hl+'d':'')+(n.vr!=null?' \u00b7 VR '+n.vr:'')+((n.jump!=null&&n.jump>=0.3)?' \u00b7 jump '+Math.round(n.jump*100)+'%':'')+(n.pvol!=null?' \u00b7 range-vol '+n.pvol+'%':''):'')
+        +((n.insider&&n.insider.verdict&&n.insider.verdict!=='quiet')?'<br>insider: '+n.insider.verdict+(n.insider.score?' ('+(n.insider.score>0?'+':'')+n.insider.score+')':''):'')
         +(n.ivol!=null?'<br>intraday vol: '+n.ivol+'%':'')
         +'<br>signals: '+cc
         +'<br>'+fmtB(n.mcap)+' · β '+n.beta+' · vol '+n.vol+'% · 12m '+n.ret['12m']+'%'
@@ -199,12 +200,13 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
 })();
 
   function _vcls(v){return v==='supported'?'v-supported':v==='rejected'?'v-rejected':v==='mixed'?'v-mixed':'v-na';}
+  function fmtM(x){x=x||0;return x>=1e6?(x/1e6).toFixed(1)+'M':x>=1e3?Math.round(x/1e3)+'K':(''+Math.round(x));}
   function briefCard(n){return {symbol:n.t,name:n.n,sector:n.sec,as_of:D.asof||'',
     price_vs_ema21:{distance_pct:n.ema21d,distance_sigma:n.ema21sig,slope_5d_pct:n.ema21sl},
     momentum_z:(n.z?n.z.mom:null),regime:n.regime,half_life_days:n.hl,variance_ratio:n.vr,jump_fraction:n.jump,range_vol_pct:n.pvol,
     threshold_odds:n.odds,expected_value_pct:n.ev,ev_percentile:n.evPct,
     macro:{r2_pct:n.macroR2,top_driver:n.drv,betas:n.mb,dependencies:n.deps},
-    contradiction:n.contra,valuation:n.val,
+    contradiction:n.contra,valuation:n.val,insider:n.insider,
     fundamentals:{market_cap:n.mcap,fcf_yield_pct:n.fcfY,beta:n.beta,ann_vol_pct:n.vol,mfi:n.mfi,atr_pct:n.atr},
     alerts:n.alerts,provenance:{source:D.source||'',as_of:D.asof||''},disclaimer:'Research only; not investment advice.'};}
   function renderBrief(n){
@@ -240,6 +242,13 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
       h+=row('Overall verdict','<span class="vbadge '+_vcls(v.overall)+'">'+v.overall+'</span>');
       h+='</table><div style="font-size:12px;margin-top:8px;line-height:1.5"><b>Aggregate reasoning:</b> '+v.reason+'</div>';
     }else{h+='<div style="font-size:12px;color:var(--muted,#8a93a0)">No valuation data available for this name.</div>';}
+    if(n.insider&&n.insider.verdict){var iv=n.insider;var icl=iv.verdict.indexOf('signal')>=0?'v-supported':iv.verdict.indexOf('caution')>=0?'v-rejected':iv.verdict.indexOf('noise')>=0?'v-mixed':'v-na';
+      h+='<h3>Insider activity — SEC Form 4 (free, last '+iv.days+'d)</h3><table class="kv">';
+      h+=row('Signal','<span class="vbadge '+icl+'">'+iv.verdict+'</span> · score '+iv.score);
+      h+=row('Discretionary buys','$'+fmtM(iv.buy)+' · '+iv.buyers+' buyer(s)');
+      h+=row('Discretionary sells','$'+fmtM(iv.discSell)+' · '+iv.sellers+' seller(s)');
+      h+=row('Planned 10b5-1 sells (noise)','$'+fmtM(iv.planSell));
+      h+='</table>';}
     if(n.alerts&&n.alerts.length)h+='<h3>Alerts</h3><div style="font-size:12px">'+n.alerts.join(' · ')+'</div>';
     return h;}
   function openBrief(t){var n=null,i;for(i=0;i<D.names.length;i++){if(D.names[i].t===t){n=D.names[i];break;}}if(!n)return;

@@ -466,6 +466,10 @@ def synth(seed=7):
         elif _iv<0.5: rec["insider"]={"verdict":"routine 10b5-1 selling (noise)","score":0.0,"buy":0,"discSell":0,"planSell":int(rng.uniform(1,12)*1e6),"buyers":0,"sellers":0,"days":120}
         elif _iv<0.64: rec["insider"]={"verdict":"discretionary selling (caution)","score":round(rng.uniform(-1.0,-0.2),2),"buy":0,"discSell":int(rng.uniform(1,9)*1e6),"planSell":int(rng.uniform(0,4)*1e6),"buyers":0,"sellers":rng.randint(1,3),"days":120}
         else: rec["insider"]={"verdict":"quiet","score":0.0,"buy":0,"discSell":0,"planSell":0,"buyers":0,"sellers":0,"days":120}
+        _qv=rng.random(); _h=rng.randint(40,2200); _sh=int(rng.uniform(5,900)*1e6); _vv=int(rng.uniform(0.5,80)*1e9)
+        if _qv<0.33: rec["inst"]={"verdict":"accumulation","dShares":round(rng.uniform(2,18),1),"dHolders":rng.randint(1,40),"holders":_h,"shares":_sh,"value":_vv}
+        elif _qv<0.6: rec["inst"]={"verdict":"distribution","dShares":round(rng.uniform(-18,-2),1),"dHolders":-rng.randint(1,35),"holders":_h,"shares":_sh,"value":_vv}
+        else: rec["inst"]={"verdict":"stable","dShares":round(rng.uniform(-1.8,1.8),1),"dHolders":rng.randint(-5,5),"holders":_h,"shares":_sh,"value":_vv}
         if liquid and rng.random()<0.85:                 # liquid names carry an options chain
             sp=closes[-1]; rec["_opt"]={"pw":round(sp*rng.uniform(0.88,0.97),2),"cw":round(sp*rng.uniform(1.03,1.12),2),
                                         "pcr":round(rng.uniform(0.6,1.7),2),"gex":round(sp*rng.uniform(0.97,1.03),2)}
@@ -614,6 +618,8 @@ def build(names,mkt,ff,macro=None):
         if n.get("regime")=="mean-revert" and abs(n.get("ema21d",0))>=4: al.append("mean-revert setup ("+("rich" if n.get("ema21d",0)>0 else "cheap")+" vs EMA21)")
         if n.get("insider") and n["insider"].get("verdict","").startswith("insider buying") and n["insider"].get("score",0)>=0.4: al.append("insider buying")
         if n.get("insider") and "caution" in n["insider"].get("verdict",""): al.append("insider selling")
+        if n.get("inst") and n["inst"].get("verdict")=="accumulation" and (n["inst"].get("dShares") or 0)>=5: al.append("institutional accumulation")
+        if n.get("inst") and n["inst"].get("verdict")=="distribution" and (n["inst"].get("dShares") or 0)<=-5: al.append("institutional distribution")
         if n.get("contra") and n["contra"]["s"]<=0.2 and n.get("ema21d",0)>0: al.append("aligned uptrend")
         n["alerts"]=al[:5]
     peBySec={}; evBySec={}
@@ -884,6 +890,14 @@ def fetch_insider(ticker, max_filings=15, sess=None):
         return insider_signal(txns) if txns else None
     except Exception: return None
 
+def load_institutional():
+    """Read the committed institutional.json (written quarterly by build_institutional.py from free SEC 13F data sets)."""
+    for pth in ("institutional.json","../institutional.json","../../institutional.json","tools/market_map/institutional.json"):
+        try:
+            with open(pth) as f: return json.load(f)
+        except Exception: continue
+    return {}
+
 def real_universe():
     import requests
     UA={"User-Agent":"MrktPrice marketmap/1.0 (research; contact scopebuiltservices@gmail.com)"}
@@ -1001,6 +1015,9 @@ def real_universe():
             n["_opt"]=fetch_opt(n["t"], n["_cl"][-1])
     except Exception as e:
         sys.stderr.write(f"opt skip: {e}\n")
+    inst=load_institutional()
+    for n in names:
+        if not n.get("inst"): n["inst"]=inst.get(n["t"])
     return names,mkt,ff,macro
 
 def main():

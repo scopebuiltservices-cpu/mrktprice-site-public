@@ -1,0 +1,37 @@
+name: Refresh 13F institutional (quarterly, free SEC data)
+
+# Builds institutional.json from the SEC bulk Form 13F data sets (free) for the universe in
+# marketmap.json. The nightly Market Map build reads institutional.json and bakes the
+# accumulation/distribution flow into each name. Runs after each quarter's 13F deadline.
+
+on:
+  schedule:
+    - cron: "0 8 5 2,5,8,11 *"   # ~5th of Feb/May/Aug/Nov, after the 45-day 13F deadline + dataset publish
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Build institutional.json from free SEC 13F data sets
+        run: |
+          python -m pip install --quiet requests
+          python tools/market_map/build_institutional.py --universe marketmap.json --out institutional.json \
+            || { echo "::warning::13F refresh failed - keeping previous institutional.json"; exit 0; }
+      - name: Commit if changed
+        run: |
+          if [ -n "$(git status --porcelain institutional.json)" ]; then
+            git config user.name "mrktprice-bot"
+            git config user.email "scopebuiltservices@gmail.com"
+            git add institutional.json
+            git commit -m "Quarterly 13F refresh (free SEC Form 13F data sets)"
+            git push
+          else
+            echo "institutional.json unchanged"
+          fi

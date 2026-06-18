@@ -179,6 +179,7 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
         +((n.deps&&n.deps.length)?'<br>depends'+(n.macroR2!=null?' (macro '+n.macroR2+'% of moves)':'')+': '+n.deps.slice(0,5).map(function(d){return d.f+' '+(d.corr>0?'\u2191\u2192\u2191':'\u2191\u2192\u2193')+' '+(d.sens>0?'+':'')+d.sens+'%/\u03c3'+(d.lag>0?' leads'+d.lag+'w':'')+(d.unexp?' \u26a0?':'')+(d.stab==='flipped'?' flipped':'');}).join(' · '):'')
         +((n.regime)?'<br>structure: <b>'+n.regime+'</b>'+((n.hl!=null&&n.hl<200)?' \u00b7 half-life '+n.hl+'d':'')+(n.vr!=null?' \u00b7 VR '+n.vr:'')+((n.jump!=null&&n.jump>=0.3)?' \u00b7 jump '+Math.round(n.jump*100)+'%':'')+(n.pvol!=null?' \u00b7 range-vol '+n.pvol+'%':''):'')
         +((n.insider&&n.insider.verdict&&n.insider.verdict!=='quiet')?'<br>insider: '+n.insider.verdict+(n.insider.score?' ('+(n.insider.score>0?'+':'')+n.insider.score+')':''):'')
+        +((n.inst&&n.inst.verdict&&n.inst.verdict!=='n/a')?'<br>institutional: '+n.inst.verdict+(n.inst.dShares!=null?' ('+(n.inst.dShares>0?'+':'')+n.inst.dShares+'%)':''):'')
         +(n.ivol!=null?'<br>intraday vol: '+n.ivol+'%':'')
         +'<br>signals: '+cc
         +'<br>'+fmtB(n.mcap)+' · β '+n.beta+' · vol '+n.vol+'% · 12m '+n.ret['12m']+'%'
@@ -206,7 +207,7 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
     momentum_z:(n.z?n.z.mom:null),regime:n.regime,half_life_days:n.hl,variance_ratio:n.vr,jump_fraction:n.jump,range_vol_pct:n.pvol,
     threshold_odds:n.odds,expected_value_pct:n.ev,ev_percentile:n.evPct,
     macro:{r2_pct:n.macroR2,top_driver:n.drv,betas:n.mb,dependencies:n.deps},
-    contradiction:n.contra,valuation:n.val,insider:n.insider,
+    contradiction:n.contra,valuation:n.val,insider:n.insider,institutional:n.inst,
     fundamentals:{market_cap:n.mcap,fcf_yield_pct:n.fcfY,beta:n.beta,ann_vol_pct:n.vol,mfi:n.mfi,atr_pct:n.atr},
     alerts:n.alerts,provenance:{source:D.source||'',as_of:D.asof||''},disclaimer:'Research only; not investment advice.'};}
   function renderBrief(n){
@@ -248,6 +249,12 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
       h+=row('Discretionary buys','$'+fmtM(iv.buy)+' · '+iv.buyers+' buyer(s)');
       h+=row('Discretionary sells','$'+fmtM(iv.discSell)+' · '+iv.sellers+' seller(s)');
       h+=row('Planned 10b5-1 sells (noise)','$'+fmtM(iv.planSell));
+      h+='</table>';}
+    if(n.inst&&n.inst.verdict){var q=n.inst;var qcl=q.verdict==='accumulation'?'v-supported':q.verdict==='distribution'?'v-rejected':q.verdict==='stable'?'v-mixed':'v-na';
+      h+='<h3>Institutional ownership — 13F (free SEC data)</h3><table class="kv">';
+      h+=row('Flow (QoQ)','<span class="vbadge '+qcl+'">'+q.verdict+'</span>'+(q.dShares!=null?' · '+(q.dShares>0?'+':'')+q.dShares+'% shares':''));
+      h+=row('Institutional holders',(q.holders!=null?q.holders:'—')+(q.dHolders!=null?' ('+(q.dHolders>0?'+':'')+q.dHolders+' QoQ)':''));
+      h+=row('Shares / value held',(q.shares!=null?fmtM(q.shares)+' sh':'—')+(q.value!=null?' · $'+fmtM(q.value):''));
       h+='</table>';}
     if(n.alerts&&n.alerts.length)h+='<h3>Alerts</h3><div style="font-size:12px">'+n.alerts.join(' · ')+'</div>';
     return h;}

@@ -164,6 +164,45 @@ def macro_fit(y, factors):
     fit=[sum(X[r][c]*b[c] for c in range(k+1)) for r in range(n)]
     return fit,[y[r]-fit[r] for r in range(n)]
 
+# ---- decision-path analytics from the Value-Prediction-Pipeline review (EMA21-first) ----
+def ema_series(xs, span):
+    a=2.0/(span+1.0); out=[]; e=None
+    for x in xs:
+        if x is None or x!=x: out.append(e); continue
+        e=x if e is None else a*x+(1.0-a)*e; out.append(e)
+    return out
+
+def daily_logvol(closes):
+    r=[math.log(closes[i]/closes[i-1]) for i in range(1,len(closes))
+       if _ok(closes[i],closes[i-1]) and closes[i]>0 and closes[i-1]>0]
+    if len(r)<5: return float("nan")
+    m=sum(r)/len(r); return (sum((x-m)**2 for x in r)/(len(r)-1))**0.5
+
+def _phi(x):  # standard-normal CDF
+    return 0.5*(1.0+math.erf(x/math.sqrt(2.0)))
+
+def prob_touch(S, B, sig_d, T):
+    """Driftless first-passage probability that GBM started at S touches barrier B within T
+    trading days, given daily log-vol sig_d. Reflection-principle approximation, clamped [0,1]."""
+    if not (S>0 and B>0) or sig_d<=0 or T<=0: return 0.0
+    s=sig_d*math.sqrt(T); d=abs(math.log(B/S))
+    if s<=0: return 0.0
+    return max(0.0,min(1.0,2.0*(1.0-_phi(d/s))))
+
+def contradiction(signals):
+    """P3-42 agreement: signals = list of (name, value, weight). Dominant direction s* = sign of
+    the weighted sum of signs; agreement = (weight of signals matching s*)/(total weight).
+    Returns (contradiction in [0,1] = 1-agreement, direction str, list of conflicting names)."""
+    sig=[(nm,(1 if v>0 else (-1 if v<0 else 0)),w) for nm,v,w in signals if v==v]
+    sig=[x for x in sig if x[1]!=0]
+    if not sig: return 0.0,"flat",[]
+    W=sum(w for _,_,w in sig); ws=sum(sg*w for _,sg,w in sig)
+    star=1 if ws>0 else (-1 if ws<0 else 0)
+    if star==0: return 1.0,"mixed",[nm for nm,_,_ in sig]
+    agree=sum(w for _,sg,w in sig if sg==star)/W
+    conf=[nm for nm,sg,_ in sig if sg!=star]
+    return round(1.0-agree,2),("up" if star>0 else "down"),conf
+
 # ---------- synthetic seed (recognisable names, illustrative numbers) -------------------------
 SEED=[("AAPL","Apple","Technology","ND S"),("MSFT","Microsoft","Technology","ND S"),("NVDA","NVIDIA","Technology","ND S"),
 ("AVGO","Broadcom","Technology","ND S"),("ORCL","Oracle","Technology","S"),("CRM","Salesforce","Technology","D S"),
@@ -301,7 +340,7 @@ def build(names,mkt,ff,macro=None):
         fcf=n.pop("_fcf",None); n["fcf"]=round(fcf) if fcf is not None else None
         n["fcfY"]=round(fcf/n["mcap"]*100,2) if (fcf is not None and n["mcap"]) else None
         # MFI (0..100) + ATR% + breakout flag from daily High/Low/Close/Volume
-        hi=n.pop("_hi",None); lo=n.pop("_lo",None); n["opt"]=n.pop("_opt",None)
+        hi=n.pop("_hi",None); lo=n.pop("_lo",None); n["opt"]=n.pop("_opt",None); a=float("nan")
         if cl and lo and hi and vo and len(cl)>15:
             mv=mfi(hi,lo,cl,vo,14); a=atr(hi,lo,cl,14)
             n["mfi"]=round(mv,1) if mv==mv else 50.0
@@ -321,17 +360,38 @@ def build(names,mkt,ff,macro=None):
             n["_disloc"]=(sum(res[-4:])/4.0)/rstd*2.0
         else:
             n["mb"]={}; n["drv"]=None; n["_disloc"]=0.0
+        # EMA21-first decision metrics: distance %, distance in sigma, 5-day slope, threshold ladder + prob-of-touch
+        if cl and len(cl)>=22:
+            es=ema_series(cl,21); e21=es[-1]; sp=cl[-1]; sdl=daily_logvol(cl)
+            n["ema21d"]=round((sp-e21)/e21*100,2) if e21 else 0.0
+            n["ema21sig"]=round(((sp-e21)/e21)/(sdl*math.sqrt(21)),2) if (e21 and sdl==sdl and sdl>0) else 0.0
+            e5=es[-6] if (len(es)>=6 and es[-6]) else None
+            n["ema21sl"]=round((e21-e5)/e5*100,2) if e5 else 0.0
+            win=cl[-63:] if len(cl)>=63 else cl; Bhi=max(win); Blo=min(win)
+            au=(Bhi-sp)/a if (a==a and a>0) else None; ad=(sp-Blo)/a if (a==a and a>0) else None
+            n["touch"]={"up":{"d":round(au,2) if au is not None else None,"p":round(prob_touch(sp,Bhi,sdl,21),2) if sdl==sdl else None},
+                        "dn":{"d":round(ad,2) if ad is not None else None,"p":round(prob_touch(sp,Blo,sdl,21),2) if sdl==sdl else None}}
+        else:
+            n["ema21d"]=0.0; n["ema21sig"]=0.0; n["ema21sl"]=0.0; n["touch"]=None
     val=[ -n["ret"]["12m"]/(n["vol"] or 1) for n in names]; mom=[n["ret"]["6m"] for n in names]
     risk=[n["beta"] for n in names]; size=[math.log(n["mcap"]) for n in names]
     fcy=[n["fcfY"] for n in names]; flw=[n["flow"]["net1m"] for n in names]
-    dis=[n.get("_disloc",0.0) for n in names]; mfv=[n.get("mfi",50.0) for n in names]
+    dis=[n.get("_disloc",0.0) for n in names]; mfv=[n.get("mfi",50.0) for n in names]; emv=[n.get("ema21sig",0.0) for n in names]
     Z=lambda a:zscores(winsorize(a))
     zV,zM,zR,zS,zF,zL=Z(val),Z(mom),Z(risk),Z(size),Z(fcy),Z(flw)
-    zD,zMF=Z(dis),Z(mfv)
+    zD,zMF,zE=Z(dis),Z(mfv),Z(emv)
     for i,n in enumerate(names):
         n["z"]={"val":round(zV[i],2),"mom":round(zM[i],2),"risk":round(zR[i],2),"size":round(zS[i],2),
-                "fcf":round(zF[i],2),"flow":round(zL[i],2),"disloc":round(zD[i],2),"mfi":round(zMF[i],2)}
+                "fcf":round(zF[i],2),"flow":round(zL[i],2),"disloc":round(zD[i],2),"mfi":round(zMF[i],2),"ema":round(zE[i],2)}
         n["disloc"]=round(zD[i],2); n.pop("_disloc",None)
+    cvals=[]
+    for n in names:    # P3-42 contradiction: weighted agreement across the decision signals
+        sigs=[("momentum",n["z"].get("mom",0),1.0),("flow",n["flow"].get("net1m",0),1.0),
+              ("value",n["z"].get("val",0),0.8),("MFI",(n.get("mfi",50)-50),0.6),
+              ("trend",n.get("ema21d",0),1.0)]
+        cs,cdir,conf=contradiction(sigs); n["contra"]={"s":cs,"dir":cdir,"conf":conf[:3]}; cvals.append(cs)
+    zC=Z(cvals)
+    for i,n in enumerate(names): n["z"]["contra"]=round(zC[i],2)
     secmean={}
     for s in SECTORS:
         mem=[n["wr"] for n in names if n["sec"]==s]

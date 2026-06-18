@@ -476,6 +476,36 @@ def build(names,mkt,ff,macro=None):
     osec=[s for s in SECTORS if s in secmean]
     M=[[round(pearson(secmean[a],secmean[b]),3) for b in osec] for a in osec]
     oi=cluster_order(M); osec=[osec[i] for i in oi]; M=[[M[i][j] for j in oi] for i in oi]
+    # ---- directional dependency list: which macro deltas / sector the name moves WITH or AGAINST ----
+    FACS=[("MKT",mkt,"S&P 500"),("RATE",macro.get("RATE"),"10Y yield"),("DXY",macro.get("DXY"),"US dollar"),
+          ("OIL",macro.get("OIL"),"WTI oil"),("VIX",macro.get("VIX"),"VIX")]
+    for n in names:
+        wr=n["wr"]; deps=[]
+        for fk,ser,lab in FACS:
+            if not ser: continue
+            c=pearson(wr,ser)
+            if c==c and abs(c)>=0.12:
+                deps.append({"f":lab,"corr":round(c,2),"dir":("with" if c>0 else "against")})
+        sc=secmean.get(n["sec"])
+        if sc:
+            c=pearson(wr,sc)
+            if c==c and abs(c)>=0.12: deps.append({"f":n["sec"]+" sector","corr":round(c,2),"dir":("with" if c>0 else "against")})
+        deps.sort(key=lambda d:-abs(d["corr"])); n["deps"]=deps[:6]
+    # ---- opportunity rank: market position + momentum + sector-relative strength + EV edge ----
+    secmom={}
+    for sct in SECTORS:
+        mem=[x["ret"]["3m"] for x in names if x["sec"]==sct]
+        if mem: secmom[sct]=sum(mem)/len(mem)
+    for n in names: n["secRel"]=round(n["ret"]["3m"]-secmom.get(n["sec"],0.0),2)
+    zP=zscores(winsorize([n.get("ema21sig",0.0) for n in names]))
+    zM2=[n["z"].get("mom",0.0) for n in names]
+    zSR=zscores(winsorize([n["secRel"] for n in names]))
+    zEV=zscores(winsorize([n.get("ev",0.0) for n in names]))
+    oppv=[0.30*zP[i]+0.25*zM2[i]+0.25*zSR[i]+0.20*zEV[i] for i in range(len(names))]
+    import bisect as _bis; oppr=sorted(oppv)
+    for i,n in enumerate(names):
+        n["opp"]=round(oppv[i],2)
+        n["oppPct"]=int(round(100.0*_bis.bisect_right(oppr,oppv[i])/len(oppr))) if oppr else 50
     cal=calibrate_touch(_calib)                    # idea 1: reliability backtest of the touch model
     return {"asof":dt.date.today().isoformat(),"source":"SAMPLE (synthetic, illustrative) — replaced by the nightly job","calibration":cal,
             "indices":{"DOW":"Dow Jones 30","NDX":"Nasdaq-100","SPX":"S&P 500","RUT":"Russell 2000"},"sectors":SECTORS,"factors":FACTORS,"macrof":["MKT"]+MFAC,

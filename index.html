@@ -516,10 +516,12 @@ function renderMacro(sym){var card=document.getElementById('macroCard');if(!card
  if(!M||!M.factors){bd.innerHTML='<div class="note">Macro exposure (rates / commodities) is computed in <b>live mode</b> — start the data service and it regresses this name on FRED factors with <b>shrinkage + FDR gating</b>, shown as <b>context, not cause</b> (point-in-time).</div>';return;}
  var sig=M.factors.filter(function(f){return f.sig;});
  if(!sig.length){bd.innerHTML='<div class="note">No macro factor shows a statistically significant relationship to this name after FDR correction — <b>treat macro as background only</b>.</div>';return;}
- bd.innerHTML='<table class="scan" style="font-size:11px"><tr><th>factor</th><th>&beta;</th><th>t</th><th>R&sup2;</th><th>today</th></tr>'+sig.map(function(f){
+ bd.innerHTML='<table class="scan" style="font-size:11px"><tr><th>factor</th><th>&beta;</th><th>direction</th><th>t</th><th>R&sup2;</th><th>today</th></tr>'+sig.map(function(f){
    var supp=(f.beta*(f.latestDelta||0))>=0,col=supp?'var(--up)':'var(--down)';
-   return '<tr><td>'+f.name+'</td><td>'+f.beta.toFixed(3)+'</td><td>'+f.t.toFixed(1)+'</td><td>'+(f.r2*100).toFixed(0)+'%</td><td style="color:'+col+'">'+(supp?'▲ supportive':'▼ adverse')+'</td></tr>';}).join('')
-   +'</table><div class="note">Per-name betas, <b>James-Stein/ridge-shrunk</b> toward zero-exposure and <b>FDR-gated</b>; R&sup2; = share of daily variance explained. Macro is <b>context, not cause</b> &middot; point-in-time (no lookahead) &middot; vendor/official data. Research only.</div>';}
+   var up=f.beta>=0,dcol=up?'var(--up)':'var(--down)';
+   var dir='↑'+f.name.split(' ')[0]+' → '+(up?'↑ stock':'↓ stock')+' <span style="color:var(--faint)">('+(up?'moves with':'moves against')+')</span>';
+   return '<tr><td>'+f.name+'</td><td>'+f.beta.toFixed(3)+'</td><td style="color:'+dcol+'">'+dir+'</td><td>'+f.t.toFixed(1)+'</td><td>'+(f.r2*100).toFixed(0)+'%</td><td style="color:'+col+'">'+(supp?'▲ supportive today':'▼ adverse today')+'</td></tr>';}).join('')
+   +'</table><div class="note"><b>Direction</b> = which way this stock tends to move when the factor rises (sign of &beta;). Betas are <b>James-Stein/ridge-shrunk</b> toward zero-exposure and <b>FDR-gated</b>; R&sup2; = share of daily variance explained; <b>today</b> = whether the factor&rsquo;s move today is helping or hurting. Macro is <b>context, not cause</b> &middot; point-in-time &middot; research only.</div>';}
 function momentumContinuation(c,v,H){
  H=H||20;var n=c.length;if(n<140)return{validated:false,reason:'short history',score:null};
  var e=ema(c,21),rows=[],ys=[],warm=30;

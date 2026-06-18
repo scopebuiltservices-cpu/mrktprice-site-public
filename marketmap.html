@@ -180,6 +180,8 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
         +((n.regime)?'<br>structure: <b>'+n.regime+'</b>'+((n.hl!=null&&n.hl<200)?' \u00b7 half-life '+n.hl+'d':'')+(n.vr!=null?' \u00b7 VR '+n.vr:'')+((n.jump!=null&&n.jump>=0.3)?' \u00b7 jump '+Math.round(n.jump*100)+'%':'')+(n.pvol!=null?' \u00b7 range-vol '+n.pvol+'%':''):'')
         +((n.insider&&n.insider.verdict&&n.insider.verdict!=='quiet')?'<br>insider: '+n.insider.verdict+(n.insider.score?' ('+(n.insider.score>0?'+':'')+n.insider.score+')':''):'')
         +((n.inst&&n.inst.verdict&&n.inst.verdict!=='n/a')?'<br>institutional: '+n.inst.verdict+(n.inst.dShares!=null?' ('+(n.inst.dShares>0?'+':'')+n.inst.dShares+'%)':''):'')
+        +(n.gex?'<br>gamma: '+(n.gex.regime||'').split(' ')[0]+(n.gex.wallUp!=null?' \u00b7 walls '+n.gex.wallDn+'/'+n.gex.wallUp:'')+(n.gex.expMovePct!=null?' \u00b7 \u00b1'+n.gex.expMovePct+'%':''):'')
+        +((n.short&&n.short.trend!=='flat')?'<br>short: fails '+n.short.trend+' ('+n.short.level+')':'')
         +(n.ivol!=null?'<br>intraday vol: '+n.ivol+'%':'')
         +'<br>signals: '+cc
         +'<br>'+fmtB(n.mcap)+' · β '+n.beta+' · vol '+n.vol+'% · 12m '+n.ret['12m']+'%'
@@ -205,7 +207,7 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
     momentum_z:(n.z?n.z.mom:null),regime:n.regime,half_life_days:n.hl,variance_ratio:n.vr,jump_fraction:n.jump,range_vol_pct:n.pvol,
     threshold_odds:n.odds,expected_value_pct:n.ev,ev_percentile:n.evPct,
     macro:{r2_pct:n.macroR2,top_driver:n.drv,betas:n.mb,dependencies:n.deps},
-    contradiction:n.contra,valuation:n.val,insider:n.insider,institutional:n.inst,
+    contradiction:n.contra,valuation:n.val,insider:n.insider,institutional:n.inst,gamma:n.gex,short_pressure:n.short,
     fundamentals:{market_cap:n.mcap,fcf_yield_pct:n.fcfY,beta:n.beta,ann_vol_pct:n.vol,mfi:n.mfi,atr_pct:n.atr},
     alerts:n.alerts,provenance:{source:D.source||'',as_of:D.asof||''},disclaimer:'Research only; not investment advice.'};}
   function renderBrief(n){
@@ -253,6 +255,18 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
       h+=row('Flow (QoQ)','<span class="vbadge '+qcl+'">'+q.verdict+'</span>'+(q.dShares!=null?' · '+(q.dShares>0?'+':'')+q.dShares+'% shares':''));
       h+=row('Institutional holders',(q.holders!=null?q.holders:'—')+(q.dHolders!=null?' ('+(q.dHolders>0?'+':'')+q.dHolders+' QoQ)':''));
       h+=row('Shares / value held',(q.shares!=null?fmtM(q.shares)+' sh':'—')+(q.value!=null?' · $'+fmtM(q.value):''));
+      h+='</table>';}
+    if(n.gex){var gx=n.gex;var gcl=(gx.regime&&gx.regime.indexOf('positive')>=0)?'v-supported':'v-rejected';
+      h+='<h3>Options positioning — gamma (GEX)</h3><table class="kv">';
+      h+=row('Dealer gamma regime','<span class="vbadge '+gcl+'">'+(gx.regime||'—')+'</span>');
+      h+=row('Gamma walls','resistance '+(gx.wallUp!=null?gx.wallUp:'—')+' · support '+(gx.wallDn!=null?gx.wallDn:'—')+(gx.flip!=null?' · flip '+gx.flip:''));
+      h+=row('Expected move (to expiry)','\u00b1'+(gx.expMovePct!=null?gx.expMovePct+'%':'—')+(gx.atmIV!=null?' · ATM IV '+gx.atmIV+'%':''));
+      h+=row('Put/call · skew',(gx.pcr!=null?gx.pcr:'—')+(gx.skew!=null?' · skew '+gx.skew:''));
+      h+='</table>';}
+    if(n.short){var sp=n.short;var scl=sp.trend==='rising'?'v-rejected':sp.trend==='falling'?'v-supported':'v-mixed';
+      h+='<h3>Short pressure — SEC fails-to-deliver (free)</h3><table class="kv">';
+      h+=row('Fails trend','<span class="vbadge '+scl+'">'+sp.trend+'</span> · '+sp.level);
+      h+=row('Fails (current / prior)',fmtM(sp.fails)+' / '+fmtM(sp.prevFails));
       h+='</table>';}
     if(n.alerts&&n.alerts.length)h+='<h3>Alerts</h3><div style="font-size:12px">'+n.alerts.join(' · ')+'</div>';
     return h;}

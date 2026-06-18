@@ -20,6 +20,10 @@ Stdlib-only math (self-tested); --real adds yfinance/requests. Research only; no
 from __future__ import annotations
 import argparse, json, math, os, random, re, sys, time, datetime as dt
 import xml.etree.ElementTree as ET
+try:
+    import options_gex as _ogex, eodhd_options as _eod, fmp_connector as _fmp, short_squeeze as _sqz
+except Exception:
+    _ogex=_eod=_fmp=_sqz=None
 
 SECTORS=["Technology","Financials","Health Care","Consumer Disc.","Communication",
          "Industrials","Consumer Staples","Energy","Utilities","Materials","Real Estate"]
@@ -470,6 +474,13 @@ def synth(seed=7):
         if _qv<0.33: rec["inst"]={"verdict":"accumulation","dShares":round(rng.uniform(2,18),1),"dHolders":rng.randint(1,40),"holders":_h,"shares":_sh,"value":_vv}
         elif _qv<0.6: rec["inst"]={"verdict":"distribution","dShares":round(rng.uniform(-18,-2),1),"dHolders":-rng.randint(1,35),"holders":_h,"shares":_sh,"value":_vv}
         else: rec["inst"]={"verdict":"stable","dShares":round(rng.uniform(-1.8,1.8),1),"dHolders":rng.randint(-5,5),"holders":_h,"shares":_sh,"value":_vv}
+        _sp=rec["_cl"][-1] if rec.get("_cl") else 100.0; _reg=rng.random()
+        rec["gex"]={"gexTotal":int(rng.uniform(-9,9)*1e6),"regime":("positive (pinning/mean-revert)" if _reg<0.55 else "negative (amplifying/trend)"),
+                    "wallUp":round(_sp*rng.uniform(1.02,1.12),2),"wallDn":round(_sp*rng.uniform(0.88,0.98),2),
+                    "flip":round(_sp*rng.uniform(0.96,1.04),2),"atmIV":round(rng.uniform(15,70),1),
+                    "expMovePct":round(rng.uniform(3,14),2),"pcr":round(rng.uniform(0.5,1.8),2),"skew":round(rng.uniform(-0.02,0.08),3),"days":30}
+        _sq=rng.random()
+        rec["short"]=({"fails":int(rng.uniform(1,12)*1e5),"prevFails":int(rng.uniform(1,12)*1e5),"trend":("rising" if _sq<0.3 else "falling" if _sq<0.55 else "flat"),"level":("elevated" if _sq<0.2 else "moderate" if _sq<0.6 else "low")} if _sq<0.8 else None)
         if liquid and rng.random()<0.85:                 # liquid names carry an options chain
             sp=closes[-1]; rec["_opt"]={"pw":round(sp*rng.uniform(0.88,0.97),2),"cw":round(sp*rng.uniform(1.03,1.12),2),
                                         "pcr":round(rng.uniform(0.6,1.7),2),"gex":round(sp*rng.uniform(0.97,1.03),2)}
@@ -551,6 +562,9 @@ def build(names,mkt,ff,macro=None):
         # EMA21-first decision metrics: distance %, distance in sigma, 5-day slope, threshold ladder + prob-of-touch
         if cl and len(cl)>=22:
             es=ema_series(cl,21); e21=es[-1]; sp=cl[-1]; sdl=daily_logvol(cl)
+            if n.get("gex") and n["gex"].get("atmIV") and sdl==sdl and sdl>0:
+                _ivd=n["gex"]["atmIV"]/100.0/math.sqrt(252)        # implied daily sigma -> blend 50/50 into forward odds
+                if _ivd>0: sdl=0.5*sdl+0.5*_ivd
             n["ema21d"]=round((sp-e21)/e21*100,2) if e21 else 0.0
             n["ema21sig"]=round(((sp-e21)/e21)/(sdl*math.sqrt(21)),2) if (e21 and sdl==sdl and sdl>0) else 0.0
             e5=es[-6] if (len(es)>=6 and es[-6]) else None
@@ -620,6 +634,8 @@ def build(names,mkt,ff,macro=None):
         if n.get("insider") and "caution" in n["insider"].get("verdict",""): al.append("insider selling")
         if n.get("inst") and n["inst"].get("verdict")=="accumulation" and (n["inst"].get("dShares") or 0)>=5: al.append("institutional accumulation")
         if n.get("inst") and n["inst"].get("verdict")=="distribution" and (n["inst"].get("dShares") or 0)<=-5: al.append("institutional distribution")
+        if n.get("gex") and "negative" in (n["gex"].get("regime") or ""): al.append("negative gamma (trend-amplifying)")
+        if n.get("short") and n["short"].get("trend")=="rising" and n["short"].get("level")=="elevated": al.append("rising fails (squeeze watch)")
         if n.get("contra") and n["contra"]["s"]<=0.2 and n.get("ema21d",0)>0: al.append("aligned uptrend")
         n["alerts"]=al[:5]
     peBySec={}; evBySec={}
@@ -1018,6 +1034,25 @@ def real_universe():
     inst=load_institutional()
     for n in names:
         if not n.get("inst"): n["inst"]=inst.get(n["t"])
+    # ---- optional enrichment: free FTD squeeze always; FMP valuation + EODHD gamma when keys set ----
+    try:
+        if _sqz:
+            _sq=_sqz.fetch_squeeze([n["t"] for n in names])
+            for n in names:
+                if _sq.get(n["t"]): n["short"]=_sq[n["t"]]
+    except Exception: pass
+    _gcap=0
+    for n in names:
+        try:
+            if _fmp:
+                fv=_fmp.fetch(n["t"])
+                if fv and fv.get("val"): n["_val"]=fv["val"]
+            sp=(n.get("_cl") or [None])[-1]
+            if _eod and sp and _gcap<140:
+                gx=_eod.fetch_gex(n["t"], sp)
+                if gx: n["gex"]=gx
+                _gcap+=1
+        except Exception: pass
     return names,mkt,ff,macro
 
 def main():

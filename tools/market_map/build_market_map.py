@@ -56,6 +56,20 @@ def pearson(a,b):
     sa=(sum((x-ma)**2 for x,_ in pr))**0.5; sb=(sum((y-mb)**2 for _,y in pr))**0.5
     return sum((x-ma)*(y-mb) for x,y in pr)/(sa*sb) if sa and sb else float("nan")
 
+def _var(a):
+    v=[x for x in a if x==x]
+    if len(v)<2: return 0.0
+    m=sum(v)/len(v); return sum((x-m)**2 for x in v)/(len(v)-1)
+
+def _resid_on(a,c):                       # residual of a regressed on single control c (for partial corr)
+    b=beta(a,c)
+    if b!=b: return list(a)
+    ma=sum(a)/len(a); mc=sum(c)/len(c)
+    return [a[i]-(ma+b*(c[i]-mc)) for i in range(len(a))]
+
+def partial_corr(y,x,ctrl):               # correlation of y,x after removing the linear effect of ctrl
+    return pearson(_resid_on(y,ctrl),_resid_on(x,ctrl))
+
 def ols_betas(y,X):
     k=len(X[0]); n=len(y)
     XtX=[[sum(X[r][i]*X[r][j] for r in range(n)) for j in range(k)] for i in range(k)]
@@ -479,18 +493,35 @@ def build(names,mkt,ff,macro=None):
     # ---- directional dependency list: which macro deltas / sector the name moves WITH or AGAINST ----
     FACS=[("MKT",mkt,"S&P 500"),("RATE",macro.get("RATE"),"10Y yield"),("DXY",macro.get("DXY"),"US dollar"),
           ("OIL",macro.get("OIL"),"WTI oil"),("VIX",macro.get("VIX"),"VIX")]
+    def _dep(wr,ser,lab,is_mkt=False):
+        c=pearson(wr,ser); n_obs=len([1 for a,b in zip(wr,ser) if a==a and b==b])
+        if c!=c or n_obs<8: return None
+        t=c*math.sqrt(max(n_obs-2,1)/max(1-c*c,1e-9)) if abs(c)<0.999 else 9.9
+        sig=abs(t)>=1.96                                   # 2-sided significance gate (kills noise correlations)
+        pc=c if is_mkt else partial_corr(wr,ser,mkt)       # unique dependency after removing market leakage
+        sens=beta(wr,ser)*math.sqrt(_var(ser))             # weekly-return move per +1sigma of the factor
+        h=len(wr)//2; rc=pearson(wr[-h:],ser[-h:])         # recent-half corr for stability
+        if rc==rc and c!=0 and rc*c<0 and abs(rc)>0.1: stab="flipped"
+        elif rc==rc and abs(rc)<0.5*abs(c): stab="fading"
+        else: stab="stable"
+        return {"f":lab,"corr":round(c,2),"pcorr":round(pc,2) if pc==pc else None,
+                "sens":round(sens*100,2),"sig":bool(sig),"stab":stab,"dir":("with" if c>0 else "against")}
     for n in names:
         wr=n["wr"]; deps=[]
         for fk,ser,lab in FACS:
             if not ser: continue
-            c=pearson(wr,ser)
-            if c==c and abs(c)>=0.12:
-                deps.append({"f":lab,"corr":round(c,2),"dir":("with" if c>0 else "against")})
+            d=_dep(wr,ser,lab,fk=="MKT")
+            if d: deps.append(d)
         sc=secmean.get(n["sec"])
         if sc:
-            c=pearson(wr,sc)
-            if c==c and abs(c)>=0.12: deps.append({"f":n["sec"]+" sector","corr":round(c,2),"dir":("with" if c>0 else "against")})
-        deps.sort(key=lambda d:-abs(d["corr"])); n["deps"]=deps[:6]
+            d=_dep(wr,sc,n["sec"]+" sector")
+            if d: deps.append(d)
+        keep=[d for d in deps if d["sig"]] or sorted(deps,key=lambda d:-abs(d["corr"]))[:1]
+        keep.sort(key=lambda d:-(abs(d["pcorr"]) if d.get("pcorr") is not None else abs(d["corr"])))
+        n["deps"]=keep[:6]
+        cols=[mkt]+[macro[f] for f in ("RATE","DXY","OIL","VIX") if macro.get(f)]
+        _,res=macro_fit(wr,cols); vy=_var(wr)
+        n["macroR2"]=int(round(max(0.0,1.0-_var(res)/vy)*100)) if vy>0 else 0
     # ---- opportunity rank: market position + momentum + sector-relative strength + EV edge ----
     secmom={}
     for sct in SECTORS:

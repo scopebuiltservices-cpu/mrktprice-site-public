@@ -963,6 +963,7 @@ function renderDecision(sym){
  if(!CUR||!CUR.c||!CUR.c.length||!CUR.emaM||!CUR.emaM[21]){el.innerHTML='';return;}
  var c=CUR.c,n=c.length,last=CUR.last,d=CUR.d;
  var e21=CUR.emaM[21],ema21=e21.last,ema21p=(e21.e&&e21.e.length>1)?e21.e[n-2]:ema21;
+ var ema215=(e21.e&&e21.e.length>6)?e21.e[n-6]:ema21p, slope5=ema215?(ema21-ema215)/ema215*100:0;
  var s20=(CUR.std20&&CUR.std20[n-1]>0)?CUR.std20[n-1]:0;
  var dAbs=last-ema21,dPct=ema21?(last/ema21-1)*100:0,dZ=s20?dAbs/s20:0;
  var above=last>=ema21,slopeUp=(ema21-ema21p)>=0;
@@ -985,7 +986,9 @@ function renderDecision(sym){
  addL(CUR.bbU2&&CUR.bbU2[n-1],'+2sd');addL(CUR.bbL2&&CUR.bbL2[n-1],'-2sd');if(CUR.vp)addL(CUR.vp.pocPrice,'POC');
  var ab=lv.filter(function(x){return x.v>last;}).sort(function(a,b){return a.v-b.v;});
  var bl=lv.filter(function(x){return x.v<last;}).sort(function(a,b){return b.v-a.v;});
- function lvl(o){if(!o)return '<span style="color:var(--faint)">none</span>';var dp=(o.v/last-1)*100;return o.lab+' <b>'+o.v.toFixed(2)+'</b> <span style="color:var(--muted)">('+(dp>=0?'+':'')+dp.toFixed(1)+'%)</span>';}
+ var _hvD=((CUR.garch&&CUR.garch.annVol)?CUR.garch.annVol:CUR.rvAnn)||0,_sigD=_hvD>0?_hvD/Math.sqrt(252):0;
+ function pTouch(B){if(!(last>0&&B>0)||_sigD<=0)return null;var sg=_sigD*Math.sqrt(21),dd=Math.abs(Math.log(B/last));if(sg<=0)return null;return Math.max(0,Math.min(1,2*(1-normCDF(dd/sg))));}
+ function lvl(o){if(!o)return '<span style="color:var(--faint)">none</span>';var dp=(o.v/last-1)*100,sd=s20?(o.v-last)/s20:null,pt=pTouch(o.v);return o.lab+' <b>'+o.v.toFixed(2)+'</b> <span style="color:var(--muted)">('+(dp>=0?'+':'')+dp.toFixed(1)+'%'+(sd!=null?' &middot; '+_fmtSign(sd,1)+'\u03c3':'')+(pt!=null?' &middot; '+Math.round(pt*100)+'% touch':'')+')</span>';}
  var ev='&mdash;',ne=(d&&d.length)?nextEarnings(d[n-1]):null;if(ne){var days=Math.round((ne-new Date(d[n-1]+'T00:00:00Z'))/86400000);ev='~'+days+'d ('+ne.toISOString().slice(0,10)+')';}
  var asof=(d&&d.length)?d[n-1]:'&mdash;';
  var live=(typeof FUND==='object'&&FUND&&FUND[sym]&&/\(live\)/.test(FUND[sym].name||''));
@@ -995,7 +998,7 @@ function renderDecision(sym){
  var verdict='<div style="display:flex;flex-direction:column;gap:1px;padding:0 12px 0 4px"><span style="font-size:8.5px;letter-spacing:.06em;color:var(--faint);text-transform:uppercase">verdict &middot; '+sym+'</span><span style="font-size:16px;font-weight:800;color:'+dirCol+'">'+direction+' <span style="font-size:10px;font-weight:600;color:'+confCol+'">&middot; '+confLbl+' conf</span></span></div>';
  var html='<div style="display:flex;align-items:center;flex-wrap:wrap;padding:7px 10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:6px 0">'
   +verdict
-  +cell('price vs EMA21','<b style="color:'+stateCol+'">'+state+'</b> &middot; '+_fmtSign(dAbs,2)+' &middot; '+_fmtSign(dPct,1)+'% &middot; '+_fmtSign(dZ,2)+'sd')
+  +cell('price vs EMA21','<b style="color:'+stateCol+'">'+state+'</b> &middot; '+_fmtSign(dPct,1)+'% &middot; '+_fmtSign(dZ,2)+'\u03c3 &middot; slope5 '+_fmtSign(slope5,1)+'%')
   +cell('next upside',lvl(ab[0]))+cell('resistance',lvl(ab[1]))+cell('downside invalidate',lvl(bl[0]))
   +cell('next event',ev)+cell('confidence','<b style="color:'+confCol+'">'+conf+'/100</b>')+cell('momentum (validated)',(CUR.mcs&&CUR.mcs.validated&&CUR.mcs.score!=null)?('<b style="color:'+(CUR.mcs.score>=58?'var(--up)':CUR.mcs.score<=42?'var(--down)':'var(--muted)')+'">'+CUR.mcs.score+'/100 '+CUR.mcs.state+'</b> <span style="color:var(--faint)">AUC '+CUR.mcs.auc.toFixed(2)+'&middot;p'+(CUR.mcs.pval<0.001?'&lt;.001':('='+CUR.mcs.pval.toFixed(3)))+'</span>'):'<span style="color:var(--faint)">none &middot; no validated edge</span>')
   +cell('freshness','<span style="color:'+fcol+'">&#9679;</span> '+asof+' &middot; '+(live?'live':'EOD')+' &middot; '+flbl)

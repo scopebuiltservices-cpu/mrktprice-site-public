@@ -38,7 +38,7 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
   <label>Index</label>
   <select id="idx"><option value="BIG3">Big-3 (Dow+Nasdaq-100+S&amp;P 500)</option><option value="DOW">Dow 30</option><option value="NDX">Nasdaq-100</option><option value="SPX">S&amp;P 500</option><option value="RUT">Russell 2000</option><option value="ALL">Entire universe</option></select>
   <span id="scatterCtl"><label>Plot</label>
-    <select id="mode"><option value="rr">Risk vs Return</option><option value="vm">Value vs Momentum</option><option value="fy">FCF yield vs Momentum</option><option value="mf">Money flow vs Return</option><option value="tr">EMA21 distance vs 5d slope</option><option value="od">Upside vs downside odds (21d)</option><option value="co">Contradiction vs Return</option><option value="dl">Macro dislocation vs Return</option><option value="mi">Money Flow Index vs Return</option><option value="ff">Factor map (Size vs Value)</option></select></span>
+    <select id="mode"><option value="rr">Risk vs Return</option><option value="vm">Value vs Momentum</option><option value="fy">FCF yield vs Momentum</option><option value="mf">Money flow vs Return</option><option value="tr">EMA21 distance vs 5d slope</option><option value="od">Upside vs downside odds (21d)</option><option value="ev">Expected-value edge vs Return</option><option value="co">Contradiction vs Return</option><option value="dl">Macro dislocation vs Return</option><option value="mi">Money Flow Index vs Return</option><option value="ff">Factor map (Size vs Value)</option></select></span>
   <span id="periodCtl" class="hidden"><label>Colour</label>
     <select id="period"><option value="ret1m" selected>1-month return</option><option value="ret1w">1-week return</option><option value="ret3m">3-month return</option><option value="ret12m">12-month return</option><option value="flow">Money flow (1m)</option></select></span>
   <div class="spacer"></div><span class="note" id="count"></span>
@@ -58,6 +58,7 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
     return n.idx.indexOf(ix)>=0;});}
   function fmtB(v){return v>=1e12?(v/1e12).toFixed(2)+'T':v>=1e9?(v/1e9).toFixed(0)+'B':(v/1e6).toFixed(0)+'M';}
   function _pp(x){return (x==null)?'—':Math.round(x*100)+'%';}
+  function _dr(x){return (x==null||x===0)?'':(x>0?' <span style="color:#16c79a">\u25b2'+Math.round(x*100)+'</span>':' <span style="color:#ef6a6a">\u25bc'+Math.round(-x*100)+'</span>');}
   function ext(a){var v=a.filter(function(x){return x===x;});if(!v.length)return[0,1];var lo=Math.min.apply(0,v),hi=Math.max.apply(0,v);if(lo===hi){lo-=1;hi+=1;}var p=(hi-lo)*0.06;return[lo-p,hi+p];}
   function axes(w,h,pad,xr,yr,xl,yl,x0,y0){g.clearRect(0,0,w,h);g.fillStyle='#0d121b';g.fillRect(0,0,w,h);g.strokeStyle='rgba(255,255,255,.10)';g.fillStyle='#8a93a0';g.font='10px sans-serif';
     for(var i=0;i<=4;i++){var x=pad+i/4*(w-pad-12);g.beginPath();g.moveTo(x,8);g.lineTo(x,h-pad);g.stroke();g.fillText((xr[0]+i/4*(xr[1]-xr[0])).toFixed(1),x-8,h-pad+12);}
@@ -75,6 +76,7 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
     else if(mode==='tr'){xs=ns.map(function(n){return n.ema21sig==null?0:n.ema21sig;});ys=ns.map(function(n){return n.ema21sl==null?0:n.ema21sl;});xl='EMA21 distance (σ, above →)';yl='EMA21 5-day slope %';x0=0;y0=0;}
     else if(mode==='co'){xs=ns.map(function(n){return n.contra?n.contra.s:0;});ys=ns.map(function(n){return n.ret['12m'];});xl='Signal contradiction (0 aligned → 1 conflicted)';yl='12-month return %';x0=0.5;y0=0;}
     else if(mode==='od'){xs=ns.map(function(n){return n.odds?(n.odds.hi||0)*100:0;});ys=ns.map(function(n){return n.odds?(n.odds.lo||0)*100:0;});xl='P(new 3-month high) within 21d %';yl='P(new 3-month low) within 21d %';x0=null;y0=null;}
+    else if(mode==='ev'){xs=ns.map(function(n){return n.ev==null?0:n.ev;});ys=ns.map(function(n){return n.ret['12m'];});xl='Expected-value edge % (P·upside − P·downside)';yl='12-month return %';x0=0;y0=0;}
     else if(mode==='dl'){xs=ns.map(function(n){return (n.z&&n.z.disloc!=null)?n.z.disloc:(n.disloc||0);});ys=ns.map(function(n){return n.ret['12m'];});xl='Macro dislocation z (decoupled →)';yl='12-month return %';x0=0;y0=0;}
     else if(mode==='mi'){xs=ns.map(function(n){return n.mfi==null?50:n.mfi;});ys=ns.map(function(n){return n.ret['12m'];});xl='Money Flow Index (0–100)';yl='12-month return %';x0=50;y0=0;}
     else {xs=ns.map(function(n){return n.z.size;});ys=ns.map(function(n){return n.ff.HML;});xl='Size z (large →)';yl='Value loading (HML)';x0=0;y0=0;}
@@ -124,7 +126,9 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
       tip.innerHTML='<b>'+n.t+'</b> '+n.n+' · '+n.sec
         +'<br><b>EMA21:</b> '+e21
         +'<br>nearest: '+pT(n.touch)
-        +(n.odds?('<br>odds 21d: '+(n.odds.emaDir==='reclaim'?'reclaim':'hold')+' EMA21 '+_pp(n.odds.ema)+' · new hi '+_pp(n.odds.hi)+' · new lo '+_pp(n.odds.lo)+' · revert→mean '+_pp(n.odds.mean)+(n.odds.beat!=null?' · beat '+_pp(n.odds.beat):'')):'')
+        +(n.odds?('<br>odds 21d: '+(n.odds.emaDir==='reclaim'?'reclaim':'hold')+' EMA21 '+_pp(n.odds.ema)+' · new hi '+_pp(n.odds.hi)+_dr(n.odds.drift&&n.odds.drift.hi)+' · new lo '+_pp(n.odds.lo)+_dr(n.odds.drift&&n.odds.drift.lo)+' · revert '+_pp(n.odds.mean)+(n.odds.beat!=null?' · beat '+_pp(n.odds.beat):'')):'')
+        +(n.odds?('<br>edge: EV '+(n.ev>0?'+':'')+n.ev+'% ('+n.evPct+'pct) · ~'+(n.odds.tmed&&n.odds.tmed.hi!=null?Math.round(n.odds.tmed.hi)+'d→high':'—')+' · if macro+ '+_pp(n.odds.condHi)+' · regime-flip '+_pp(n.odds.flip)):'')
+        +((n.alerts&&n.alerts.length)?'<br><span style="color:var(--accent)">\u2691 '+n.alerts.join(' · ')+'</span>':'')
         +(n.ivol!=null?'<br>intraday vol: '+n.ivol+'%':'')
         +'<br>signals: '+cc
         +'<br>'+fmtB(n.mcap)+' · β '+n.beta+' · vol '+n.vol+'% · 12m '+n.ret['12m']+'%'
@@ -138,7 +142,9 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
   document.querySelectorAll('.tab').forEach(function(t){t.onclick=function(){document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on');});t.classList.add('on');view=t.getAttribute('data-v');render();};});
   ['idx','mode','period'].forEach(function(id){var el=$(id);if(el)el.onchange=render;});
   window.addEventListener('resize',function(){clearTimeout(window._rt);window._rt=setTimeout(render,150);});
-  function start(d){D=d;var hasR=D.indices&&D.indices.RUT;$('asof').textContent='as of '+D.asof+' · '+D.names.length+' names · '+(hasR?'Dow+Nasdaq-100+S&P 500 + Russell 2000':'big-3 universe');$('src').textContent=D.source+' · research/illustrative only, not investment advice.';render();}
+  function start(d){D=d;var hasR=D.indices&&D.indices.RUT;$('asof').textContent='as of '+D.asof+' · '+D.names.length+' names · '+(hasR?'Dow+Nasdaq-100+S&P 500 + Russell 2000':'big-3 universe');
+    var cal='';if(D.calibration&&D.calibration.bins&&D.calibration.bins.length){var hb=D.calibration.bins[D.calibration.bins.length-1];cal=' · touch-model calibration: Brier '+D.calibration.brier+', predicted '+Math.round(hb.pmid*100)+'% → realized '+Math.round(hb.real*100)+'% (n='+D.calibration.n+')';}
+    $('src').textContent=D.source+cal+' · odds are model-implied, not guarantees · research only, not investment advice.';render();}
   if(window.MARKETMAP)start(window.MARKETMAP);
   else fetch('marketmap.json',{cache:'no-store'}).then(function(r){return r.json();}).then(start).catch(function(){$('asof').textContent='market map data not available yet';});
 })();

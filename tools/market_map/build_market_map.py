@@ -203,6 +203,46 @@ def contradiction(signals):
     conf=[nm for nm,sg,_ in sig if sg!=star]
     return round(1.0-agree,2),("up" if star>0 else "down"),conf
 
+_Q75=0.6744897501960817   # Phi^-1(0.75)
+def median_touch_days(S, B, sigD, cap=252):
+    """Median first-passage time (trading days) for driftless GBM from S to barrier B.
+    From P(touch by t)=0.5 -> t = (ln|B/S|/(sigD*Phi^-1(.75)))^2."""
+    if not (S>0 and B>0) or sigD<=0: return None
+    d=abs(math.log(B/S))
+    if d<=0: return 0.0
+    return round(min((d/(sigD*_Q75))**2, cap),1)
+
+def _dvol(c):
+    r=[math.log(c[i]/c[i-1]) for i in range(1,len(c)) if c[i-1]>0 and c[i]>0]
+    if len(r)<3: return None
+    m=sum(r)/len(r); return (sum((x-m)**2 for x in r)/(len(r)-1))**0.5
+
+def regime_flip_prob(closes):
+    """P(volatility regime shifting): logistic of |log(short-vol / long-vol)| (10d vs 42d)."""
+    if len(closes)<42: return None
+    sv=_dvol(closes[-10:]); lv=_dvol(closes[-42:])
+    if not sv or not lv or lv<=0: return None
+    x=abs(math.log(sv/lv))
+    return round(1.0/(1.0+math.exp(-(x-0.40)/0.25)),2)
+
+def calibrate_touch(samples, T=21, lookback=150, win=63):
+    """Reliability backtest of the up-touch model: at each past day t, predict P(touch the
+    trailing-63d high within T days), then check whether it actually touched in (t,t+T].
+    Returns reliability bins (predicted vs realized) + Brier score. Samples = list of close series."""
+    bins=[[0.0,0,0] for _ in range(5)]; bn=bd=0.0; bcount=0
+    for cl in samples:
+        nN=len(cl)
+        if nN<win+T+30: continue
+        for t in range(nN-T-1, max(win, nN-T-1-lookback), -1):
+            hist=cl[:t+1]; sp=hist[-1]; Bhi=max(hist[-win:]); sd=_dvol(hist[-win:])
+            if not sd or sd<=0: continue
+            p=prob_touch(sp,Bhi,sd,T); hit=1 if max(cl[t+1:t+1+T])>=Bhi else 0
+            b=min(4,int(p*5)); bins[b][0]+=p; bins[b][1]+=1; bins[b][2]+=hit
+            bn+=(p-hit)**2; bcount+=1
+    out=[{"pmid":round((i+0.5)/5,2),"pred":round(sp_/nn,3),"real":round(hh/nn,3),"n":nn}
+         for i,(sp_,nn,hh) in enumerate(bins) if nn>0]
+    return {"bins":out,"brier":round(bn/bcount,4) if bcount else None,"n":bcount}
+
 # ---------- synthetic seed (recognisable names, illustrative numbers) -------------------------
 SEED=[("AAPL","Apple","Technology","ND S"),("MSFT","Microsoft","Technology","ND S"),("NVDA","NVIDIA","Technology","ND S"),
 ("AVGO","Broadcom","Technology","ND S"),("ORCL","Oracle","Technology","S"),("CRM","Salesforce","Technology","D S"),
@@ -321,6 +361,7 @@ def build(names,mkt,ff,macro=None):
         macro={k:(v[-L:] if len(v)>=L else v+[0.0]*(L-len(v))) for k,v in macro.items()}
         for n in names: n["wr"]=n["wr"][-L:]
     MFAC=[f for f in ("DXY","RATE","VIX","OIL") if f in macro and len(macro[f])==len(mkt)]
+    _calib=[]
     for n in names:
         wr=[x if (x is not None and x==x) else 0.0 for x in n["wr"]]; n["wr"]=wr; n["ret"]=aggregate(wr)
         _v=ann_vol(wr); _b=beta(wr,mkt)
@@ -373,12 +414,29 @@ def build(names,mkt,ff,macro=None):
                         "dn":{"d":round(ad,2) if ad is not None else None,"p":round(prob_touch(sp,Blo,sdl,21),2) if sdl==sdl else None}}
             # ODDS LADDER: forward first-passage probabilities over a 21-day horizon (model-implied, driftless)
             def _pt(B): return round(prob_touch(sp,B,sdl,21),2) if (sdl==sdl and sdl>0) else None
+            pHi=_pt(Bhi); pLo=_pt(Blo)
+            dHi=dLo=None                                  # idea 2: odds drift vs yesterday
+            if len(cl)>=64 and sdl==sdl:
+                cy=cl[:-1]; spy=cy[-1]; wy=cy[-63:]; sdy=daily_logvol(cy)
+                if sdy==sdy and sdy>0:
+                    if pHi is not None: dHi=round(pHi-prob_touch(spy,max(wy),sdy,21),2)
+                    if pLo is not None: dLo=round(pLo-prob_touch(spy,min(wy),sdy,21),2)
+            up=(Bhi/sp-1)*100; dn=(1-Blo/sp)*100          # idea 3: expected-value edge %
+            ev=round((pHi or 0)*up-(pLo or 0)*dn,2)
+            condHi=pHi                                    # idea 4: P(new high | +1sigma favorable macro driver)
+            if n.get("drv") and n.get("mb") and sdl==sdl:
+                shift=abs(n["mb"].get(n["drv"],0.0))*sdl*math.sqrt(5)
+                if shift>0: condHi=round(prob_touch(sp*(1+shift),Bhi,sdl,21),2)
             n["odds"]={"ema":_pt(e21),"emaDir":("reclaim" if sp<e21 else "lose-support"),
-                       "hi":_pt(Bhi),"lo":_pt(Blo),
-                       "mean":_pt(mean63),"meanDir":("up" if sp<mean63 else "down"),
-                       "beat":n.pop("_beat",None)}   # P(beat next earnings) when a Finnhub key is set
+                       "hi":pHi,"lo":pLo,"mean":_pt(mean63),"meanDir":("up" if sp<mean63 else "down"),
+                       "beat":n.pop("_beat",None),
+                       "drift":{"hi":dHi,"lo":dLo},
+                       "tmed":{"hi":median_touch_days(sp,Bhi,sdl),"lo":median_touch_days(sp,Blo,sdl)},
+                       "condHi":condHi,"flip":regime_flip_prob(cl)}     # idea 6: regime-flip odds
+            n["ev"]=ev
+            if len(_calib)<60 and "RUT" not in n.get("idx",[]) and len(cl)>140: _calib.append(cl)
         else:
-            n["ema21d"]=0.0; n["ema21sig"]=0.0; n["ema21sl"]=0.0; n["touch"]=None; n["odds"]=None
+            n["ema21d"]=0.0; n["ema21sig"]=0.0; n["ema21sl"]=0.0; n["touch"]=None; n["odds"]=None; n["ev"]=0.0
     val=[ -n["ret"]["12m"]/(n["vol"] or 1) for n in names]; mom=[n["ret"]["6m"] for n in names]
     risk=[n["beta"] for n in names]; size=[math.log(n["mcap"]) for n in names]
     fcy=[n["fcfY"] for n in names]; flw=[n["flow"]["net1m"] for n in names]
@@ -398,6 +456,19 @@ def build(names,mkt,ff,macro=None):
         cs,cdir,conf=contradiction(sigs); n["contra"]={"s":cs,"dir":cdir,"conf":conf[:3]}; cvals.append(cs)
     zC=Z(cvals)
     for i,n in enumerate(names): n["z"]["contra"]=round(zC[i],2)
+    import bisect                                   # idea 7: cross-sectional percentile of the EV edge
+    evs=sorted(n.get("ev",0.0) for n in names)
+    for n in names:
+        n["evPct"]=int(round(100.0*bisect.bisect_right(evs,n.get("ev",0.0))/len(evs))) if evs else 50
+        o=n.get("odds") or {}; al=[]               # idea 8: odds-triggered alerts
+        if o.get("hi") is not None and o["hi"]>=0.6: al.append("breakout odds "+str(round(o["hi"]*100))+"%")
+        if o.get("lo") is not None and o["lo"]>=0.6: al.append("breakdown odds "+str(round(o["lo"]*100))+"%")
+        if n.get("ev",0)>=3: al.append("positive edge +"+str(n["ev"])+"%")
+        if o.get("beat") is not None and o["beat"]>=0.7: al.append("likely beat "+str(round(o["beat"]*100))+"%")
+        if o.get("flip") is not None and o["flip"]>=0.7: al.append("vol regime shifting")
+        if n.get("brk"): al.append("ATR breakout")
+        if n.get("contra") and n["contra"]["s"]<=0.2 and n.get("ema21d",0)>0: al.append("aligned uptrend")
+        n["alerts"]=al[:4]
     secmean={}
     for s in SECTORS:
         mem=[n["wr"] for n in names if n["sec"]==s]
@@ -405,7 +476,8 @@ def build(names,mkt,ff,macro=None):
     osec=[s for s in SECTORS if s in secmean]
     M=[[round(pearson(secmean[a],secmean[b]),3) for b in osec] for a in osec]
     oi=cluster_order(M); osec=[osec[i] for i in oi]; M=[[M[i][j] for j in oi] for i in oi]
-    return {"asof":dt.date.today().isoformat(),"source":"SAMPLE (synthetic, illustrative) — replaced by the nightly job",
+    cal=calibrate_touch(_calib)                    # idea 1: reliability backtest of the touch model
+    return {"asof":dt.date.today().isoformat(),"source":"SAMPLE (synthetic, illustrative) — replaced by the nightly job","calibration":cal,
             "indices":{"DOW":"Dow Jones 30","NDX":"Nasdaq-100","SPX":"S&P 500","RUT":"Russell 2000"},"sectors":SECTORS,"factors":FACTORS,"macrof":["MKT"]+MFAC,
             "names":names,"sectorCorr":{"order":osec,"m":M}}
 

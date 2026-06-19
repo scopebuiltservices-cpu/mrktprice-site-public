@@ -1,14 +1,14 @@
 name: Deploy MrktPrice site
 
 # Publishes mrktprice.com to GitHub Pages on every push to main.
-# Rebuilds the Opportunity News index from reports/, then deploys the dashboard + reports.
-# On a nightly cron it also refreshes the Market Map from live data (no secret required).
+# Rebuilds the Opportunity News index, emits per-ticker static cards (Render-free universe),
+# and on a nightly cron refreshes the Market Map from live data + emits static price history.
 
 on:
   push:
     branches: [main]
   schedule:
-    - cron: "20 6 * * 1-6"   # nightly Mon-Sat 06:20 UTC: refresh Market Map with live data
+    - cron: "20 6 * * 1-6"   # nightly Mon-Sat 06:20 UTC
   workflow_dispatch:
 
 permissions:
@@ -45,9 +45,12 @@ jobs:
           [ -f CNAME ] && cp CNAME _site/CNAME || echo "mrktprice.com" > _site/CNAME
           touch _site/.nojekyll
 
-      - name: Refresh Market Map (live data)
+      - name: Emit static per-ticker cards (every deploy; no network)
+        run: python tools/market_map/emit_static.py --universe _site/marketmap.json --out _site || echo "::warning::card emit skipped"
+
+      - name: Refresh Market Map (live data) + static price history
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        env:                       # optional FREE connectors — unset secrets pass through empty and are skipped
+        env:                       # optional FREE/paid connectors — unset secrets pass through empty and are skipped
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
@@ -58,4 +61,15 @@ jobs:
           pip install --quiet yfinance requests || { echo "::warning::deps install failed - keeping sample"; exit 0; }
           if python tools/market_map/build_market_map.py --real --out /tmp/mm_live.json; then
             python tools/market_map/validate_publish.py /tmp/mm_live.json _site/marketmap.json
-   
+            python tools/market_map/emit_static.py --universe _site/marketmap.json --out _site --hist --cap 250 || echo "::warning::history emit partial"
+          else
+            echo "::warning::live build failed - keeping committed sample marketmap.json"
+          fi
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '_site'
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

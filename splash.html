@@ -8,6 +8,6 @@ display:flex;align-items:center;justify-content:center}</style>
 <script>
 // Front door moved to login.html. If already signed in, go straight to the terminal.
 (function(){try{var ok=localStorage.getItem('mrkt.token')||localStorage.getItem('mrkt.ok');
-location.replace(ok?'index.html':'login.html');}catch(e){location.replace('login.html');}})();
+location.replace(ok?'terminal.html':'index.html');}catch(e){location.replace('login.html');}})();
 </script></head>
 <body>Taking you to sign in…</body></html>

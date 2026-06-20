@@ -5,82 +5,32 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 <style>
-*{box-sizing:border-box}html,body{margin:0;height:100%;background:#0a1622;overflow:hidden;
- font-family:'Inter',-apple-system,Segoe UI,Roboto,Arial,sans-serif}
-.stage{position:fixed;inset:0}
-.stage svg{width:100%;height:100%;display:block}
-.title{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;z-index:5;
- opacity:0;animation:fu 1.2s ease 1.2s forwards;text-shadow:0 2px 22px rgba(0,0,0,.9)}
-.nm{font-size:clamp(26px,5.4vw,46px);font-weight:300;letter-spacing:.05em;color:#f1f6fa;line-height:1}
-.nm b{font-weight:700}.nm .d{color:#9fc7d6;font-size:.6em}
-.tag{margin-top:10px;font-size:clamp(9px,2vw,11px);letter-spacing:.42em;text-transform:uppercase;color:#9fc7d6;opacity:.85}
-.enter{margin-top:22px;display:inline-block;padding:12px 34px;border-radius:10px;border:1px solid #4a7d94;
- background:linear-gradient(180deg,#9fcfe2,#3d7ea6);color:#06131c;font-weight:700;font-size:14px;letter-spacing:.05em;
- cursor:pointer;text-decoration:none}
-.enter:hover{filter:brightness(1.07)}
-@keyframes fu{from{opacity:0;transform:translate(-50%,-44%)}to{opacity:1;transform:translate(-50%,-50%)}}
-@keyframes breach{0%,18%{transform:translate(338px,360px) rotate(130deg) scale(.55)}
- 42%{transform:translate(326px,248px) rotate(64deg) scale(.82)}
- 60%{transform:translate(322px,150px) rotate(2deg) scale(1.06)}
- 70%{transform:translate(324px,126px) rotate(-3deg) scale(1.06)}
- 86%{transform:translate(330px,300px) rotate(58deg) scale(.82)}
- 100%{transform:translate(338px,360px) rotate(130deg) scale(.55)}}
-@keyframes splash{0%,52%{opacity:0;transform:translateY(0) scale(.5)}62%{opacity:1;transform:translateY(0) scale(1)}
- 84%{opacity:0;transform:translateY(-26px) scale(1.25)}100%{opacity:0}}
-@keyframes wd{0%,100%{transform:translateX(0)}50%{transform:translateX(-9px)}}
-.splash{transform-box:fill-box;transform-origin:bottom center;animation:splash 6.5s ease-out 1s infinite}
-@media (prefers-reduced-motion:reduce){.orca{animation:none!important;transform:translate(338px,360px) rotate(130deg) scale(.7)!important}.splash{display:none}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:
+  radial-gradient(900px 600px at 50% 28%, rgba(40,60,90,.30), transparent 62%),
+  linear-gradient(180deg,#080a0f 0%,#0c0f16 55%,#070809 100%);
+  color:#f3f5f8;font-family:'Inter',-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+  display:flex;align-items:center;justify-content:center;overflow:hidden}
+.wrap{display:flex;flex-direction:column;align-items:center;text-align:center;padding:24px;
+  opacity:0;animation:in .9s ease .1s forwards}
+@keyframes in{to{opacity:1}}
+.dove{width:auto;height:92px;display:block;margin-bottom:18px;
+  filter:drop-shadow(0 8px 22px rgba(120,90,200,.28))}
+.nm{font-size:clamp(26px,5vw,42px);font-weight:300;letter-spacing:.05em;color:#f6f8fb;line-height:1}
+.nm b{font-weight:700}.nm .d{color:#9fb0c2;font-size:.6em}
+.tag{margin-top:11px;font-size:clamp(9px,2vw,11px);letter-spacing:.44em;text-transform:uppercase;color:#8b94a3}
+.enter{margin-top:26px;display:inline-block;padding:12px 36px;border-radius:11px;
+  border:1px solid #3a4658;background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.03));
+  color:#f3f5f8;font-weight:600;font-size:14px;letter-spacing:.05em;cursor:pointer;text-decoration:none;
+  transition:border-color .15s,background .15s}
+.enter:hover{border-color:#7fa0c0;background:rgba(255,255,255,.08)}
 </style></head>
 <body>
-<div class="stage">
-  <svg viewBox="0 0 640 600" width="100%" preserveAspectRatio="xMidYMid slice" role="img" aria-label="A low-poly orca breaching out of deep blue water">
-    <g>
-      <polygon points="0,0 214,0 0,150" fill="#cfe0ea"/><polygon points="214,0 0,150 230,150" fill="#aecadb"/>
-      <polygon points="214,0 440,0 230,150" fill="#bcd5e3"/><polygon points="440,0 230,150 450,150" fill="#9cc0d4"/>
-      <polygon points="440,0 640,0 450,150" fill="#c2d9e6"/><polygon points="640,0 450,150 640,150" fill="#a6c6d8"/>
-      <polygon points="0,150 230,150 0,330" fill="#3f6f8e"/><polygon points="230,150 0,330 250,340" fill="#4f86a3"/>
-      <polygon points="230,150 450,150 250,340" fill="#5e96b0"/><polygon points="450,150 250,340 470,330" fill="#3c6c8b"/>
-      <polygon points="450,150 640,150 470,330" fill="#4a7f9d"/><polygon points="640,150 470,330 640,340" fill="#356180"/>
-      <polygon points="0,330 250,340 0,600" fill="#1d4863"/><polygon points="250,340 0,600 270,600" fill="#264f6a"/>
-      <polygon points="250,340 470,330 280,600" fill="#1a4159"/><polygon points="470,330 280,600 520,600" fill="#22506c"/>
-      <polygon points="470,330 520,600 640,600" fill="#173a50"/><polygon points="470,330 640,600 640,330" fill="#1f4a64"/>
-    </g>
-    <g style="animation:wd 8s ease-in-out infinite" fill="none" stroke-linecap="round">
-      <path d="M30 150 Q 110 142 190 150 T 350 150 T 510 150 T 620 150" stroke="#dcebf2" stroke-width="2.2" opacity=".6"/>
-      <path d="M60 168 Q 150 161 240 168 T 420 168 T 600 168" stroke="#bcd5e3" stroke-width="1.7" opacity=".42"/>
-    </g>
-    <g class="orca" style="transform:translate(338px,360px) rotate(130deg) scale(.55);transform-box:fill-box;transform-origin:center;animation:breach 6.5s ease-in-out 1s infinite">
-     <g transform="translate(-70,-150)">
-      <polygon points="104,138 140,118 112,170" fill="#1c2530"/>
-      <polygon points="54,186 18,214 54,208" fill="#12161d"/>
-      <polygon points="66,8 44,46 92,40" fill="#171c24"/>
-      <polygon points="44,46 92,40 100,86" fill="#1f2a36"/>
-      <polygon points="44,46 100,86 40,92" fill="#10141a"/>
-      <polygon points="40,92 100,86 104,150" fill="#171c24"/>
-      <polygon points="40,92 104,150 46,150" fill="#1f2a36"/>
-      <polygon points="46,150 104,150 96,210" fill="#12161d"/>
-      <polygon points="46,150 96,210 54,210" fill="#181f28"/>
-      <polygon points="54,210 96,210 70,250" fill="#10141a"/>
-      <polygon points="44,46 40,92 30,68" fill="#e8eef2"/>
-      <polygon points="40,92 46,150 33,120" fill="#d4e0e7"/>
-      <polygon points="46,150 54,210 38,182" fill="#e8eef2"/>
-      <polygon points="54,210 70,250 48,236" fill="#cdd8de"/>
-      <ellipse cx="74" cy="58" rx="13" ry="8" fill="#eef3f6" transform="rotate(-18 74 58)"/>
-      <circle cx="64" cy="54" r="3.2" fill="#0a0d11"/>
-      <polygon points="70,250 20,300 70,266" fill="#171c24"/><polygon points="70,250 70,266 120,300" fill="#1f2a36"/>
-     </g>
-    </g>
-    <g class="splash">
-      <polygon points="296,168 304,138 312,168" fill="#eef6fa"/><polygon points="312,166 322,142 330,168" fill="#dcebf2"/>
-      <polygon points="284,170 290,150 298,170" fill="#cfe0ea"/><polygon points="330,170 338,148 346,170" fill="#eef6fa"/>
-      <circle cx="300" cy="142" r="3" fill="#fff"/><circle cx="322" cy="136" r="2.4" fill="#dcebf2"/><circle cx="312" cy="128" r="2" fill="#fff"/>
-    </g>
-  </svg>
-  <div class="title">
-    <div class="nm"><b>mrkt</b>price<span class="d">.com</span></div>
-    <div class="tag">Institutional-grade market intelligence</div>
-    <a class="enter" href="login.html">Enter &rarr;</a>
-  </div>
+<div class="wrap">
+  <img class="dove" src="splash/dove.png" alt="MrktPrice"/>
+  <div class="nm"><b>mrkt</b>price<span class="d">.com</span></div>
+  <div class="tag">Institutional-grade market intelligence</div>
+  <a class="enter" href="login.html">Enter &rarr;</a>
 </div>
 <script>
 (function(){try{var ok=localStorage.getItem('mrkt.token')||localStorage.getItem('mrkt.ok');

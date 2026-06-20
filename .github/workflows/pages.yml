@@ -38,10 +38,10 @@ jobs:
       - name: Stage site (dashboard + reports + root files)
         run: |
           mkdir -p _site/reports
-          cp index.html _site/index.html
+          for f in *.html robots.txt marketmap.json; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
           cp -r reports/*.html _site/reports/ 2>/dev/null || true
           rm -f _site/reports/report-template.html
-          for f in 404.html robots.txt live.html login.html pricing.html account.html marketmap.html marketmap.json; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
+          cp -r splash _site/splash 2>/dev/null || true
           [ -f CNAME ] && cp CNAME _site/CNAME || echo "mrktprice.com" > _site/CNAME
           touch _site/.nojekyll
 

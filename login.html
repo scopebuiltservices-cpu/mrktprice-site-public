@@ -18,6 +18,7 @@ html,body{margin:0;min-height:100%;color:var(--text);background:#0a3327;
 .dove{height:clamp(104px,17vw,152px);width:auto;display:block;margin-bottom:6px;
  filter:drop-shadow(0 0 22px rgba(60,240,180,.45)) drop-shadow(0 8px 20px rgba(0,0,0,.35))}
 .dovelink{display:inline-block;cursor:pointer;transition:transform .18s}.dovelink:hover{transform:translateY(-3px) scale(1.03)}.dovelink:hover .dove{filter:drop-shadow(0 0 32px rgba(80,255,205,.65)) drop-shadow(0 10px 24px rgba(0,0,0,.45))}
+.dovelink.ready .dove{animation:pulse 1.6s ease-in-out infinite}@keyframes pulse{0%,100%{filter:drop-shadow(0 0 22px rgba(60,240,180,.45))}50%{filter:drop-shadow(0 0 36px rgba(90,255,210,.9))}}
 .title{font-size:clamp(30px,7vw,52px);font-weight:300;letter-spacing:.03em;color:#fff;line-height:1;margin:4px 0 2px}
 .title b{font-weight:700}.title .d{font-weight:300;opacity:.8;font-size:.62em}
 .tag{font-size:10.5px;letter-spacing:.44em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
@@ -91,7 +92,7 @@ html,body{margin:0;min-height:100%;color:var(--text);background:#0a3327;
   if(!/^https:\/\//.test(SUPABASE_URL)||!window.supabase){msgset('Sign-in is not configured yet.','err');return;}
   var sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
   function persist(s){try{localStorage.setItem('mrkt.token',s.access_token);localStorage.setItem('mrkt.refresh',s.refresh_token||'');localStorage.setItem('mrkt.email',(s.user&&s.user.email)||'');localStorage.setItem('mrkt.ok','1');}catch(e){}}
-  function done(s){persist(s);location.replace(NEXT);}
+  function done(s){persist(s);msgset('Signed in \u2713 \u2014 click the dove to enter','ok');var d=document.getElementById('enter');if(d)d.classList.add('ready');}
   sb.auth.onAuthStateChange(function(ev,session){if(session&&ev==='SIGNED_IN')done(session);});
   var _dl=document.getElementById('enter');
   if(_dl)_dl.addEventListener('click',function(e){var ok=localStorage.getItem('mrkt.token')||localStorage.getItem('mrkt.ok');if(!ok){e.preventDefault();if(email)email.focus();msgset('Sign in below, then click the dove to enter.');}});
@@ -118,7 +119,7 @@ html,body{margin:0;min-height:100%;color:var(--text);background:#0a3327;
     if(!c){msgset('Enter your access code.','err');return;}
     msgset('Checking code…');
     fetch(API+'/auth',{headers:{'X-Access-Code':c},cache:'no-store'}).then(function(r){
-      if(r.status===200){try{localStorage.setItem('mrkt.code',c);localStorage.setItem('mrkt.ok','1');}catch(e){}location.replace(NEXT);}
+      if(r.status===200){try{localStorage.setItem('mrkt.code',c);localStorage.setItem('mrkt.ok','1');}catch(e){}msgset('Access granted \u2713 \u2014 click the dove to enter','ok');var d=document.getElementById('enter');if(d)d.classList.add('ready');}
       else{msgset('That access code was not accepted.','err');}}).catch(function(){msgset('Could not reach the data service.','err');});};
   pw.addEventListener('keydown',function(ev){if(ev.key==='Enter')document.getElementById('signin').click();});
 })();

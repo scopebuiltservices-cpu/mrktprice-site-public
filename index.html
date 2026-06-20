@@ -1,39 +1,120 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>MrktPrice</title>
-<meta name="description" content="MrktPrice — institutional-grade market intelligence."/>
+<title>MrktPrice — Sign in</title>
+<meta name="description" content="MrktPrice — institutional-grade market intelligence. Sign in."/>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
+:root{--text:#ffffff;--muted:#bfe7d8;--line:rgba(255,255,255,.16);--line2:rgba(255,255,255,.26);
+ --neon:#28e0a6;--neon-lo:#16b487;--ink:#04261d;--err:#ffb3b3;--ok:#9bf0cf}
 *{box-sizing:border-box}
-html,body{margin:0;height:100%;background:
-  radial-gradient(900px 600px at 50% 28%, rgba(40,60,90,.30), transparent 62%),
-  linear-gradient(180deg,#080a0f 0%,#0c0f16 55%,#070809 100%);
-  color:#f3f5f8;font-family:'Inter',-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-  display:flex;align-items:center;justify-content:center;overflow:hidden}
-.wrap{display:flex;flex-direction:column;align-items:center;text-align:center;padding:24px;
-  opacity:0;animation:in .9s ease .1s forwards}
-@keyframes in{to{opacity:1}}
-.dove{width:auto;height:92px;display:block;margin-bottom:18px;
-  filter:drop-shadow(0 8px 22px rgba(120,90,200,.28))}
-.nm{font-size:clamp(26px,5vw,42px);font-weight:300;letter-spacing:.05em;color:#f6f8fb;line-height:1}
-.nm b{font-weight:700}.nm .d{color:#9fb0c2;font-size:.6em}
-.tag{margin-top:11px;font-size:clamp(9px,2vw,11px);letter-spacing:.44em;text-transform:uppercase;color:#8b94a3}
-.enter{margin-top:26px;display:inline-block;padding:12px 36px;border-radius:11px;
-  border:1px solid #3a4658;background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.03));
-  color:#f3f5f8;font-weight:600;font-size:14px;letter-spacing:.05em;cursor:pointer;text-decoration:none;
-  transition:border-color .15s,background .15s}
-.enter:hover{border-color:#7fa0c0;background:rgba(255,255,255,.08)}
+html,body{margin:0;min-height:100%;color:var(--text);
+ background:radial-gradient(820px 560px at 50% 18%,rgba(40,224,166,.16),transparent 60%),
+  linear-gradient(180deg,#0e5a44 0%,#0b4332 52%,#07291f 100%);
+ font:15px/1.55 'Inter',-apple-system,Segoe UI,Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px 22px}
+.dove{height:clamp(104px,17vw,152px);width:auto;display:block;margin-bottom:6px;
+ filter:drop-shadow(0 0 22px rgba(60,240,180,.45)) drop-shadow(0 8px 20px rgba(0,0,0,.35))}
+.title{font-size:clamp(30px,7vw,52px);font-weight:300;letter-spacing:.03em;color:#fff;line-height:1;margin:4px 0 2px}
+.title b{font-weight:700}.title .d{font-weight:300;opacity:.8;font-size:.62em}
+.tag{font-size:10.5px;letter-spacing:.44em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.card{width:min(360px,92vw);margin-top:20px;display:flex;flex-direction:column;gap:10px;
+ background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.04));
+ border:1px solid var(--line);border-radius:16px;padding:20px 18px;
+ box-shadow:0 26px 60px -30px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.10)}
+.gbtn{display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#13201b;border:1px solid #fff;
+ border-radius:11px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;transition:box-shadow .15s}
+.gbtn:hover{box-shadow:0 0 0 3px rgba(255,255,255,.16)}.gbtn.hot{box-shadow:0 0 0 3px rgba(40,224,166,.5)}
+.ghint{font-size:11px;color:var(--neon);margin:-4px 2px 0;display:none}
+.divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;margin:3px 0 1px}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
+.card input{width:100%;background:rgba(255,255,255,.06);border:1px solid var(--line2);border-radius:11px;color:#fff;
+ padding:12px 13px;font:14px 'Inter',sans-serif;outline:none;transition:border-color .15s,box-shadow .15s}
+.card input::placeholder{color:#9fc3b5}
+.card input:focus{border-color:var(--neon);box-shadow:0 0 0 3px rgba(40,224,166,.22)}
+.row{display:flex;gap:9px}.row>button{flex:1}
+.act{border-radius:11px;padding:12px;font:700 14px 'Inter',sans-serif;cursor:pointer;color:var(--ink);border:1px solid var(--neon-lo);
+ background:linear-gradient(180deg,#46f0c0,#1cc593);transition:filter .15s}.act:hover{filter:brightness(1.06)}
+.ghost{border-radius:11px;padding:12px;font:600 14px 'Inter',sans-serif;cursor:pointer;color:#fff;border:1px solid var(--line2);background:transparent}
+.ghost:hover{border-color:#fff;background:rgba(255,255,255,.06)}
+.linkrow{display:flex;justify-content:space-between;font-size:12px;margin-top:2px;flex-wrap:wrap;gap:6px}
+.linkrow a{color:var(--muted);cursor:pointer;text-decoration:none;border-bottom:1px dotted rgba(255,255,255,.3)}
+.linkrow a:hover{color:#fff}
+#codebox{display:none;flex-direction:column;gap:10px;margin-top:2px}
+.msg{min-height:16px;font-size:12px;color:var(--muted);text-align:center}.msg.err{color:var(--err)}.msg.ok{color:var(--ok)}
+.news{margin-top:18px;font-size:12.5px;color:var(--muted);text-decoration:none}.news:hover{color:#fff}
 </style></head>
 <body>
 <div class="wrap">
-  <img class="dove" src="splash/dove.png" alt="MrktPrice"/>
-  <div class="nm"><b>mrkt</b>price<span class="d">.com</span></div>
+  <img class="dove" src="splash/dove.png" alt="MrktPrice dove"/>
+  <div class="title"><b>mrkt</b>price<span class="d">.com</span></div>
   <div class="tag">Institutional-grade market intelligence</div>
-  <a class="enter" href="login.html">Enter &rarr;</a>
+
+  <div class="card">
+    <button id="google" class="gbtn">
+      <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.4 29.3 35 24 35c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 20-7.6 20-21 0-1.2-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 16 3 9.1 7.6 6.3 14.7z"/><path fill="#4CAF50" d="M24 45c5.2 0 10-2 13.6-5.2l-6.3-5.2C29.2 35.5 26.7 36.5 24 36.5c-5.3 0-9.7-2.6-11.3-7l-6.5 5C9 40.3 15.9 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.6l6.3 5.2C41.5 36.6 44 31 44 24c0-1.2-.1-2.3-.4-3.5z"/></svg>
+      Continue with Google
+    </button>
+    <div class="ghint" id="ghint">Gmail detected — you can also get a one-tap link below.</div>
+    <div class="divider">or with your email</div>
+    <input id="email" placeholder="you@email.com" autocomplete="email" inputmode="email"/>
+    <input id="pw" type="password" placeholder="Password" autocomplete="current-password"/>
+    <div class="row">
+      <button id="signin" class="act">Log in</button>
+      <button id="signup" class="ghost">Create account</button>
+    </div>
+    <div class="linkrow">
+      <a id="magic">Email me a one-tap link</a>
+      <a id="codetoggle">Have an access code?</a>
+    </div>
+    <div id="codebox">
+      <input id="code" placeholder="Owner / team access code" autocomplete="off"/>
+      <button id="codego" class="ghost">Enter with access code</button>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+  <a class="news" href="reports/index.html">Read Opportunity News — free &rarr;</a>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-(function(){try{var ok=localStorage.getItem('mrkt.token')||localStorage.getItem('mrkt.ok');
-if(ok){location.replace('terminal.html');}}catch(e){}})();
+(function(){
+  var SUPABASE_URL='https://jnatyouqlrdhmghnluzv.supabase.co', SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpuYXR5b3VxbHJkaG1naG5sdXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0NzY0MzgsImV4cCI6MjA5NzA1MjQzOH0.AdJLcTE46ci7XSKckxv2cQWIFWPp6BXdHrIspay4Ajg', NEXT='terminal.html';
+  var API=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:8000':'https://mrktprice-data.onrender.com';
+  var email=document.getElementById('email'),pw=document.getElementById('pw'),gbtn=document.getElementById('google'),ghint=document.getElementById('ghint');
+  function msgset(t,c){var m=document.getElementById('msg');m.textContent=t;m.className='msg'+(c?' '+c:'');}
+  try{var have=localStorage.getItem('mrkt.token')||localStorage.getItem('mrkt.ok');if(have){location.replace(NEXT);return;}}catch(e){}
+  if(!/^https:\/\//.test(SUPABASE_URL)||!window.supabase){msgset('Sign-in is not configured yet.','err');return;}
+  var sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
+  function persist(s){try{localStorage.setItem('mrkt.token',s.access_token);localStorage.setItem('mrkt.refresh',s.refresh_token||'');localStorage.setItem('mrkt.email',(s.user&&s.user.email)||'');localStorage.setItem('mrkt.ok','1');}catch(e){}}
+  function done(s){persist(s);location.replace(NEXT);}
+  sb.auth.onAuthStateChange(function(_e,session){if(session)done(session);});
+  sb.auth.getSession().then(function(r){if(r.data&&r.data.session)done(r.data.session);});
+  function isGoogle(v){return /@(gmail|googlemail)\.com\s*$/i.test(v);}
+  gbtn.onclick=function(){msgset('Redirecting to Google…');
+    sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+'/index.html'}})
+      .then(function(r){if(r&&r.error)msgset(r.error.message+' (if Google is not enabled yet, use the email link).','err');});};
+  email.addEventListener('input',function(){var hot=isGoogle(email.value.trim());ghint.style.display=hot?'block':'none';gbtn.classList.toggle('hot',hot);});
+  document.getElementById('signin').onclick=function(){var e=email.value.trim(),p=pw.value;
+    if(!e||!p){msgset('Enter your email and password — or use the one-tap link.','err');return;}
+    msgset('Signing in…');sb.auth.signInWithPassword({email:e,password:p}).then(function(r){if(r.error)msgset(r.error.message,'err');});};
+  document.getElementById('signup').onclick=function(){var e=email.value.trim(),p=pw.value;
+    if(!e||p.length<8){msgset('Use a valid email and an 8+ character password.','err');return;}
+    msgset('Creating your account…');sb.auth.signUp({email:e,password:p}).then(function(r){
+      if(r.error)msgset(r.error.message,'err');else if(r.data&&r.data.session)done(r.data.session);
+      else msgset('Account created — check your email to confirm, then log in.','ok');});};
+  document.getElementById('magic').onclick=function(){var e=email.value.trim();if(!e){msgset('Enter your email first.','err');email.focus();return;}
+    msgset('Sending your one-tap link…');
+    sb.auth.signInWithOtp({email:e,options:{emailRedirectTo:location.origin+'/index.html',shouldCreateUser:true}})
+      .then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Check your '+(isGoogle(e)?'Gmail':'email')+' — tap the link to finish.','ok');});};
+  document.getElementById('codetoggle').onclick=function(){var b=document.getElementById('codebox');
+    b.style.display=b.style.display==='flex'?'none':'flex';if(b.style.display==='flex')document.getElementById('code').focus();};
+  document.getElementById('codego').onclick=function(){var c=document.getElementById('code').value.trim();
+    if(!c){msgset('Enter your access code.','err');return;}
+    msgset('Checking code…');
+    fetch(API+'/auth',{headers:{'X-Access-Code':c},cache:'no-store'}).then(function(r){
+      if(r.status===200){try{localStorage.setItem('mrkt.code',c);localStorage.setItem('mrkt.ok','1');}catch(e){}location.replace(NEXT);}
+      else{msgset('That access code was not accepted.','err');}}).catch(function(){msgset('Could not reach the data service.','err');});};
+  pw.addEventListener('keydown',function(ev){if(ev.key==='Enter')document.getElementById('signin').click();});
+})();
 </script>
 </body></html>

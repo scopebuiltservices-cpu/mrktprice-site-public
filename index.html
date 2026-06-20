@@ -1,169 +1,89 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>MrktPrice — Sign in</title>
-<meta name="description" content="MrktPrice — institutional-grade market intelligence. Sign in to access the OpportunityTracker terminal and Opportunity Map."/>
+<title>MrktPrice</title>
+<meta name="description" content="MrktPrice — institutional-grade market intelligence."/>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 <style>
-:root{
-  --bg:#070809; --bg2:#0c0e12; --panel:rgba(255,255,255,.025); --panelhi:rgba(255,255,255,.05);
-  --text:#f3f5f8; --muted:#8b94a3; --line:rgba(255,255,255,.10); --line2:rgba(255,255,255,.18);
-  --gold:#d4af37; --gold-lo:#a8842a; --gold-hi:#f6e27a; --ink:#0a0b0e;
-  --ok:#7fd1a8; --err:#ef9a9a;
-}
-*{box-sizing:border-box}
-html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
-  font:15px/1.55 'Inter',-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
-body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
-  background:
-    radial-gradient(900px 600px at 50% -10%, rgba(212,175,55,.10), transparent 60%),
-    radial-gradient(1200px 800px at 50% 120%, rgba(60,72,96,.22), transparent 55%),
-    linear-gradient(180deg,#070809 0%,#0a0c10 55%,#070809 100%);}
-body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.035;
-  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>");}
-.wrap{position:relative;z-index:1;min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:34px 22px}
-.brand{display:flex;flex-direction:column;align-items:center;text-align:center;margin-bottom:8px}
-.mono{width:84px;height:84px;filter:drop-shadow(0 6px 24px rgba(212,175,55,.18))}
-.mono .stroke{stroke-dasharray:520;stroke-dashoffset:520;animation:draw 1.7s cubic-bezier(.5,.1,.2,1) .15s forwards}
-.mono .badge{opacity:0;animation:fade .9s ease .1s forwards}
-.mono .sheen{opacity:0;animation:sheen 4.2s ease-in-out 1.9s infinite}
-@keyframes draw{to{stroke-dashoffset:0}}
-@keyframes fade{to{opacity:1}}
-@keyframes sheen{0%,100%{opacity:0}45%{opacity:.55}55%{opacity:.5}}
-.wm{margin-top:16px;font-size:clamp(28px,6vw,40px);font-weight:300;letter-spacing:.04em;color:#fff;line-height:1}
-.wm b{font-weight:600}
-.wm .dot{color:var(--muted);font-weight:300;font-size:.62em;letter-spacing:.02em}
-.rule{width:54px;height:1px;margin:15px 0 11px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
-.tag{font-size:10.5px;letter-spacing:.42em;text-transform:uppercase;color:var(--muted)}
-.card{width:min(360px,92vw);margin-top:26px;display:flex;flex-direction:column;gap:10px;
-  background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.015));
-  border:1px solid var(--line);border-radius:16px;padding:22px 20px 20px;
-  box-shadow:0 24px 60px -28px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.05)}
-.gbtn{display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#13151a;border:1px solid #fff;
-  border-radius:11px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;transition:box-shadow .15s,transform .05s}
-.gbtn:hover{box-shadow:0 0 0 3px rgba(255,255,255,.10)}.gbtn:active{transform:translateY(1px)}
-.gbtn.hot{box-shadow:0 0 0 3px rgba(212,175,55,.40)}
-.ghint{font-size:11px;color:var(--gold);margin:-4px 2px 0;display:none}
-.divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;margin:4px 0 1px}
-.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
-.fld{position:relative}
-.card input{width:100%;background:rgba(255,255,255,.03);border:1px solid var(--line2);border-radius:11px;color:#fff;
-  padding:12px 13px;font:14px 'Inter',sans-serif;outline:none;transition:border-color .15s,box-shadow .15s}
-.card input::placeholder{color:#6c7686}
-.card input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.16)}
-.row{display:flex;gap:9px}.row>button{flex:1}
-.act{border-radius:11px;padding:12px 13px;font:600 14px 'Inter',sans-serif;cursor:pointer;color:var(--ink);border:1px solid var(--gold-lo);
-  background:linear-gradient(180deg,var(--gold-hi),var(--gold));transition:filter .15s,transform .05s}
-.act:hover{filter:brightness(1.06)}.act:active{transform:translateY(1px)}
-.ghost{border-radius:11px;padding:12px 13px;font:600 14px 'Inter',sans-serif;cursor:pointer;color:#fff;border:1px solid var(--line2);background:transparent;transition:border-color .15s,background .15s}
-.ghost:hover{border-color:#fff;background:rgba(255,255,255,.04)}
-.linkrow{display:flex;justify-content:space-between;font-size:12px;margin-top:2px;flex-wrap:wrap;gap:6px}
-.linkrow a{color:var(--muted);cursor:pointer;text-decoration:none;border-bottom:1px dotted rgba(255,255,255,.25)}
-.linkrow a:hover{color:#fff}
-#codebox{display:none;flex-direction:column;gap:10px;margin-top:2px}
-.msg{min-height:16px;font-size:12px;color:var(--muted);text-align:center}.msg.err{color:var(--err)}.msg.ok{color:var(--ok)}
-.foot{margin-top:22px;display:flex;flex-direction:column;align-items:center;gap:9px}
-.trust{display:flex;gap:7px 16px;flex-wrap:wrap;justify-content:center;font-size:10.5px;letter-spacing:.06em;color:#6f7888}
-.trust b{color:#aab2c0;font-weight:600}
-.news{font-size:12.5px;color:var(--muted);text-decoration:none}
-.news:hover{color:var(--gold)}
-.legal{font-size:10px;color:#5a6373;max-width:340px;text-align:center;line-height:1.5;margin-top:2px}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:#0a1622;overflow:hidden;
+ font-family:'Inter',-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+.stage{position:fixed;inset:0}
+.stage svg{width:100%;height:100%;display:block}
+.title{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;z-index:5;
+ opacity:0;animation:fu 1.2s ease 1.2s forwards;text-shadow:0 2px 22px rgba(0,0,0,.9)}
+.nm{font-size:clamp(26px,5.4vw,46px);font-weight:300;letter-spacing:.05em;color:#f1f6fa;line-height:1}
+.nm b{font-weight:700}.nm .d{color:#9fc7d6;font-size:.6em}
+.tag{margin-top:10px;font-size:clamp(9px,2vw,11px);letter-spacing:.42em;text-transform:uppercase;color:#9fc7d6;opacity:.85}
+.enter{margin-top:22px;display:inline-block;padding:12px 34px;border-radius:10px;border:1px solid #4a7d94;
+ background:linear-gradient(180deg,#9fcfe2,#3d7ea6);color:#06131c;font-weight:700;font-size:14px;letter-spacing:.05em;
+ cursor:pointer;text-decoration:none}
+.enter:hover{filter:brightness(1.07)}
+@keyframes fu{from{opacity:0;transform:translate(-50%,-44%)}to{opacity:1;transform:translate(-50%,-50%)}}
+@keyframes breach{0%,18%{transform:translate(338px,360px) rotate(130deg) scale(.55)}
+ 42%{transform:translate(326px,248px) rotate(64deg) scale(.82)}
+ 60%{transform:translate(322px,150px) rotate(2deg) scale(1.06)}
+ 70%{transform:translate(324px,126px) rotate(-3deg) scale(1.06)}
+ 86%{transform:translate(330px,300px) rotate(58deg) scale(.82)}
+ 100%{transform:translate(338px,360px) rotate(130deg) scale(.55)}}
+@keyframes splash{0%,52%{opacity:0;transform:translateY(0) scale(.5)}62%{opacity:1;transform:translateY(0) scale(1)}
+ 84%{opacity:0;transform:translateY(-26px) scale(1.25)}100%{opacity:0}}
+@keyframes wd{0%,100%{transform:translateX(0)}50%{transform:translateX(-9px)}}
+.splash{transform-box:fill-box;transform-origin:bottom center;animation:splash 6.5s ease-out 1s infinite}
+@media (prefers-reduced-motion:reduce){.orca{animation:none!important;transform:translate(338px,360px) rotate(130deg) scale(.7)!important}.splash{display:none}}
 </style></head>
 <body>
-<div class="wrap">
-  <div class="brand">
-    <svg class="mono" viewBox="0 0 120 120" fill="none" aria-label="MrktPrice monogram">
-      <defs>
-        <linearGradient id="g" x1="20" y1="20" x2="100" y2="100" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#f6e27a"/><stop offset=".5" stop-color="#d4af37"/><stop offset="1" stop-color="#a8842a"/>
-        </linearGradient>
-        <linearGradient id="sh" x1="0" y1="0" x2="120" y2="0" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
-        </linearGradient>
-      </defs>
-      <rect class="badge" x="6" y="6" width="108" height="108" rx="26" fill="#0c0e13" stroke="url(#g)" stroke-width="1.4"/>
-      <rect class="badge" x="12.5" y="12.5" width="95" height="95" rx="21" fill="none" stroke="rgba(212,175,55,.16)" stroke-width="1"/>
-      <path class="stroke" d="M34 86 V40 L60 70 L86 40 V86" stroke="url(#g)" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
-      <path class="sheen" d="M34 86 V40 L60 70 L86 40 V86" stroke="url(#sh)" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-    <div class="wm"><b>Mrkt</b>Price<span class="dot">.com</span></div>
-    <div class="rule"></div>
+<div class="stage">
+  <svg viewBox="0 0 640 600" width="100%" preserveAspectRatio="xMidYMid slice" role="img" aria-label="A low-poly orca breaching out of deep blue water">
+    <g>
+      <polygon points="0,0 214,0 0,150" fill="#cfe0ea"/><polygon points="214,0 0,150 230,150" fill="#aecadb"/>
+      <polygon points="214,0 440,0 230,150" fill="#bcd5e3"/><polygon points="440,0 230,150 450,150" fill="#9cc0d4"/>
+      <polygon points="440,0 640,0 450,150" fill="#c2d9e6"/><polygon points="640,0 450,150 640,150" fill="#a6c6d8"/>
+      <polygon points="0,150 230,150 0,330" fill="#3f6f8e"/><polygon points="230,150 0,330 250,340" fill="#4f86a3"/>
+      <polygon points="230,150 450,150 250,340" fill="#5e96b0"/><polygon points="450,150 250,340 470,330" fill="#3c6c8b"/>
+      <polygon points="450,150 640,150 470,330" fill="#4a7f9d"/><polygon points="640,150 470,330 640,340" fill="#356180"/>
+      <polygon points="0,330 250,340 0,600" fill="#1d4863"/><polygon points="250,340 0,600 270,600" fill="#264f6a"/>
+      <polygon points="250,340 470,330 280,600" fill="#1a4159"/><polygon points="470,330 280,600 520,600" fill="#22506c"/>
+      <polygon points="470,330 520,600 640,600" fill="#173a50"/><polygon points="470,330 640,600 640,330" fill="#1f4a64"/>
+    </g>
+    <g style="animation:wd 8s ease-in-out infinite" fill="none" stroke-linecap="round">
+      <path d="M30 150 Q 110 142 190 150 T 350 150 T 510 150 T 620 150" stroke="#dcebf2" stroke-width="2.2" opacity=".6"/>
+      <path d="M60 168 Q 150 161 240 168 T 420 168 T 600 168" stroke="#bcd5e3" stroke-width="1.7" opacity=".42"/>
+    </g>
+    <g class="orca" style="transform:translate(338px,360px) rotate(130deg) scale(.55);transform-box:fill-box;transform-origin:center;animation:breach 6.5s ease-in-out 1s infinite">
+     <g transform="translate(-70,-150)">
+      <polygon points="104,138 140,118 112,170" fill="#1c2530"/>
+      <polygon points="54,186 18,214 54,208" fill="#12161d"/>
+      <polygon points="66,8 44,46 92,40" fill="#171c24"/>
+      <polygon points="44,46 92,40 100,86" fill="#1f2a36"/>
+      <polygon points="44,46 100,86 40,92" fill="#10141a"/>
+      <polygon points="40,92 100,86 104,150" fill="#171c24"/>
+      <polygon points="40,92 104,150 46,150" fill="#1f2a36"/>
+      <polygon points="46,150 104,150 96,210" fill="#12161d"/>
+      <polygon points="46,150 96,210 54,210" fill="#181f28"/>
+      <polygon points="54,210 96,210 70,250" fill="#10141a"/>
+      <polygon points="44,46 40,92 30,68" fill="#e8eef2"/>
+      <polygon points="40,92 46,150 33,120" fill="#d4e0e7"/>
+      <polygon points="46,150 54,210 38,182" fill="#e8eef2"/>
+      <polygon points="54,210 70,250 48,236" fill="#cdd8de"/>
+      <ellipse cx="74" cy="58" rx="13" ry="8" fill="#eef3f6" transform="rotate(-18 74 58)"/>
+      <circle cx="64" cy="54" r="3.2" fill="#0a0d11"/>
+      <polygon points="70,250 20,300 70,266" fill="#171c24"/><polygon points="70,250 70,266 120,300" fill="#1f2a36"/>
+     </g>
+    </g>
+    <g class="splash">
+      <polygon points="296,168 304,138 312,168" fill="#eef6fa"/><polygon points="312,166 322,142 330,168" fill="#dcebf2"/>
+      <polygon points="284,170 290,150 298,170" fill="#cfe0ea"/><polygon points="330,170 338,148 346,170" fill="#eef6fa"/>
+      <circle cx="300" cy="142" r="3" fill="#fff"/><circle cx="322" cy="136" r="2.4" fill="#dcebf2"/><circle cx="312" cy="128" r="2" fill="#fff"/>
+    </g>
+  </svg>
+  <div class="title">
+    <div class="nm"><b>mrkt</b>price<span class="d">.com</span></div>
     <div class="tag">Institutional-grade market intelligence</div>
-  </div>
-  <div class="card">
-    <button id="google" class="gbtn">
-      <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.4 29.3 35 24 35c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 20-7.6 20-21 0-1.2-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 16 3 9.1 7.6 6.3 14.7z"/><path fill="#4CAF50" d="M24 45c5.2 0 10-2 13.6-5.2l-6.3-5.2C29.2 35.5 26.7 36.5 24 36.5c-5.3 0-9.7-2.6-11.3-7l-6.5 5C9 40.3 15.9 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.6l6.3 5.2C41.5 36.6 44 31 44 24c0-1.2-.1-2.3-.4-3.5z"/></svg>
-      Continue with Google
-    </button>
-    <div class="ghint" id="ghint">Gmail detected — you can also get a one-tap link below, no password.</div>
-    <div class="divider">or with your email</div>
-    <div class="fld"><input id="email" placeholder="you@email.com" autocomplete="email" inputmode="email"/></div>
-    <div class="fld"><input id="pw" type="password" placeholder="Password" autocomplete="current-password"/></div>
-    <div class="row">
-      <button id="signin" class="act">Log in</button>
-      <button id="signup" class="ghost">Create account</button>
-    </div>
-    <div class="linkrow">
-      <a id="magic">Email me a one-tap link</a>
-      <a id="codetoggle">Have an access code?</a>
-    </div>
-    <div id="codebox">
-      <input id="code" placeholder="Owner / team access code" autocomplete="off"/>
-      <button id="codego" class="ghost">Enter with access code</button>
-    </div>
-    <div class="msg" id="msg"></div>
-  </div>
-  <div class="foot">
-    <div class="trust">
-      <span><b>Bank-grade</b> sign-in</span>
-      <span><b>SEC-sourced</b> fundamentals</span>
-      <span><b>Encrypted</b> in transit</span>
-    </div>
-    <a class="news" href="reports/index.html">Read Opportunity News — free &rarr;</a>
-    <div class="legal">MrktPrice provides research and market analytics for informational purposes only and is not investment advice. &copy; MrktPrice.</div>
+    <a class="enter" href="login.html">Enter &rarr;</a>
   </div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-(function(){
-  var SUPABASE_URL='https://jnatyouqlrdhmghnluzv.supabase.co', SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpuYXR5b3VxbHJkaG1naG5sdXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0NzY0MzgsImV4cCI6MjA5NzA1MjQzOH0.AdJLcTE46ci7XSKckxv2cQWIFWPp6BXdHrIspay4Ajg', NEXT='terminal.html';
-  var API=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:8000':'https://mrktprice-data.onrender.com';
-  var email=document.getElementById('email'),pw=document.getElementById('pw'),gbtn=document.getElementById('google'),ghint=document.getElementById('ghint');
-  function msgset(t,c){var m=document.getElementById('msg');m.textContent=t;m.className='msg'+(c?' '+c:'');}
-  if(!/^https:\/\//.test(SUPABASE_URL)||!window.supabase){msgset('Sign-in is not configured yet.','err');return;}
-  var sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
-  function persist(s){try{localStorage.setItem('mrkt.token',s.access_token);localStorage.setItem('mrkt.refresh',s.refresh_token||'');localStorage.setItem('mrkt.email',(s.user&&s.user.email)||'');localStorage.setItem('mrkt.ok','1');}catch(e){}}
-  function done(s){persist(s);location.replace(NEXT);}
-  sb.auth.onAuthStateChange(function(_e,session){if(session)done(session);});
-  sb.auth.getSession().then(function(r){if(r.data&&r.data.session)done(r.data.session);});
-  function isGoogle(v){return /@(gmail|googlemail)\.com\s*$/i.test(v);}
-  gbtn.onclick=function(){msgset('Redirecting to Google…');
-    sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+'/login.html'}})
-      .then(function(r){if(r&&r.error)msgset(r.error.message+' (if Google is not enabled yet, use the email link).','err');});};
-  email.addEventListener('input',function(){var hot=isGoogle(email.value.trim());ghint.style.display=hot?'block':'none';gbtn.classList.toggle('hot',hot);});
-  document.getElementById('signin').onclick=function(){var e=email.value.trim(),p=pw.value;
-    if(!e||!p){msgset('Enter your email and password — or use the one-tap link below.','err');return;}
-    msgset('Signing in…');sb.auth.signInWithPassword({email:e,password:p}).then(function(r){if(r.error)msgset(r.error.message,'err');});};
-  document.getElementById('signup').onclick=function(){var e=email.value.trim(),p=pw.value;
-    if(!e||p.length<8){msgset('Use a valid email and an 8+ character password.','err');return;}
-    msgset('Creating your account…');sb.auth.signUp({email:e,password:p}).then(function(r){
-      if(r.error)msgset(r.error.message,'err');
-      else if(r.data&&r.data.session)done(r.data.session);
-      else msgset('Account created — check your email to confirm, then log in.','ok');});};
-  document.getElementById('magic').onclick=function(){var e=email.value.trim();if(!e){msgset('Enter your email first.','err');email.focus();return;}
-    msgset('Sending your one-tap link…');
-    sb.auth.signInWithOtp({email:e,options:{emailRedirectTo:location.origin+'/login.html',shouldCreateUser:true}})
-      .then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Check your '+(isGoogle(e)?'Gmail':'email')+' — tap the link to finish.','ok');});};
-  document.getElementById('codetoggle').onclick=function(){var b=document.getElementById('codebox');
-    b.style.display=b.style.display==='flex'?'none':'flex';if(b.style.display==='flex')document.getElementById('code').focus();};
-  document.getElementById('codego').onclick=function(){var c=document.getElementById('code').value.trim();
-    if(!c){msgset('Enter your access code.','err');return;}
-    msgset('Checking code…');
-    fetch(API+'/auth',{headers:{'X-Access-Code':c},cache:'no-store'}).then(function(r){
-      if(r.status===200){try{localStorage.setItem('mrkt.code',c);localStorage.setItem('mrkt.ok','1');}catch(e){}location.replace(NEXT);}
-      else{msgset('That access code was not accepted.','err');}
-    }).catch(function(){msgset('Could not reach the data service.','err');});};
-  pw.addEventListener('keydown',function(ev){if(ev.key==='Enter')document.getElementById('signin').click();});
-  email.focus();
-})();
-</script></body></html>
+(function(){try{var ok=localStorage.getItem('mrkt.token')||localStorage.getItem('mrkt.ok');
+if(ok){location.replace('terminal.html');}}catch(e){}})();
+</script>
+</body></html>

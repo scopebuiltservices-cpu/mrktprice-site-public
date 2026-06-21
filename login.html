@@ -6,7 +6,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{--text:#fff;--muted:#bfe7d8;--line:rgba(255,255,255,.16);--line2:rgba(255,255,255,.26);
- --neon:#28e0a6;--neon-lo:#16b487;--ink:#04261d;--err:#ffb3b3;--ok:#9bf0cf}
+ --neon:#28e0a6;--neon-lo:#16b487;--ink:#04261d;--err:#ffb3b3;--ok:#9bf0cf;
+ /* dove low-poly palette — used sparingly as accents */
+ --d-magenta:#e0489a;--d-violet:#7b5cd6;--d-blue:#2f8fd6;--d-teal:#1fc6a8;--d-gold:#e8b53d;--d-orange:#e8743d}
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%;color:var(--text);background:#0a3327;
  font:15px/1.55 'Inter',-apple-system,Segoe UI,Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
@@ -25,30 +27,44 @@ html,body{margin:0;min-height:100%;color:var(--text);background:#0a3327;
 .title{font-size:clamp(30px,7vw,52px);font-weight:300;letter-spacing:.03em;color:#fff;line-height:1;margin:4px 0 2px}
 .title b{font-weight:700}.title .d{font-weight:300;opacity:.8;font-size:.62em}
 .tag{font-size:10.5px;letter-spacing:.44em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
-.card{width:min(360px,92vw);margin-top:20px;display:flex;flex-direction:column;gap:10px;
- background:linear-gradient(180deg,rgba(10,40,31,.66),rgba(8,33,25,.72));border:1px solid var(--line);border-radius:16px;padding:20px 18px;
- box-shadow:0 26px 60px -30px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.10);transition:opacity .45s,transform .45s}
+.card{position:relative;width:min(360px,92vw);margin-top:20px;display:flex;flex-direction:column;gap:10px;
+ background:linear-gradient(180deg,rgba(10,40,31,.52),rgba(8,33,25,.60));border:1px solid var(--line);border-radius:16px;padding:20px 18px;
+ -webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);
+ box-shadow:0 26px 60px -30px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.10);transition:opacity .45s,transform .45s;overflow:hidden}
 .card.gone{opacity:0;transform:translateY(18px) scale(.97);pointer-events:none}
-.gbtn{display:flex;align-items:center;justify-content:center;gap:10px;background:linear-gradient(125deg,#fff 0 60%,#e9f6f0 60% 100%);color:#13201b;border:0;
- padding:13px;font-size:14px;font-weight:600;cursor:pointer;transition:filter .15s;clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)}
-.gbtn:hover{filter:brightness(.97)}.gbtn.hot{box-shadow:0 0 0 3px rgba(40,224,166,.5)}
-.ghint{font-size:11px;color:var(--neon);margin:-4px 2px 0;display:none}
+/* faint dove-colored facet flecks inside the card corners */
+.card::before,.card::after{content:"";position:absolute;width:0;height:0;pointer-events:none}
+.card::before{top:0;left:0;border-width:34px 34px 0 0;border-style:solid;border-color:rgba(224,72,154,.10) transparent transparent transparent}
+.card::after{bottom:0;right:0;border-width:0 0 30px 30px;border-style:solid;border-color:transparent transparent rgba(47,143,214,.12) transparent}
+/* unified glass button — Google + Log in + Create + access all share the same transparent treatment */
+.btn{position:relative;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
+ padding:13px;font-size:14px;font-weight:600;cursor:pointer;color:#fff;overflow:hidden;
+ background:rgba(255,255,255,.06);border:1px solid var(--line2);border-radius:11px;
+ -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+ transition:background .16s,border-color .16s,box-shadow .16s,transform .12s}
+.btn:hover{background:rgba(255,255,255,.11);border-color:var(--ac,var(--neon));box-shadow:0 0 0 1px var(--ac,var(--neon)) inset,0 6px 18px -10px var(--ac,var(--neon));transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+/* small dove-triangle accent in each button's top-right corner */
+.btn::after{content:"";position:absolute;top:0;right:0;width:0;height:0;
+ border-style:solid;border-width:0 13px 13px 0;border-color:transparent var(--ac,var(--neon)) transparent transparent;opacity:.85}
+.gbtn{--ac:var(--d-gold);font-weight:600}
+.gbtn .gtxt{font-weight:600}
+.gbtn.hot{box-shadow:0 0 0 2px rgba(232,181,61,.55)}
+.ghint{font-size:11px;color:var(--d-gold);margin:-4px 2px 0;display:none}
 .divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;margin:3px 0 1px}
-.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
-.card input{width:100%;background:rgba(255,255,255,.06);border:1px solid var(--line2);border-radius:11px;color:#fff;
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line),transparent)}
+.card input{width:100%;background:rgba(255,255,255,.05);border:1px solid var(--line2);border-radius:11px;color:#fff;
  padding:12px 13px;font:14px 'Inter',sans-serif;outline:none;transition:border-color .15s,box-shadow .15s}
 .card input::placeholder{color:#9fc3b5}
-.card input:focus{border-color:var(--neon);box-shadow:0 0 0 3px rgba(40,224,166,.22)}
+.card input:focus{border-color:var(--d-teal);box-shadow:0 0 0 3px rgba(31,198,168,.20)}
 .row{display:flex;gap:9px}.row>button{flex:1}
-.act,.ghost{padding:13px;font-weight:700;font-size:14px;cursor:pointer;border:0;transition:filter .15s;
- clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)}
-.act{color:var(--ink);background:linear-gradient(125deg,#5cf0c0 0 46%,#19b88a 46% 100%)}.act:hover{filter:brightness(1.07)}
-.ghost{font-weight:600;color:#eafff6;background:linear-gradient(125deg,rgba(73,160,133,.5) 0 46%,rgba(42,107,86,.5) 46% 100%)}.ghost:hover{filter:brightness(1.12)}
-button[disabled]{opacity:.6;cursor:default}
+.act{--ac:var(--d-teal)}.ghost{--ac:var(--d-violet);font-weight:600}
+button[disabled]{opacity:.55;cursor:default}
 .linkrow{display:flex;justify-content:space-between;font-size:12px;margin-top:2px;flex-wrap:wrap;gap:6px}
 .linkrow a{color:var(--muted);cursor:pointer;text-decoration:none;border-bottom:1px dotted rgba(255,255,255,.3)}
 .linkrow a:hover{color:#fff}
 #codebox{display:none;flex-direction:column;gap:10px;margin-top:2px}
+#codego{--ac:var(--d-blue)}
 .msg{min-height:16px;font-size:12px;color:var(--muted);text-align:center}.msg.err{color:var(--err)}.msg.ok{color:var(--ok)}
 .news{margin-top:18px;font-size:12.5px;color:var(--muted);text-decoration:none}.news:hover{color:#fff}
 .userchip{position:fixed;left:50%;bottom:15vh;transform:translateX(-50%) translateY(12px);z-index:6;display:flex;align-items:center;gap:13px;
@@ -62,30 +78,31 @@ button[disabled]{opacity:.6;cursor:default}
 .uinfo{display:flex;flex-direction:column;align-items:flex-start;line-height:1.25;min-width:0}
 .uname{font-size:14px;font-weight:600;color:#fff;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .usub{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
-.enterbtn{margin-left:4px;padding:11px 16px;font-weight:700;font-size:13px;color:var(--ink);text-decoration:none;white-space:nowrap;
- background:linear-gradient(125deg,#5cf0c0 0 46%,#19b88a 46% 100%);clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px)}
-.enterbtn:hover{filter:brightness(1.08)}
+.enterbtn{position:relative;margin-left:4px;padding:11px 16px;font-weight:700;font-size:13px;color:#fff;text-decoration:none;white-space:nowrap;overflow:hidden;
+ background:rgba(255,255,255,.08);border:1px solid var(--d-teal);border-radius:11px;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.enterbtn::after{content:"";position:absolute;top:0;right:0;width:0;height:0;border-style:solid;border-width:0 12px 12px 0;border-color:transparent var(--d-teal) transparent transparent;opacity:.9}
+.enterbtn:hover{background:rgba(31,198,168,.18)}
 .flydove{position:fixed;z-index:50;pointer-events:none;filter:drop-shadow(0 12px 26px rgba(0,0,0,.5)) drop-shadow(0 0 26px rgba(80,255,205,.5))}
 @media (prefers-reduced-motion:reduce){.an,.dovelink.ready .dove,.userchip.landed .perchdove{animation:none}}
 </style></head>
 <body>
-<svg class="bg" viewBox="0 0 640 600" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><polygon points="0,0 213,0 0,200" fill="#2c6e58"/><polygon points="213,0 0,200 220,210" fill="#357e66"/><polygon points="213,0 426,0 220,210" fill="#2a6b56"/><polygon points="426,0 220,210 440,200" fill="#3d8c72"/><polygon points="426,0 640,0 440,200" fill="#316f5b"/><polygon points="640,0 440,200 640,210" fill="#43967b"/><polygon points="0,200 220,210 0,400" fill="#4fa388"/><polygon points="220,210 0,400 230,410" fill="#2e7460"/><polygon points="220,210 440,200 230,410" fill="#3a8970"/><polygon points="440,200 230,410 450,400" fill="#336b5a"/><polygon points="440,200 640,210 450,400" fill="#3c8b73"/><polygon points="640,210 450,400 640,400" fill="#49a085"/><polygon points="0,400 230,410 0,600" fill="#2a6b56"/><polygon points="230,410 0,600 240,600" fill="#357e66"/><polygon points="230,410 450,400 240,600" fill="#43967b"/><polygon points="450,400 240,600 450,600" fill="#2f7762"/><polygon points="450,400 450,600 640,600" fill="#49a085"/><polygon points="450,400 640,600 640,400" fill="#357e66"/></svg><div class="glow"></div><div class="scrim"></div>
+<svg class="bg" viewBox="0 0 640 600" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><polygon points="0,0 213,0 0,200" fill="#2c6e58"/><polygon points="213,0 0,200 220,210" fill="#357e66"/><polygon points="213,0 426,0 220,210" fill="#2a6b56"/><polygon points="426,0 220,210 440,200" fill="#3d8c72"/><polygon points="426,0 640,0 440,200" fill="#316f5b"/><polygon points="640,0 440,200 640,210" fill="#43967b"/><polygon points="0,200 220,210 0,400" fill="#4fa388"/><polygon points="220,210 0,400 230,410" fill="#2e7460"/><polygon points="220,210 440,200 230,410" fill="#3a8970"/><polygon points="440,200 230,410 450,400" fill="#336b5a"/><polygon points="440,200 640,210 450,400" fill="#3c8b73"/><polygon points="640,210 450,400 640,400" fill="#49a085"/><polygon points="0,400 230,410 0,600" fill="#2a6b56"/><polygon points="230,410 0,600 240,600" fill="#357e66"/><polygon points="230,410 450,400 240,600" fill="#43967b"/><polygon points="450,400 240,600 450,600" fill="#2f7762"/><polygon points="450,400 450,600 640,600" fill="#49a085"/><polygon points="450,400 640,600 640,400" fill="#357e66"/><g aria-hidden="true"><polygon points="171,46 250,72 152,150" fill="#e0489a" opacity=".085"/><polygon points="486,118 560,92 540,206" fill="#e8b53d" opacity=".075"/><polygon points="58,332 150,360 70,440" fill="#7b5cd6" opacity=".085"/><polygon points="300,250 362,302 290,332" fill="#1fc6a8" opacity=".10"/><polygon points="524,470 600,442 590,540" fill="#2f8fd6" opacity=".08"/><polygon points="392,86 430,150 360,140" fill="#e8743d" opacity=".06"/></g></svg><div class="glow"></div><div class="scrim"></div>
 <div class="wrap">
   <a id="enter" href="terminal.html" class="dovelink an" style="animation-delay:.05s" title="Click the dove to enter"><img class="dove" src="splash/dove.png" alt="MrktPrice — click the dove to enter"/></a>
   <div class="title an" style="animation-delay:.18s"><b>mrkt</b>price<span class="d">.com</span></div>
   <div class="tag an" style="animation-delay:.28s">Institutional-grade market intelligence</div>
   <div class="card an" style="animation-delay:.4s">
-    <button id="google" class="gbtn">
+    <button id="google" class="btn gbtn">
       <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.4 29.3 35 24 35c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 20-7.6 20-21 0-1.2-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 16 3 9.1 7.6 6.3 14.7z"/><path fill="#4CAF50" d="M24 45c5.2 0 10-2 13.6-5.2l-6.3-5.2C29.2 35.5 26.7 36.5 24 36.5c-5.3 0-9.7-2.6-11.3-7l-6.5 5C9 40.3 15.9 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.6l6.3 5.2C41.5 36.6 44 31 44 24c0-1.2-.1-2.3-.4-3.5z"/></svg>
-      Continue with Google
+      <span class="gtxt">Continue with Google</span>
     </button>
     <div class="ghint" id="ghint">Gmail detected — you can also get a one-tap link below.</div>
     <div class="divider">or with your email</div>
     <input id="email" placeholder="you@email.com" autocomplete="email" inputmode="email"/>
     <input id="pw" type="password" placeholder="Password" autocomplete="current-password"/>
-    <div class="row"><button id="signin" class="act">Log in</button><button id="signup" class="ghost">Create account</button></div>
+    <div class="row"><button id="signin" class="btn act">Log in</button><button id="signup" class="btn ghost">Create account</button></div>
     <div class="linkrow"><a id="magic">Email me a one-tap link</a><a id="codetoggle">Have an access code?</a></div>
-    <div id="codebox"><input id="code" placeholder="Owner / team access code" autocomplete="off"/><button id="codego" class="ghost">Enter with access code</button></div>
+    <div id="codebox"><input id="code" placeholder="Owner / team access code" autocomplete="off"/><button id="codego" class="btn">Enter with access code</button></div>
     <div class="msg" id="msg"></div>
   </div>
   <a class="news an" style="animation-delay:.5s" href="reports/index.html">Read Opportunity News — free &rarr;</a>
@@ -150,6 +167,7 @@ button[disabled]{opacity:.6;cursor:default}
     fetch(API+'/auth',{headers:{'X-Access-Code':c},cache:'no-store'}).then(function(r){if(r.status===200){try{localStorage.setItem('mrkt.code',c);localStorage.setItem('mrkt.ok','1');}catch(e){}goAuthed('Owner / team access');}else msgset('That access code was not accepted.','err');}).catch(function(){msgset('Could not reach the data service.','err');});};
   hero.addEventListener('click',function(e){if(!_authed){e.preventDefault();if(email)email.focus();msgset('Sign in below — your dove will perch by your name, then take you in.','ok');}});
   if(pw)pw.addEventListener('keydown',function(ev){if(ev.key==='Enter')$('signin').click();});
+  window.addEventListener('load',function(){var d=document.querySelector('.dovelink');if(d)d.classList.add('ready');});
 })();
 </script>
 </body></html>

@@ -3,9 +3,9 @@
 <title>MrktPrice — Sign in</title>
 <meta name="description" content="MrktPrice — institutional-grade market intelligence. Sign in."/>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" sizes="64x64" href="splash/favicon-dove.png"/><link rel="icon" type="image/png" sizes="32x32" href="splash/favicon-32.png"/><link rel="apple-touch-icon" href="splash/apple-touch-dove.png"/>
-<meta name="theme-color" content="#0a3327"/>
+<meta name="theme-color" content="#070d0b"/>
 <meta name="color-scheme" content="dark"/>
 <meta property="og:type" content="website"/>
 <meta property="og:title" content="MrktPrice — institutional-grade market intelligence"/>
@@ -19,106 +19,106 @@
 <link rel="preconnect" href="https://jnatyouqlrdhmghnluzv.supabase.co" crossorigin>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="dns-prefetch" href="https://mrktprice-data.onrender.com"><style>
-:root{--text:#fff;--muted:#bfe7d8;--line:rgba(255,255,255,.16);--line2:rgba(255,255,255,.26);
- --neon:#28e0a6;--neon-lo:#16b487;--ink:#04261d;--err:#ffb3b3;--ok:#9bf0cf;
- /* dove low-poly palette — used sparingly as accents */
- --d-magenta:#e0489a;--d-violet:#7b5cd6;--d-blue:#2f8fd6;--d-teal:#1fc6a8;--d-gold:#e8b53d;--d-orange:#e8743d}
+:root{--text:#f4f7f5;--muted:#93a39c;--line:rgba(255,255,255,.09);--line2:rgba(255,255,255,.15);
+ --accent:#37d3b6;--accent-2:#46e0c4;--accent-ink:#04211b;--err:#ff9b9b;--ok:#86e6c6}
 *{box-sizing:border-box}
-::selection{background:rgba(31,198,168,.35);color:#fff}
-html,body{margin:0;min-height:100%;color:var(--text);background:#0a3327;
+::selection{background:rgba(55,211,182,.32);color:#fff}
+html,body{margin:0;min-height:100%;color:var(--text);
+ background:radial-gradient(1100px 700px at 50% -8%,#0d1b17 0%,#070d0b 54%),#070d0b;
  font:15px/1.55 'Inter',-apple-system,Segoe UI,Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
-.bg{position:fixed;inset:0;width:100%;height:100%;z-index:0}
-.glow{position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(760px 520px at 50% 16%,rgba(80,255,205,.10),transparent 64%)}
-.scrim{position:fixed;inset:0;z-index:0;pointer-events:none;background:linear-gradient(180deg,rgba(8,40,30,.30),rgba(7,33,25,.50))}
-.wrap{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px 22px}
-@keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-.an{opacity:0;animation:rise .9s cubic-bezier(.4,.1,.2,1) forwards}
+.glow{position:fixed;inset:0;z-index:0;pointer-events:none;
+ background:radial-gradient(820px 560px at 50% 9%,rgba(55,211,182,.10),transparent 60%),radial-gradient(640px 460px at 50% 116%,rgba(40,120,160,.06),transparent 60%)}
+.grain{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.035;mix-blend-mode:overlay;
+ background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='160'%20height='160'%3E%3Cfilter%20id='n'%3E%3CfeTurbulence%20type='fractalNoise'%20baseFrequency='0.9'%20numOctaves='2'/%3E%3C/filter%3E%3Crect%20width='100%25'%20height='100%25'%20filter='url(%23n)'/%3E%3C/svg%3E");background-size:170px 170px}
+.wrap{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:34px 22px}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.an{opacity:0;animation:rise .85s cubic-bezier(.4,.1,.2,1) forwards}
+/* flight-in entrance: dove arcs in from the lower left, overshoots, settles */
+@keyframes flyin{0%{opacity:0;transform:translate(-64px,92px) scale(.64) rotate(-13deg)}
+ 45%{opacity:1}72%{transform:translate(11px,-15px) scale(1.05) rotate(4deg)}
+ 100%{opacity:1;transform:translate(0,0) scale(1) rotate(0)}}
 .doveframe{position:relative;display:flex;align-items:center;justify-content:center}
-.dove{height:clamp(82px,12vw,116px);width:auto;display:block;filter:drop-shadow(0 8px 18px rgba(0,0,0,.4))}
-.dovelink{display:inline-block;cursor:pointer;transition:transform .22s cubic-bezier(.34,1.4,.5,1)}
-.dovelink:hover{transform:translateY(-5px) scale(1.04)}
-.dovelink:active{transform:translateY(-1px) scale(.99)}
-.brand{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:2px}
+.dove{height:clamp(118px,19vw,182px);width:auto;display:block;
+ filter:drop-shadow(0 20px 42px rgba(0,0,0,.55)) drop-shadow(0 0 34px rgba(55,211,182,.13));
+ animation:flyin 1.6s cubic-bezier(.18,.72,.2,1) .12s both}
+.dovelink{display:inline-block;cursor:pointer;transition:transform .25s cubic-bezier(.34,1.4,.5,1)}
+.dovelink:hover{transform:scale(1.035)}
+.dovelink:active{transform:scale(.99)}
+.brand{display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:2px}
 .brandtext{display:flex;flex-direction:column;align-items:center;min-width:0}
-.title{font-size:clamp(30px,7.2vw,52px);font-weight:300;letter-spacing:.01em;line-height:.95;color:#fff;white-space:nowrap}
-.title b{font-weight:700}
-.title .d{font-weight:300;color:#fff;opacity:.7;font-size:.58em}
-.uline{height:2px;width:100%;margin-top:9px;border-radius:2px;background:linear-gradient(90deg,transparent,var(--d-violet),var(--d-blue),var(--d-teal),var(--d-gold),transparent);opacity:.7}
-@media (max-width:480px){.brand{flex-direction:column;gap:7px}.uline{max-width:240px;margin-left:auto;margin-right:auto}}
-.tag{font-size:13.5px;letter-spacing:.005em;color:var(--muted);font-weight:400;margin-top:7px;margin-bottom:6px}
-.card{position:relative;width:min(360px,92vw);margin-top:20px;display:flex;flex-direction:column;gap:10px;
- background:linear-gradient(180deg,rgba(10,40,31,.52),rgba(8,33,25,.60));border:1px solid rgba(255,255,255,.05);border-radius:16px;padding:20px 18px;
- -webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);
- box-shadow:0 26px 60px -30px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.10);transition:opacity .45s,transform .45s;overflow:hidden}
+.title{font-size:clamp(30px,7vw,50px);font-weight:200;letter-spacing:.006em;line-height:1;color:#fff;white-space:nowrap}
+.title b{font-weight:600}
+.title .d{font-weight:200;color:#fff;opacity:.5;font-size:.56em;letter-spacing:.02em}
+.rule{width:48px;height:1px;margin:15px auto 0;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.85}
+.tag{font-size:13px;letter-spacing:.01em;color:var(--muted);font-weight:400;margin-top:14px}
+.card{position:relative;width:min(366px,92vw);margin-top:30px;display:flex;flex-direction:column;gap:11px;
+ background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:16px;padding:22px 20px;
+ -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+ box-shadow:0 30px 70px -34px rgba(0,0,0,.8);transition:opacity .45s,transform .45s}
 .card.gone{opacity:0;transform:translateY(18px) scale(.97);pointer-events:none}
-.card::before{content:"";position:absolute;inset:0;border-radius:16px;padding:1.5px;background:linear-gradient(135deg,#ff3df0,#2f8fd6,#27e39b);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:.72;pointer-events:none}
-/* unified glass button — Google + Log in + Create + access all share the same transparent treatment */
 .btn{position:relative;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
- padding:13px;font-size:14px;font-weight:600;cursor:pointer;color:#fff;overflow:hidden;
- background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:11px;
- -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
- transition:background .16s,border-color .16s,box-shadow .16s,transform .12s}
-.btn:hover{background:rgba(255,255,255,.11);border-color:var(--ac,var(--neon));box-shadow:0 0 0 1px var(--ac,var(--neon)) inset,0 6px 18px -10px var(--ac,var(--neon));transform:translateY(-1px)}
-.btn:active{transform:translateY(0)}
-/* neon pink/blue/green gradient ring on each button */
-.btn::after{content:"";position:absolute;inset:0;border-radius:11px;padding:1.4px;background:linear-gradient(135deg,#ff3df0,#2f8fd6,#27e39b);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:.5;transition:opacity .16s;pointer-events:none}
-.btn:hover::after{opacity:1}
-.gbtn{--ac:var(--d-blue);font-weight:600}
-.gbtn .gtxt{font-weight:600}
-.gbtn.hot{box-shadow:0 0 0 2px rgba(47,143,214,.6)}
-.ghint{font-size:11px;color:var(--d-blue);margin:-4px 2px 0;display:none}
-.caps{display:none;font-size:10.5px;color:var(--d-gold);margin:-4px 2px 2px}.caps.on{display:block}
-.divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;margin:3px 0 1px}
-.divider::before,.divider::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line),transparent)}
-.card input{width:100%;background:rgba(255,255,255,.05);border:1px solid var(--line2);border-radius:11px;color:#fff;
+ padding:13px;font-size:14px;font-weight:600;cursor:pointer;border-radius:11px;border:1px solid transparent;
+ transition:background .16s,border-color .16s,box-shadow .16s,transform .1s}
+.btn:active{transform:translateY(1px)}
+.gbtn{background:#fff;color:#16201d}
+.gbtn:hover{background:#eef2f0}
+.gbtn.hot{box-shadow:0 0 0 2px rgba(55,211,182,.45)}
+.gtxt{font-weight:600}
+.act{background:var(--accent);color:var(--accent-ink)}
+.act:hover{background:var(--accent-2);box-shadow:0 10px 24px -12px rgba(55,211,182,.7)}
+.ghost{background:transparent;border-color:var(--line2);color:var(--text);font-weight:500}
+.ghost:hover{border-color:var(--accent);background:rgba(55,211,182,.06);color:#fff}
+#codego{background:transparent;border-color:var(--line2);color:var(--text)}
+#codego:hover{border-color:var(--accent);background:rgba(55,211,182,.06)}
+button[disabled]{opacity:.5;cursor:default}
+.ghint{font-size:11px;color:var(--accent);margin:-4px 2px 0;display:none}
+.caps{display:none;font-size:10.5px;color:#e6c06a;margin:-4px 2px 2px}.caps.on{display:block}
+.divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:10px;letter-spacing:.16em;text-transform:uppercase;margin:5px 0 2px}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
+.card input{width:100%;background:rgba(255,255,255,.04);border:1px solid var(--line2);border-radius:11px;color:#fff;
  padding:12px 13px;font:14px 'Inter',sans-serif;outline:none;transition:border-color .15s,box-shadow .15s}
-.card input::placeholder{color:#9fc3b5}
-.card input:focus{border-color:var(--d-teal);box-shadow:0 0 0 3px rgba(31,198,168,.20)}
+.card input::placeholder{color:#8a9a93}
+.card input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(55,211,182,.16)}
 .pwwrap{position:relative}.pwwrap input{padding-right:58px}
-.pweye{position:absolute;right:7px;top:50%;transform:translateY(-50%);background:none;border:0;color:#9fc3b5;font-size:11px;font-weight:600;letter-spacing:.04em;cursor:pointer;padding:5px 7px;border-radius:7px}
+.pweye{position:absolute;right:7px;top:50%;transform:translateY(-50%);background:none;border:0;color:#8a9a93;font-size:11px;font-weight:600;letter-spacing:.04em;cursor:pointer;padding:5px 7px;border-radius:7px}
 .pweye:hover{color:#fff;background:rgba(255,255,255,.06)}
 .row{display:flex;gap:9px}.row>button{flex:1}
-.act{--ac:var(--d-teal)}.ghost{--ac:var(--d-violet);font-weight:600}
-button[disabled]{opacity:.55;cursor:default}
-.linkrow{display:flex;justify-content:space-between;font-size:12px;margin-top:2px;flex-wrap:wrap;gap:6px}
-.linkrow a{color:var(--muted);cursor:pointer;text-decoration:none;border-bottom:1px dotted rgba(255,255,255,.3)}
-.linkrow a:hover{color:#fff}
+.linkrow{display:flex;justify-content:space-between;font-size:12px;margin-top:3px;flex-wrap:wrap;gap:6px}
+.linkrow a{color:var(--muted);cursor:pointer;text-decoration:none}
+.linkrow a:hover{color:var(--accent)}
 #codebox{display:none;flex-direction:column;gap:10px;margin-top:2px}
-#codego{--ac:var(--d-blue)}
 .msg{min-height:16px;font-size:12px;color:var(--muted);text-align:center}.msg.err{color:var(--err)}.msg.ok{color:var(--ok)}
-.news{margin-top:18px;font-size:12.5px;color:var(--muted);text-decoration:none;display:inline-flex;align-items:center}.news:hover{color:#fff}
-.newsdove{height:18px;width:auto;margin-right:7px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))}
-.watermark{position:fixed;right:-64px;bottom:-46px;height:52vh;max-height:560px;width:auto;opacity:.06;z-index:0;pointer-events:none;user-select:none}
+.news{margin-top:22px;font-size:12.5px;color:var(--muted);text-decoration:none;display:inline-flex;align-items:center}.news:hover{color:#fff}
+.newsdove{height:18px;width:auto;margin-right:8px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))}
 .userchip{position:fixed;left:50%;bottom:15vh;transform:translateX(-50%) translateY(12px);z-index:6;display:flex;align-items:center;gap:13px;
- background:linear-gradient(180deg,rgba(12,46,35,.88),rgba(8,33,25,.93));border:1px solid var(--line2);border-radius:20px;padding:11px 14px 11px 11px;
- box-shadow:0 26px 64px -28px rgba(0,0,0,.85),inset 0 1px 0 rgba(255,255,255,.08);opacity:0;pointer-events:none;transition:opacity .5s,transform .5s}
+ background:rgba(13,22,18,.92);border:1px solid var(--line2);border-radius:20px;padding:11px 14px 11px 11px;
+ box-shadow:0 26px 64px -28px rgba(0,0,0,.85);opacity:0;pointer-events:none;transition:opacity .5s,transform .5s;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 .userchip.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
 .perchwrap{position:relative;width:50px;height:50px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
-.perchdove{height:48px;width:auto;opacity:0;transform-origin:bottom center;filter:drop-shadow(0 0 14px rgba(80,255,205,.6))}
+.perchdove{height:48px;width:auto;opacity:0;transform-origin:bottom center;filter:drop-shadow(0 0 14px rgba(55,211,182,.55))}
 .userchip.landed .perchdove{animation:perchbob 3.4s ease-in-out infinite}
 @keyframes perchbob{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-2px) rotate(-2deg)}}
 .uinfo{display:flex;flex-direction:column;align-items:flex-start;line-height:1.25;min-width:0}
 .uname{font-size:14px;font-weight:600;color:#fff;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .usub{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
-.enterbtn{position:relative;margin-left:4px;padding:11px 16px;font-weight:700;font-size:13px;color:#fff;text-decoration:none;white-space:nowrap;overflow:hidden;
- background:rgba(255,255,255,.08);border:1px solid var(--d-teal);border-radius:11px;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
-.enterbtn::after{content:"";position:absolute;top:0;right:0;width:0;height:0;border-style:solid;border-width:0 12px 12px 0;border-color:transparent var(--d-teal) transparent transparent;opacity:.9}
-.enterbtn:hover{background:rgba(31,198,168,.18)}
-.flydove{position:fixed;z-index:50;pointer-events:none;filter:drop-shadow(0 12px 26px rgba(0,0,0,.5)) drop-shadow(0 0 26px rgba(80,255,205,.5))}
-@media (prefers-reduced-motion:reduce){.an,.userchip.landed .perchdove{animation:none}}
+.enterbtn{margin-left:4px;padding:11px 17px;font-weight:700;font-size:13px;color:var(--accent-ink);text-decoration:none;white-space:nowrap;
+ background:var(--accent);border-radius:11px}
+.enterbtn:hover{background:var(--accent-2)}
+.flydove{position:fixed;z-index:50;pointer-events:none;filter:drop-shadow(0 12px 26px rgba(0,0,0,.5)) drop-shadow(0 0 26px rgba(55,211,182,.45))}
+@media (prefers-reduced-motion:reduce){.an{animation:none;opacity:1}.dove{animation:none}.userchip.landed .perchdove{animation:none}}
 </style></head>
 <body>
-<svg class="bg" viewBox="0 0 640 600" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><polygon points="0,0 213,0 0,200" fill="#2c6e58"/><polygon points="213,0 0,200 220,210" fill="#357e66"/><polygon points="213,0 426,0 220,210" fill="#2a6b56"/><polygon points="426,0 220,210 440,200" fill="#3d8c72"/><polygon points="426,0 640,0 440,200" fill="#316f5b"/><polygon points="640,0 440,200 640,210" fill="#43967b"/><polygon points="0,200 220,210 0,400" fill="#4fa388"/><polygon points="220,210 0,400 230,410" fill="#2e7460"/><polygon points="220,210 440,200 230,410" fill="#3a8970"/><polygon points="440,200 230,410 450,400" fill="#336b5a"/><polygon points="440,200 640,210 450,400" fill="#3c8b73"/><polygon points="640,210 450,400 640,400" fill="#49a085"/><polygon points="0,400 230,410 0,600" fill="#2a6b56"/><polygon points="230,410 0,600 240,600" fill="#357e66"/><polygon points="230,410 450,400 240,600" fill="#43967b"/><polygon points="450,400 240,600 450,600" fill="#2f7762"/><polygon points="450,400 450,600 640,600" fill="#49a085"/><polygon points="450,400 640,600 640,400" fill="#357e66"/></svg><div class="glow"></div><div class="scrim"></div><img class="watermark" src="splash/dove.png" alt="" aria-hidden="true"/>
+<div class="glow"></div><div class="grain"></div>
 <div class="wrap">
-  <div class="brand an" style="animation-delay:.08s">
+  <div class="brand">
     <a id="enter" href="terminal.html" class="dovelink" title="Click the dove to enter"><span class="doveframe"><img class="dove" src="splash/dove.png" alt="MrktPrice — click the dove to enter"/></span></a>
-    <div class="brandtext">
+    <div class="brandtext an" style="animation-delay:.62s">
       <div class="title"><b>mrkt</b>price<span class="d">.com</span></div>
-      <span class="uline" aria-hidden="true"></span>
+      <div class="rule" aria-hidden="true"></div>
     </div>
   </div>
-  <div class="tag an" style="animation-delay:.22s">Institutional-grade market intelligence</div>
-  <div class="card an" style="animation-delay:.4s">
+  <div class="tag an" style="animation-delay:.74s">Institutional-grade market intelligence</div>
+  <div class="card an" style="animation-delay:.88s">
     <button id="google" class="btn gbtn">
       <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.4 29.3 35 24 35c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 20-7.6 20-21 0-1.2-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 16 3 9.1 7.6 6.3 14.7z"/><path fill="#4CAF50" d="M24 45c5.2 0 10-2 13.6-5.2l-6.3-5.2C29.2 35.5 26.7 36.5 24 36.5c-5.3 0-9.7-2.6-11.3-7l-6.5 5C9 40.3 15.9 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.6l6.3 5.2C41.5 36.6 44 31 44 24c0-1.2-.1-2.3-.4-3.5z"/></svg>
       <span class="gtxt">Continue with Google</span>
@@ -133,7 +133,7 @@ button[disabled]{opacity:.55;cursor:default}
     <div id="codebox"><input id="code" placeholder="Owner / team access code" autocomplete="off" aria-label="Access code" autocapitalize="off" autocorrect="off" spellcheck="false"/><button id="codego" class="btn">Enter with access code</button></div>
     <div class="msg" id="msg" role="status" aria-live="polite"></div>
   </div>
-  <a class="news an" style="animation-delay:.5s" href="reports/index.html"><img class="newsdove" src="splash/dove.png" alt=""/>Read Opportunity News — free &rarr;</a>
+  <a class="news an" style="animation-delay:1s" href="reports/index.html"><img class="newsdove" src="splash/dove.png" alt=""/>Read Opportunity News — free &rarr;</a>
 </div>
 <div id="userchip" class="userchip">
   <div class="perchwrap"><img id="perch" class="perchdove" src="splash/dove.png" alt=""/></div>
@@ -154,8 +154,8 @@ button[disabled]{opacity:.55;cursor:default}
   function validEmail(v){return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v||'');}
   function safeOrigin(){return /^https?:$/.test(location.protocol)?location.origin:'https://mrktprice.com';}
   function friendly(m){m=(m||'').toLowerCase();
-    if(/provider is not enabled|unsupported provider/.test(m))return 'Google sign-in isn\u2019t switched on yet \u2014 use the email one-tap link below for now.';
-    if(/redirect|callback|not allowed|invalid.*url/.test(m))return 'This address isn\u2019t whitelisted for Google yet \u2014 use the email link, or sign in from mrktprice.com.';
+    if(/provider is not enabled|unsupported provider/.test(m))return 'Google sign-in isn’t switched on yet — use the email one-tap link below for now.';
+    if(/redirect|callback|not allowed|invalid.*url/.test(m))return 'This address isn’t whitelisted for Google yet — use the email link, or sign in from mrktprice.com.';
     return null;}
   var _authed=false;
   function flyToPerch(){
@@ -199,7 +199,7 @@ button[disabled]{opacity:.55;cursor:default}
         fetch(url,{method:'GET',redirect:'manual'}).then(function(resp){
           if(resp.type==='opaqueredirect'||resp.status===0||resp.ok){location.href=url;return;}
           resp.text().then(function(t){
-            if(/not enabled|unsupported provider|validation_failed/i.test(t)){gbtn.disabled=false;msgset('Google sign-in isn\u2019t switched on yet \u2014 use the email one-tap link below.','err');}
+            if(/not enabled|unsupported provider|validation_failed/i.test(t)){gbtn.disabled=false;msgset('Google sign-in isn’t switched on yet — use the email one-tap link below.','err');}
             else{location.href=url;}
           }).catch(function(){location.href=url;});
         }).catch(function(){location.href=url;});
@@ -228,3 +228,4 @@ button[disabled]{opacity:.55;cursor:default}
 })();
 </script>
 </body></html>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        

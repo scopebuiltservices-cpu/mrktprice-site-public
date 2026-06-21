@@ -29,37 +29,40 @@ html,body{margin:0;min-height:100%;color:var(--text);background:#0a3327;
 .brand{display:flex;align-items:center;justify-content:center;gap:clamp(12px,2.6vw,22px);margin-bottom:2px}
 .brandtext{display:flex;flex-direction:column;align-items:stretch;min-width:0}
 .title{font-size:clamp(30px,7.2vw,52px);font-weight:300;letter-spacing:.01em;line-height:.95;color:#fff;white-space:nowrap}
-.title b{font-weight:700;background:linear-gradient(95deg,#e0489a 0%,#7b5cd6 26%,#2f8fd6 50%,#1fc6a8 72%,#e8b53d 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
-.title .pr{font-weight:300;color:#fff}.title .d{font-weight:300;opacity:.72;font-size:.6em}
-.ribbon{display:flex;gap:5px;width:100%;margin-top:9px}
-.ribbon i{flex:1;height:6px;background:var(--c);opacity:.92;border-radius:1px;clip-path:polygon(12% 0,100% 0,88% 100%,0% 100%)}
-@media (max-width:480px){.brand{flex-direction:column;gap:7px}.ribbon{max-width:240px;margin-left:auto;margin-right:auto}}
+.title .gx{font-weight:400;background:linear-gradient(95deg,#e0489a,#7b5cd6,#2f8fd6,#1fc6a8,#e8b53d,#e0489a);background-size:240% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;animation:sheen 7s linear infinite}
+.title .gx b{font-weight:700}
+.title .d{font-weight:300;color:#fff;opacity:.66;font-size:.58em}
+@keyframes sheen{0%{background-position:0% 0}100%{background-position:240% 0}}
+.uline{height:2px;width:100%;margin-top:9px;border-radius:2px;background:linear-gradient(90deg,transparent,var(--d-violet),var(--d-blue),var(--d-teal),var(--d-gold),transparent);opacity:.7}
+@media (max-width:480px){.brand{flex-direction:column;gap:7px}.uline{max-width:240px;margin-left:auto;margin-right:auto}}
+@media (prefers-reduced-motion:reduce){.title .gx{animation:none}}
 .tag{font-size:13px;letter-spacing:.345em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
 .card{position:relative;width:min(360px,92vw);margin-top:20px;display:flex;flex-direction:column;gap:10px;
  background:linear-gradient(180deg,rgba(10,40,31,.52),rgba(8,33,25,.60));border:1px solid var(--line);border-radius:16px;padding:20px 18px;
  -webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);
- box-shadow:0 26px 60px -30px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.10);transition:opacity .45s,transform .45s;overflow:hidden}
+ box-shadow:0 26px 60px -30px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.10);transition:opacity .45s,transform .45s;clip-path:polygon(20px 0,100% 0,100% calc(100% - 20px),calc(100% - 20px) 100%,0 100%,0 20px);overflow:hidden}
 .card.gone{opacity:0;transform:translateY(18px) scale(.97);pointer-events:none}
-.card::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--d-magenta),var(--d-violet),var(--d-blue),var(--d-teal),var(--d-gold),var(--d-orange));opacity:.9}
+.card::before{content:"";position:absolute;top:0;right:0;width:26px;height:26px;background:var(--d-magenta);clip-path:polygon(100% 0,100% 100%,0 0);opacity:.5;transition:opacity .2s}
+.card::after{content:"";position:absolute;left:0;bottom:0;width:24px;height:24px;background:var(--d-teal);clip-path:polygon(0 0,0 100%,100% 100%);opacity:.5;transition:opacity .2s}
+.card:hover::before,.card:hover::after{opacity:.85}
 /* unified glass button — Google + Log in + Create + access all share the same transparent treatment */
 .btn{position:relative;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
  padding:13px;font-size:14px;font-weight:600;cursor:pointer;color:#fff;overflow:hidden;
- background:rgba(255,255,255,.06);border:1px solid var(--line2);border-radius:11px;
+ background:rgba(255,255,255,.06);border:1px solid var(--line2);border-radius:11px;clip-path:polygon(11px 0,100% 0,100% calc(100% - 11px),calc(100% - 11px) 100%,0 100%,0 11px);
  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
  transition:background .16s,border-color .16s,box-shadow .16s,transform .12s}
 .btn:hover{background:rgba(255,255,255,.11);border-color:var(--ac,var(--neon));box-shadow:0 0 0 1px var(--ac,var(--neon)) inset,0 6px 18px -10px var(--ac,var(--neon));transform:translateY(-1px)}
 .btn:active{transform:translateY(0)}
 /* small dove-triangle accent in each button's top-right corner */
 .btn::after{content:"";position:absolute;top:0;right:0;width:0;height:0;
- border-style:solid;border-width:0 13px 13px 0;border-color:transparent var(--ac,var(--neon)) transparent transparent;opacity:.85}
+ border-style:solid;border-width:0 13px 13px 0;border-color:transparent var(--ac,var(--neon)) transparent transparent;opacity:.5;transition:opacity .16s}
+.btn:hover::after{opacity:1}
 .gbtn{--ac:var(--d-blue);font-weight:600}
 .gbtn .gtxt{font-weight:600}
 .gbtn.hot{box-shadow:0 0 0 2px rgba(47,143,214,.6)}
 .ghint{font-size:11px;color:var(--d-blue);margin:-4px 2px 0;display:none}
 .divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;margin:3px 0 1px}
-.divider::before,.divider::after{content:"";flex:1;height:1px}
-.divider::before{background:linear-gradient(90deg,transparent,var(--d-violet),transparent);opacity:.55}
-.divider::after{background:linear-gradient(90deg,transparent,var(--d-gold),transparent);opacity:.55}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line),transparent)}
 .card input{width:100%;background:rgba(255,255,255,.05);border:1px solid var(--line2);border-radius:11px;color:#fff;
  padding:12px 13px;font:14px 'Inter',sans-serif;outline:none;transition:border-color .15s,box-shadow .15s}
 .card input::placeholder{color:#9fc3b5}
@@ -101,8 +104,8 @@ button[disabled]{opacity:.55;cursor:default}
   <div class="brand an" style="animation-delay:.08s">
     <a id="enter" href="terminal.html" class="dovelink" title="Click the dove to enter"><img class="dove" src="splash/dove.png" alt="MrktPrice — click the dove to enter"/></a>
     <div class="brandtext">
-      <div class="title"><b>mrkt</b><span class="pr">price</span><span class="d">.com</span></div>
-      <span class="ribbon" aria-hidden="true"><i style="--c:var(--d-magenta)"></i><i style="--c:var(--d-violet)"></i><i style="--c:var(--d-blue)"></i><i style="--c:var(--d-teal)"></i><i style="--c:var(--d-gold)"></i><i style="--c:var(--d-orange)"></i></span>
+      <div class="title"><span class="gx"><b>mrkt</b>price</span><span class="d">.com</span></div>
+      <span class="uline" aria-hidden="true"></span>
     </div>
   </div>
   <div class="tag an" style="animation-delay:.22s">Institutional-grade market intelligence</div>

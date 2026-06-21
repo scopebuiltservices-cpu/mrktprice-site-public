@@ -4,15 +4,18 @@
 <meta name="description" content="MrktPrice — institutional-grade market intelligence. Sign in."/>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Cpolygon%20points='16,2%2030,16%2016,16'%20fill='%23e0489a'/%3E%3Cpolygon%20points='16,2%2016,16%202,16'%20fill='%237b5cd6'/%3E%3Cpolygon%20points='2,16%2016,16%2016,30'%20fill='%232f8fd6'/%3E%3Cpolygon%20points='16,16%2030,16%2016,30'%20fill='%231fc6a8'/%3E%3C/svg%3E"/>
+<link rel="icon" type="image/png" sizes="64x64" href="splash/favicon-dove.png"/><link rel="icon" type="image/png" sizes="32x32" href="splash/favicon-32.png"/><link rel="apple-touch-icon" href="splash/apple-touch-dove.png"/>
 <meta name="theme-color" content="#0a3327"/>
 <meta name="color-scheme" content="dark"/>
 <meta property="og:type" content="website"/>
 <meta property="og:title" content="MrktPrice — institutional-grade market intelligence"/>
 <meta property="og:description" content="Sign in to MrktPrice. Read Opportunity News free."/>
 <meta property="og:url" content="https://mrktprice.com/"/>
-<meta property="og:image" content="https://mrktprice.com/splash/dove.png"/>
-<meta name="twitter:card" content="summary"/>
+<meta property="og:image" content="https://mrktprice.com/splash/og-card.png"/>
+<meta property="og:image:width" content="1200"/>
+<meta property="og:image:height" content="630"/>
+<meta name="twitter:image" content="https://mrktprice.com/splash/og-card.png"/>
+<meta name="twitter:card" content="summary_large_image"/>
 <link rel="preconnect" href="https://jnatyouqlrdhmghnluzv.supabase.co" crossorigin>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="dns-prefetch" href="https://mrktprice-data.onrender.com"><style>
@@ -83,7 +86,9 @@ button[disabled]{opacity:.55;cursor:default}
 #codebox{display:none;flex-direction:column;gap:10px;margin-top:2px}
 #codego{--ac:var(--d-blue)}
 .msg{min-height:16px;font-size:12px;color:var(--muted);text-align:center}.msg.err{color:var(--err)}.msg.ok{color:var(--ok)}
-.news{margin-top:18px;font-size:12.5px;color:var(--muted);text-decoration:none}.news:hover{color:#fff}
+.news{margin-top:18px;font-size:12.5px;color:var(--muted);text-decoration:none;display:inline-flex;align-items:center}.news:hover{color:#fff}
+.newsdove{height:18px;width:auto;margin-right:7px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))}
+.watermark{position:fixed;right:-64px;bottom:-46px;height:52vh;max-height:560px;width:auto;opacity:.06;z-index:0;pointer-events:none;user-select:none}
 .userchip{position:fixed;left:50%;bottom:15vh;transform:translateX(-50%) translateY(12px);z-index:6;display:flex;align-items:center;gap:13px;
  background:linear-gradient(180deg,rgba(12,46,35,.88),rgba(8,33,25,.93));border:1px solid var(--line2);border-radius:20px;padding:11px 14px 11px 11px;
  box-shadow:0 26px 64px -28px rgba(0,0,0,.85),inset 0 1px 0 rgba(255,255,255,.08);opacity:0;pointer-events:none;transition:opacity .5s,transform .5s}
@@ -103,7 +108,7 @@ button[disabled]{opacity:.55;cursor:default}
 @media (prefers-reduced-motion:reduce){.an,.userchip.landed .perchdove{animation:none}}
 </style></head>
 <body>
-<svg class="bg" viewBox="0 0 640 600" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><polygon points="0,0 213,0 0,200" fill="#2c6e58"/><polygon points="213,0 0,200 220,210" fill="#357e66"/><polygon points="213,0 426,0 220,210" fill="#2a6b56"/><polygon points="426,0 220,210 440,200" fill="#3d8c72"/><polygon points="426,0 640,0 440,200" fill="#316f5b"/><polygon points="640,0 440,200 640,210" fill="#43967b"/><polygon points="0,200 220,210 0,400" fill="#4fa388"/><polygon points="220,210 0,400 230,410" fill="#2e7460"/><polygon points="220,210 440,200 230,410" fill="#3a8970"/><polygon points="440,200 230,410 450,400" fill="#336b5a"/><polygon points="440,200 640,210 450,400" fill="#3c8b73"/><polygon points="640,210 450,400 640,400" fill="#49a085"/><polygon points="0,400 230,410 0,600" fill="#2a6b56"/><polygon points="230,410 0,600 240,600" fill="#357e66"/><polygon points="230,410 450,400 240,600" fill="#43967b"/><polygon points="450,400 240,600 450,600" fill="#2f7762"/><polygon points="450,400 450,600 640,600" fill="#49a085"/><polygon points="450,400 640,600 640,400" fill="#357e66"/></svg><div class="glow"></div><div class="scrim"></div>
+<svg class="bg" viewBox="0 0 640 600" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><polygon points="0,0 213,0 0,200" fill="#2c6e58"/><polygon points="213,0 0,200 220,210" fill="#357e66"/><polygon points="213,0 426,0 220,210" fill="#2a6b56"/><polygon points="426,0 220,210 440,200" fill="#3d8c72"/><polygon points="426,0 640,0 440,200" fill="#316f5b"/><polygon points="640,0 440,200 640,210" fill="#43967b"/><polygon points="0,200 220,210 0,400" fill="#4fa388"/><polygon points="220,210 0,400 230,410" fill="#2e7460"/><polygon points="220,210 440,200 230,410" fill="#3a8970"/><polygon points="440,200 230,410 450,400" fill="#336b5a"/><polygon points="440,200 640,210 450,400" fill="#3c8b73"/><polygon points="640,210 450,400 640,400" fill="#49a085"/><polygon points="0,400 230,410 0,600" fill="#2a6b56"/><polygon points="230,410 0,600 240,600" fill="#357e66"/><polygon points="230,410 450,400 240,600" fill="#43967b"/><polygon points="450,400 240,600 450,600" fill="#2f7762"/><polygon points="450,400 450,600 640,600" fill="#49a085"/><polygon points="450,400 640,600 640,400" fill="#357e66"/></svg><div class="glow"></div><div class="scrim"></div><img class="watermark" src="splash/dove.png" alt="" aria-hidden="true"/>
 <div class="wrap">
   <div class="brand an" style="animation-delay:.08s">
     <a id="enter" href="terminal.html" class="dovelink" title="Click the dove to enter"><span class="doveframe"><img class="dove" src="splash/dove.png" alt="MrktPrice — click the dove to enter"/></span></a>
@@ -128,7 +133,7 @@ button[disabled]{opacity:.55;cursor:default}
     <div id="codebox"><input id="code" placeholder="Owner / team access code" autocomplete="off" aria-label="Access code" autocapitalize="off" autocorrect="off" spellcheck="false"/><button id="codego" class="btn">Enter with access code</button></div>
     <div class="msg" id="msg" role="status" aria-live="polite"></div>
   </div>
-  <a class="news an" style="animation-delay:.5s" href="reports/index.html">Read Opportunity News — free &rarr;</a>
+  <a class="news an" style="animation-delay:.5s" href="reports/index.html"><img class="newsdove" src="splash/dove.png" alt=""/>Read Opportunity News — free &rarr;</a>
 </div>
 <div id="userchip" class="userchip">
   <div class="perchwrap"><img id="perch" class="perchdove" src="splash/dove.png" alt=""/></div>

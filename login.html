@@ -126,7 +126,6 @@ button[disabled]{opacity:.55;cursor:default}
   var email=$('email'),pw=$('pw'),gbtn=$('google'),ghint=$('ghint'),card=document.querySelector('.card'),chip=$('userchip'),hero=$('enter');
   function msgset(t,c){var m=$('msg');if(m){m.textContent=t;m.className='msg'+(c?' '+c:'');}}
   var sb=(window.supabase&&/^https:\/\//.test(SUPABASE_URL))?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON):null;
-  if(!sb)msgset('Sign-in is not configured yet.','err');
   function persist(s){try{localStorage.setItem('mrkt.token',s.access_token);localStorage.setItem('mrkt.refresh',s.refresh_token||'');localStorage.setItem('mrkt.email',(s.user&&s.user.email)||'');localStorage.setItem('mrkt.ok','1');}catch(e){}}
   function isGoogle(v){return /@(gmail|googlemail)\.com\s*$/i.test(v);}
   var _authed=false;
@@ -157,14 +156,17 @@ button[disabled]{opacity:.55;cursor:default}
     sb.auth.onAuthStateChange(function(ev,session){
       if(session&&(ev==='SIGNED_IN'||ev==='INITIAL_SESSION'||ev==='TOKEN_REFRESHED')){persist(session);goAuthed((session.user&&session.user.email)||'Signed in');}
     });
-    gbtn.onclick=function(){msgset('Redirecting to Google…');gbtn.disabled=true;
+  }
+  function needSb(){if(!sb){msgset("Sign-in didn't load — check your connection and refresh, or use an access code.",'err');return false;}return true;}
+  {
+    gbtn.onclick=function(){if(!needSb())return;msgset('Redirecting to Google…');gbtn.disabled=true;
       sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+'/index.html'}}).then(function(r){if(r&&r.error){gbtn.disabled=false;msgset(r.error.message+' (if Google is not enabled yet, use the email link).','err');}});};
     email.addEventListener('input',function(){var hot=isGoogle(email.value.trim());ghint.style.display=hot?'block':'none';gbtn.classList.toggle('hot',hot);});
     $('signin').onclick=function(){var e=email.value.trim(),p=pw.value;if(!e||!p){msgset('Enter your email and password — or use the one-tap link.','err');return;}
-      var b=$('signin');b.disabled=true;msgset('Signing in…');sb.auth.signInWithPassword({email:e,password:p}).then(function(r){b.disabled=false;if(r.error)msgset(r.error.message,'err');});};
+      if(!needSb())return;var b=$('signin');b.disabled=true;msgset('Signing in…');sb.auth.signInWithPassword({email:e,password:p}).then(function(r){b.disabled=false;if(r.error)msgset(r.error.message,'err');});};
     $('signup').onclick=function(){var e=email.value.trim(),p=pw.value;if(!e||p.length<8){msgset('Use a valid email and an 8+ character password.','err');return;}
-      var b=$('signup');b.disabled=true;msgset('Creating your account…');sb.auth.signUp({email:e,password:p}).then(function(r){b.disabled=false;if(r.error)msgset(r.error.message,'err');else if(!(r.data&&r.data.session))msgset('Account created — check your email to confirm, then log in.','ok');});};
-    $('magic').onclick=function(){var e=email.value.trim();if(!e){msgset('Enter your email first.','err');email.focus();return;}msgset('Sending your one-tap link…');
+      if(!needSb())return;var b=$('signup');b.disabled=true;msgset('Creating your account…');sb.auth.signUp({email:e,password:p}).then(function(r){b.disabled=false;if(r.error)msgset(r.error.message,'err');else if(!(r.data&&r.data.session))msgset('Account created — check your email to confirm, then log in.','ok');});};
+    $('magic').onclick=function(){var e=email.value.trim();if(!e){msgset('Enter your email first.','err');email.focus();return;}if(!needSb())return;msgset('Sending your one-tap link…');
       sb.auth.signInWithOtp({email:e,options:{emailRedirectTo:location.origin+'/index.html',shouldCreateUser:true}}).then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Check your '+(isGoogle(e)?'Gmail':'email')+' — tap the link to finish.','ok');});};
   }
   $('codetoggle').onclick=function(){var bx=$('codebox');bx.style.display=bx.style.display==='flex'?'none':'flex';if(bx.style.display==='flex')$('code').focus();};

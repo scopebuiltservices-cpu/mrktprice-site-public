@@ -20,13 +20,13 @@ html,body{margin:0;min-height:100%;color:var(--text);background:#0a3327;
 .wrap{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px 22px}
 @keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 .an{opacity:0;animation:rise .9s cubic-bezier(.4,.1,.2,1) forwards}
-.dovebadge{position:relative;display:flex;align-items:flex-end;justify-content:center;width:clamp(152px,22vw,200px);height:clamp(112px,16vw,148px);filter:drop-shadow(0 12px 26px rgba(0,0,0,.42)) drop-shadow(0 0 18px rgba(60,240,180,.20))}
-.dovetri-svg{position:absolute;inset:0;width:100%;height:100%;z-index:0;overflow:visible}
-.dove{position:relative;z-index:1;height:clamp(80px,11.5vw,106px);width:auto;display:block;margin-bottom:9px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.4))}
+.doveframe{position:relative;display:flex;align-items:flex-end;justify-content:center;width:clamp(196px,30vw,264px);height:clamp(150px,23vw,206px);filter:drop-shadow(0 14px 28px rgba(0,0,0,.4)) drop-shadow(0 0 20px rgba(60,240,180,.16))}
+.doveframe::before{content:"";position:absolute;inset:0;background:#357e66;clip-path:polygon(50% 0,100% 100%,0 100%);z-index:0}
+.dove{position:relative;z-index:1;height:clamp(96px,14.5vw,138px);width:auto;display:block;margin-bottom:clamp(16px,3vw,26px);filter:drop-shadow(0 3px 8px rgba(0,0,0,.4))}
 .dovelink{display:inline-block;cursor:pointer;transition:transform .2s}
 .dovelink:hover{transform:scale(1.03)}
-.brand{display:flex;align-items:center;justify-content:center;gap:clamp(12px,2.6vw,22px);margin-bottom:2px}
-.brandtext{display:flex;flex-direction:column;align-items:stretch;min-width:0}
+.brand{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:2px}
+.brandtext{display:flex;flex-direction:column;align-items:center;min-width:0}
 .title{font-size:clamp(30px,7.2vw,52px);font-weight:300;letter-spacing:.01em;line-height:.95;color:#fff;white-space:nowrap}
 .title .gx{font-weight:400;background:linear-gradient(95deg,#e0489a,#7b5cd6,#2f8fd6,#1fc6a8,#e8b53d,#e0489a);background-size:240% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;animation:sheen 7s linear infinite}
 .title .gx b{font-weight:700}
@@ -98,7 +98,7 @@ button[disabled]{opacity:.55;cursor:default}
 <svg class="bg" viewBox="0 0 640 600" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><polygon points="0,0 213,0 0,200" fill="#2c6e58"/><polygon points="213,0 0,200 220,210" fill="#357e66"/><polygon points="213,0 426,0 220,210" fill="#2a6b56"/><polygon points="426,0 220,210 440,200" fill="#3d8c72"/><polygon points="426,0 640,0 440,200" fill="#316f5b"/><polygon points="640,0 440,200 640,210" fill="#43967b"/><polygon points="0,200 220,210 0,400" fill="#4fa388"/><polygon points="220,210 0,400 230,410" fill="#2e7460"/><polygon points="220,210 440,200 230,410" fill="#3a8970"/><polygon points="440,200 230,410 450,400" fill="#336b5a"/><polygon points="440,200 640,210 450,400" fill="#3c8b73"/><polygon points="640,210 450,400 640,400" fill="#49a085"/><polygon points="0,400 230,410 0,600" fill="#2a6b56"/><polygon points="230,410 0,600 240,600" fill="#357e66"/><polygon points="230,410 450,400 240,600" fill="#43967b"/><polygon points="450,400 240,600 450,600" fill="#2f7762"/><polygon points="450,400 450,600 640,600" fill="#49a085"/><polygon points="450,400 640,600 640,400" fill="#357e66"/></svg><div class="glow"></div><div class="scrim"></div>
 <div class="wrap">
   <div class="brand an" style="animation-delay:.08s">
-    <a id="enter" href="terminal.html" class="dovelink" title="Click the dove to enter"><span class="dovebadge"><svg class="dovetri-svg" viewBox="0 0 160 120" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><clipPath id="tri"><polygon points="80,6 154,114 6,114"/></clipPath><g clip-path="url(#tri)"><polygon points="80,6 117,60 43,60" fill="#3a8970"/><polygon points="117,60 43,60 80,78" fill="#2e7460"/><polygon points="43,60 6,114 80,114" fill="#43967b"/><polygon points="43,60 80,114 80,78" fill="#2c6e58"/><polygon points="117,60 80,78 80,114" fill="#4fa388"/><polygon points="117,60 80,114 154,114" fill="#2f7762"/></g><polygon points="80,6 154,114 6,114" fill="none" stroke="rgba(130,255,205,.30)" stroke-width="2.2" stroke-linejoin="round"/></svg><img class="dove" src="splash/dove.png" alt="MrktPrice — click the dove to enter"/></span></a>
+    <a id="enter" href="terminal.html" class="dovelink" title="Click the dove to enter"><span class="doveframe"><img class="dove" src="splash/dove.png" alt="MrktPrice — click the dove to enter"/></span></a>
     <div class="brandtext">
       <div class="title"><span class="gx"><b>mrkt</b>price</span><span class="d">.com</span></div>
       <span class="uline" aria-hidden="true"></span>

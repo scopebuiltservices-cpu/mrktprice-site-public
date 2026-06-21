@@ -5,7 +5,17 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Cpolygon%20points='16,2%2030,16%2016,16'%20fill='%23e0489a'/%3E%3Cpolygon%20points='16,2%2016,16%202,16'%20fill='%237b5cd6'/%3E%3Cpolygon%20points='2,16%2016,16%2016,30'%20fill='%232f8fd6'/%3E%3Cpolygon%20points='16,16%2030,16%2016,30'%20fill='%231fc6a8'/%3E%3C/svg%3E"/>
-<style>
+<meta name="theme-color" content="#0a3327"/>
+<meta name="color-scheme" content="dark"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="MrktPrice — institutional-grade market intelligence"/>
+<meta property="og:description" content="Sign in to MrktPrice. Read Opportunity News free."/>
+<meta property="og:url" content="https://mrktprice.com/"/>
+<meta property="og:image" content="https://mrktprice.com/splash/dove.png"/>
+<meta name="twitter:card" content="summary"/>
+<link rel="preconnect" href="https://jnatyouqlrdhmghnluzv.supabase.co" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="dns-prefetch" href="https://mrktprice-data.onrender.com"><style>
 :root{--text:#fff;--muted:#bfe7d8;--line:rgba(255,255,255,.16);--line2:rgba(255,255,255,.26);
  --neon:#28e0a6;--neon-lo:#16b487;--ink:#04261d;--err:#ffb3b3;--ok:#9bf0cf;
  /* dove low-poly palette — used sparingly as accents */
@@ -47,13 +57,14 @@ html,body{margin:0;min-height:100%;color:var(--text);background:#0a3327;
  transition:background .16s,border-color .16s,box-shadow .16s,transform .12s}
 .btn:hover{background:rgba(255,255,255,.11);border-color:var(--ac,var(--neon));box-shadow:0 0 0 1px var(--ac,var(--neon)) inset,0 6px 18px -10px var(--ac,var(--neon));transform:translateY(-1px)}
 .btn:active{transform:translateY(0)}
-/* small dove-triangle accent in each button's top-right corner */
+/* neon pink/blue/green gradient ring on each button */
 .btn::after{content:"";position:absolute;inset:0;border-radius:11px;padding:1.4px;background:linear-gradient(135deg,#ff3df0,#2f8fd6,#27e39b);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:.5;transition:opacity .16s;pointer-events:none}
 .btn:hover::after{opacity:1}
 .gbtn{--ac:var(--d-blue);font-weight:600}
 .gbtn .gtxt{font-weight:600}
 .gbtn.hot{box-shadow:0 0 0 2px rgba(47,143,214,.6)}
 .ghint{font-size:11px;color:var(--d-blue);margin:-4px 2px 0;display:none}
+.caps{display:none;font-size:10.5px;color:var(--d-gold);margin:-4px 2px 2px}.caps.on{display:block}
 .divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;margin:3px 0 1px}
 .divider::before,.divider::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line),transparent)}
 .card input{width:100%;background:rgba(255,255,255,.05);border:1px solid var(--line2);border-radius:11px;color:#fff;
@@ -109,12 +120,13 @@ button[disabled]{opacity:.55;cursor:default}
     </button>
     <div class="ghint" id="ghint">Gmail detected — you can also get a one-tap link below.</div>
     <div class="divider">or with your email</div>
-    <input id="email" placeholder="you@email.com" autocomplete="email" inputmode="email"/>
-    <div class="pwwrap"><input id="pw" type="password" placeholder="Password" autocomplete="current-password"/><button type="button" id="pwtoggle" class="pweye" aria-label="Show password">Show</button></div>
+    <input id="email" name="email" placeholder="you@email.com" autocomplete="email" inputmode="email" aria-label="Email address" autocapitalize="off" autocorrect="off" spellcheck="false"/>
+    <div class="pwwrap"><input id="pw" name="password" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password"/><button type="button" id="pwtoggle" class="pweye" aria-label="Show password">Show</button></div>
+    <div id="caps" class="caps" aria-hidden="true">⇪ Caps Lock is on</div>
     <div class="row"><button id="signin" class="btn act">Log in</button><button id="signup" class="btn ghost">Create account</button></div>
     <div class="linkrow"><a id="magic">Email me a one-tap link</a><a id="forgot">Forgot password?</a><a id="codetoggle">Have an access code?</a></div>
-    <div id="codebox"><input id="code" placeholder="Owner / team access code" autocomplete="off"/><button id="codego" class="btn">Enter with access code</button></div>
-    <div class="msg" id="msg"></div>
+    <div id="codebox"><input id="code" placeholder="Owner / team access code" autocomplete="off" aria-label="Access code" autocapitalize="off" autocorrect="off" spellcheck="false"/><button id="codego" class="btn">Enter with access code</button></div>
+    <div class="msg" id="msg" role="status" aria-live="polite"></div>
   </div>
   <a class="news an" style="animation-delay:.5s" href="reports/index.html">Read Opportunity News — free &rarr;</a>
 </div>
@@ -143,8 +155,9 @@ button[disabled]{opacity:.55;cursor:default}
   var _authed=false;
   function flyToPerch(){
     var hi=hero.querySelector('.dove'), perch=$('perch');
+    var rm=window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches;
     var a=hi.getBoundingClientRect(), b=perch.getBoundingClientRect();
-    if(!a.width||!b.width){perch.style.opacity='1';chip.classList.add('landed');hero.style.visibility='hidden';return;}
+    if(rm||!a.width||!b.width){perch.style.opacity='1';chip.classList.add('landed');hero.style.visibility='hidden';return;}
     var fly=hi.cloneNode(true);fly.removeAttribute('class');fly.className='flydove';
     fly.style.left=a.left+'px';fly.style.top=a.top+'px';fly.style.width=a.width+'px';fly.style.height=a.height+'px';fly.style.margin='0';
     document.body.appendChild(fly);hero.style.visibility='hidden';
@@ -187,17 +200,20 @@ button[disabled]{opacity:.55;cursor:default}
         }).catch(function(){location.href=url;});
       });};
     email.addEventListener('input',function(){var hot=isGoogle(email.value.trim());ghint.style.display=hot?'block':'none';gbtn.classList.toggle('hot',hot);});
-    $('signin').onclick=function(){var e=email.value.trim(),p=pw.value;if(!e||!p){msgset('Enter your email and password — or use the one-tap link.','err');return;}
-      if(!needSb())return;try{localStorage.setItem('mrkt.email',e);}catch(_){}var b=$('signin');b.disabled=true;msgset('Signing in…');sb.auth.signInWithPassword({email:e,password:p}).then(function(r){b.disabled=false;if(r.error)msgset(r.error.message,'err');});};
+    $('signin').onclick=function(){var e=email.value.trim(),p=pw.value;if(!validEmail(e)||!p){msgset('Enter a valid email and your password — or use the one-tap link.','err');return;}
+      if(!needSb())return;try{localStorage.setItem('mrkt.email',e);}catch(_){}var b=$('signin');b.disabled=true;msgset('Signing in…');sb.auth.signInWithPassword({email:e,password:p}).then(function(r){b.disabled=false;if(r.error)msgset(r.error.message,'err');}).catch(function(){b.disabled=false;msgset('Network error — please try again.','err');});};
     $('signup').onclick=function(){var e=email.value.trim(),p=pw.value;if(!validEmail(e)||p.length<8){msgset('Use a valid email and an 8+ character password.','err');return;}
-      if(!needSb())return;var b=$('signup');b.disabled=true;msgset('Creating your account…');sb.auth.signUp({email:e,password:p}).then(function(r){b.disabled=false;if(r.error)msgset(r.error.message,'err');else if(!(r.data&&r.data.session))msgset('Account created — check your email to confirm, then log in.','ok');});};
+      if(!needSb())return;var b=$('signup');b.disabled=true;msgset('Creating your account…');sb.auth.signUp({email:e,password:p}).then(function(r){b.disabled=false;if(r.error)msgset(r.error.message,'err');else if(!(r.data&&r.data.session))msgset('Account created — check your email to confirm, then log in.','ok');}).catch(function(){b.disabled=false;msgset('Network error — please try again.','err');});};
     $('magic').onclick=function(){var e=email.value.trim();if(!validEmail(e)){msgset('Enter a valid email first.','err');email.focus();return;}if(!needSb())return;try{localStorage.setItem('mrkt.email',e);}catch(_){}msgset('Sending your one-tap link…');
-      sb.auth.signInWithOtp({email:e,options:{emailRedirectTo:safeOrigin()+'/index.html',shouldCreateUser:true}}).then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Check your '+(isGoogle(e)?'Gmail':'email')+' — tap the link to finish.','ok');});};
+      sb.auth.signInWithOtp({email:e,options:{emailRedirectTo:safeOrigin()+'/index.html',shouldCreateUser:true}}).then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Check your '+(isGoogle(e)?'Gmail':'email')+' — tap the link to finish.','ok');}).catch(function(){msgset('Network error — please try again.','err');});};
   }
   var pwtoggle=$('pwtoggle');if(pwtoggle)pwtoggle.onclick=function(){var sh=pw.type==='password';pw.type=sh?'text':'password';pwtoggle.textContent=sh?'Hide':'Show';pwtoggle.setAttribute('aria-label',(sh?'Hide':'Show')+' password');pw.focus();};
-  var forgot=$('forgot');if(forgot)forgot.onclick=function(){var e=email.value.trim();if(!validEmail(e)){msgset('Enter your email above, then tap Forgot password?','err');email.focus();return;}if(!needSb())return;msgset('Sending a reset link…');sb.auth.resetPasswordForEmail(e,{redirectTo:safeOrigin()+'/index.html'}).then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Check your email for a password-reset link.','ok');});};
+  var forgot=$('forgot');if(forgot)forgot.onclick=function(){var e=email.value.trim();if(!validEmail(e)){msgset('Enter your email above, then tap Forgot password?','err');email.focus();return;}if(!needSb())return;msgset('Sending a reset link…');sb.auth.resetPasswordForEmail(e,{redirectTo:safeOrigin()+'/index.html'}).then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Check your email for a password-reset link.','ok');}).catch(function(){msgset('Network error — please try again.','err');});};
   if(email)email.addEventListener('keydown',function(ev){if(ev.key==='Enter'){ev.preventDefault();pw.focus();}});
   document.addEventListener('visibilitychange',function(){if(!document.hidden&&!_authed&&gbtn)gbtn.disabled=false;});
+  var capsEl=$('caps');function capChk(ev){if(capsEl&&ev.getModifierState)capsEl.classList.toggle('on',ev.getModifierState('CapsLock'));}
+  if(pw){pw.addEventListener('keydown',capChk);pw.addEventListener('keyup',capChk);pw.addEventListener('blur',function(){if(capsEl)capsEl.classList.remove('on');});}
+  ['magic','forgot','codetoggle'].forEach(function(id){var el=$(id);if(el){el.setAttribute('role','button');el.setAttribute('tabindex','0');el.addEventListener('keydown',function(ev){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();el.click();}});}});
   $('codetoggle').onclick=function(){var bx=$('codebox');bx.style.display=bx.style.display==='flex'?'none':'flex';if(bx.style.display==='flex')$('code').focus();};
   $('codego').onclick=function(){var c=$('code').value.trim();if(!c){msgset('Enter your access code.','err');return;}msgset('Checking code…');
     fetch(API+'/auth',{headers:{'X-Access-Code':c},cache:'no-store'}).then(function(r){if(r.status===200){try{localStorage.setItem('mrkt.code',c);localStorage.setItem('mrkt.ok','1');}catch(e){}goAuthed('Owner / team access');}else msgset('That access code was not accepted.','err');}).catch(function(){msgset('Could not reach the data service.','err');});};

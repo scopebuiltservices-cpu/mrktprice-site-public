@@ -100,7 +100,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
 
  <div><div class="pxrow"><span class="px" id="px">—</span><span class="chg" id="chg"></span></div>
   <div class="meta"><span class="badge" id="sym">—</span><span class="badge">pooled daily (research)</span>
-   <span id="asof">as of —</span><span class="dot" id="stale"></span><span id="staletxt"></span><span class="pill" id="stateBadge">—</span><span class="pill" id="integBadge" title="Phase-3 conditioning integrity gate">—</span><span class="pill" id="relBadge" title="Global release gate (R3)">—</span></div></div>
+   <span id="asof">as of —</span><span class="dot" id="stale"></span><span id="staletxt"></span><span class="pill" id="stateBadge">—</span><span class="pill" id="integBadge" title="Phase-3 conditioning integrity gate">—</span><span class="pill" id="relBadge" title="Global release gate (R3)">—</span><span class="pill" id="qReport" title="Next quarterly report (est. from fiscal calendar) + trailing PEG (P/E ÷ EPS growth%)">—</span></div></div>
  <div class="ctrls">
   <div class="ctrl"><label>Symbol</label><select id="symsel"></select></div>
   <div class="ctrl"><label>&nbsp;</label><button class="ghost" id="scanBtn">⊞ Scanner</button></div>
@@ -754,6 +754,13 @@ function buildCadence(sym,c,d){const el=document.getElementById('cadence');if(!e
   fund='<b>Reported</b> FY'+fy+': rev '+dB(rev)+(eps!=null?' · EPS $'+eps.toFixed(2):'')+' &nbsp;→&nbsp; <b>Expected</b> FY'+(parseInt(fy,10)+1)+' <span style="color:var(--muted)">(mechanical trend, not analyst consensus)</span>: rev '+dB(nrev)+(g!=null?' ('+(g>=0?'+':'')+(g*100).toFixed(0)+'%)':'')+(neps!=null?' · EPS $'+neps.toFixed(2):'');
   if(C.taxonomy==='ifrs')fund+=' <span style="color:var(--accent)">[IFRS 20-F]</span>';}
  else fund='<span style="color:var(--muted)">no GAAP fundamentals embedded for this name</span>';
+ try{var _qb=document.getElementById('qReport');if(_qb){var _pegT='—',_neT='—';
+  if(typeof FUND==='object'&&FUND&&FUND[sym]){var _C=FUND[sym],_yk=Object.keys(_C.years).sort();var _fy=_yk[_yk.length-1];var _r=_C.years[_fy]||{};var _py=_yk.length>1?_C.years[_yk[_yk.length-2]]:null;
+   var _eps=(_r.eps!=null)?_r.eps:null,_pe=(price!=null&&_eps!=null&&_eps>0)?price/_eps:null;
+   var _eg=(_py&&_py.eps!=null&&_py.eps>0&&_eps!=null)?(_eps/_py.eps-1):null;
+   var _peg=(_pe!=null&&_eg!=null&&_eg>0)?_pe/(_eg*100):null;if(_peg!=null)_pegT=_peg.toFixed(2);}
+  if(last){var _ne=nextEarnings(last);if(_ne)_neT=_ne.toISOString().slice(0,10);}
+  _qb.innerHTML='next report '+_neT+' · PEG '+_pegT;}}catch(_e){}
  el.innerHTML='<div style="font-size:10px;color:var(--muted);margin-bottom:2px"><b style="color:var(--accent)">CADENCE &amp; LEVELS</b> · <b>price</b> '+price.toFixed(2)+' = the traded value; <i>levels</i> = the EMA ribbon (dynamic support/resistance) — price fluctuates between these levels.</div>'
   +'<div style="margin-bottom:3px">'+lv+'</div>'
   +(earn?'<div style="font-size:10px;margin-bottom:2px;color:var(--ink)">'+earn+'</div>':'')
@@ -1539,13 +1546,16 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
    bl(CUR.sma20,'rgba(154,167,180,.55)');bl(CUR.bbU2,'rgba(224,90,78,.4)');bl(CUR.bbL2,'rgba(63,183,107,.4)');}
  g.strokeStyle=css('--hist');g.lineWidth=1.4;g.beginPath();for(let i=h0;i<c.length;i++){const x=X(i-h0),y=Yp(c[i]);i===h0?g.moveTo(x,y):g.lineTo(x,y);}g.stroke();
  try{var _EF=(typeof FUND==='object'&&FUND)?FUND[CUR.sym]:null;
- if(_EF&&_EF.quarters){_EF.quarters.forEach(function(q){var fd=q.filedDate;if(!fd)return;
+ if(_EF&&_EF.quarters){_EF.quarters.forEach(function(q){var fd=q.filedDate||q.endDate;if(!fd)return;
    var idx=-1;for(var ii=h0;ii<c.length;ii++){if(d[ii]>=fd){idx=ii;break;}}
-   if(idx<h0)return;var xi=idx-h0,xe=X(xi);
-   g.strokeStyle='rgba(245,196,81,.5)';g.setLineDash([3,3]);g.lineWidth=1;g.beginPath();g.moveTo(xe,yP0);g.lineTo(xe,yP0+Hp);g.stroke();g.setLineDash([]);
-   g.fillStyle='rgba(245,196,81,.95)';g.font='bold 9px sans-serif';g.fillText('E',xe-2,yP0+9);
+   if(idx<h0)return;var xi=idx-h0,xe=X(xi),cP=c[idx],yC=Yp(cP);
+   g.strokeStyle='rgba(245,196,81,.42)';g.setLineDash([3,3]);g.lineWidth=1;g.beginPath();g.moveTo(xe,yP0);g.lineTo(xe,yP0+Hp);g.stroke();g.setLineDash([]);
+   g.fillStyle='rgba(245,196,81,.95)';g.font='bold 8px sans-serif';g.fillText((q.label||'Q'),xe-9,yP0+8);
+   g.fillStyle='rgba(245,196,81,.72)';g.font='7px sans-serif';g.fillText(String(fd).slice(5),xe-11,yP0+16);
+   g.fillStyle='#f5c451';g.beginPath();g.arc(xe,yC,3.2,0,7);g.fill();g.strokeStyle='rgba(11,14,19,.95)';g.lineWidth=1;g.beginPath();g.arc(xe,yC,3.2,0,7);g.stroke();
+   g.fillStyle='#f5d489';g.font='bold 8px sans-serif';g.fillText('$'+cP.toFixed(2),xe+4,yC-4);
    var fwd=(idx+5<c.length)?(c[idx+5]/c[idx]-1):null;
-   if(fwd!=null){g.fillStyle=fwd>=0?'rgba(46,204,143,.95)':'rgba(239,95,78,.95)';g.font='8px sans-serif';g.fillText((fwd>=0?'+':'')+(fwd*100).toFixed(0)+'%',xe+1,yP0+18);}
+   if(fwd!=null){g.fillStyle=fwd>=0?'rgba(46,204,143,.95)':'rgba(239,95,78,.95)';g.font='7px sans-serif';g.fillText((fwd>=0?'+':'')+(fwd*100).toFixed(0)+'%',xe+4,yC+9);}
  });}}catch(_e){}
 
   if(document.getElementById('tEMA').checked){(CUR.emaShow||[]).forEach(N=>{const e=CUR.emaM[N].e;g.strokeStyle=EMACOL[N];g.lineWidth=1;g.beginPath();let st=false;for(let i=h0;i<c.length;i++){const x=X(i-h0),y=Yp(e[i]);st?g.lineTo(x,y):g.moveTo(x,y);st=true;}g.stroke();});

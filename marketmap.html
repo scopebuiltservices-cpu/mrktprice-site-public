@@ -207,7 +207,7 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
     momentum_z:(n.z?n.z.mom:null),regime:n.regime,half_life_days:n.hl,variance_ratio:n.vr,jump_fraction:n.jump,range_vol_pct:n.pvol,
     threshold_odds:n.odds,expected_value_pct:n.ev,ev_percentile:n.evPct,
     macro:{r2_pct:n.macroR2,top_driver:n.drv,betas:n.mb,dependencies:n.deps},
-    contradiction:n.contra,valuation:n.val,insider:n.insider,institutional:n.inst,gamma:n.gex,short_pressure:n.short,
+    contradiction:n.contra,valuation:n.val,insider:n.insider,institutional:n.inst,gamma:n.gex,black_scholes:n.bs,short_pressure:n.short,
     fundamentals:{market_cap:n.mcap,fcf_yield_pct:n.fcfY,beta:n.beta,ann_vol_pct:n.vol,mfi:n.mfi,atr_pct:n.atr},
     alerts:n.alerts,provenance:{source:D.source||'',as_of:D.asof||''},disclaimer:'Research only; not investment advice.'};}
   function renderBrief(n){
@@ -263,6 +263,20 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
       h+=row('Expected move (to expiry)','\u00b1'+(gx.expMovePct!=null?gx.expMovePct+'%':'—')+(gx.atmIV!=null?' · ATM IV '+gx.atmIV+'%':''));
       h+=row('Put/call · skew',(gx.pcr!=null?gx.pcr:'—')+(gx.skew!=null?' · skew '+gx.skew:''));
       h+='</table>';}
+    if(n.bs){var b=n.bs;
+      var rich=b.avgRichnessPct,rcl=(rich==null)?'v-na':(rich>110?'v-rejected':rich<95?'v-supported':'v-mixed');
+      var rlab=(rich==null)?'\u2014':(rich>110?'rich vs model':rich<95?'cheap vs model':'fairly priced');
+      h+='<h3>Black-Scholes-Merton \u2014 option fair value &amp; vol premium</h3><table class="kv">';
+      h+=row('Implied forward \u00b7 dividend',(b.forward!=null?b.forward:'\u2014')+(b.impliedDivYield!=null?' \u00b7 div '+(Math.round(b.impliedDivYield*10000)/100)+'%':'')+(b.hardToBorrow?' \u00b7 <span class="vbadge v-rejected">hard-to-borrow</span>':''));
+      h+=row('Richness vs model',(rich!=null?rich+'%':'\u2014')+' <span class="vbadge '+rcl+'">'+rlab+'</span>');
+      h+=row('Realized vs ATM-implied vol',(b.refVolPct!=null?b.refVolPct+'%':'\u2014')+' / '+(b.atmIVpct!=null?b.atmIVpct+'%':'\u2014')+(b.expMovePct!=null?' \u00b7 exp move \u00b1'+b.expMovePct+'%':''));
+      h+=row('Variance-risk premium',(b.vrpVolPts!=null?(b.vrpVolPts>0?'+':'')+b.vrpVolPts+' vol pts':'\u2014')+(b.mfImpliedVolPct!=null?' \u00b7 model-free IV '+b.mfImpliedVolPct+'%':''));
+      h+=row('Risk-neutral skew \u00b7 kurt',(b.rnSkew!=null?b.rnSkew:'\u2014')+(b.rnKurt!=null?' \u00b7 '+b.rnKurt:''));
+      h+=row('SVI surface (ATM vol \u00b7 skew)',(b.sviAtmVol!=null?Math.round(b.sviAtmVol*1000)/10+'%':'\u2014')+(b.sviAtmSkew!=null?' \u00b7 '+b.sviAtmSkew:'')+(b.sviButterflyArbFree===false?' \u00b7 <span class="vbadge v-rejected">arb!</span>':(b.sviButterflyArbFree===true?' \u00b7 <span class="vbadge v-supported">arb-free</span>':'')));
+      if(b.american)h+=row('American ATM (K '+b.american.strike+')','call '+b.american.amCall+' \u00b7 put '+b.american.amPut);
+      h+=row('No-arb violations \u00b7 contracts',(b.noArbViolations!=null?b.noArbViolations:'\u2014')+' \u00b7 '+(b.nContracts!=null?b.nContracts:'\u2014'));
+      if(b.optTilt!=null)h+=row('Composite options tilt',(b.optTilt>0?'+':'')+b.optTilt+' <span class="vbadge v-na">'+(b.optTiltStatus||'provisional')+'</span>');
+      h+='</table><div style="font-size:11px;color:var(--muted,#8a93a0);margin-top:4px">Richness &gt;110% = options price in more vol than realized (premium-selling bias); &lt;95% = cheap. Composite tilt is provisional &amp; uncalibrated \u2014 not a recommendation.</div>';}
     if(n.short){var sp=n.short;var scl=sp.trend==='rising'?'v-rejected':sp.trend==='falling'?'v-supported':'v-mixed';
       h+='<h3>Short pressure — SEC fails-to-deliver (free)</h3><table class="kv">';
       h+=row('Fails trend','<span class="vbadge '+scl+'">'+sp.trend+'</span> · '+sp.level);

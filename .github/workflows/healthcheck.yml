@@ -1,0 +1,50 @@
+name: Site & data healthcheck
+
+# Catches the failures that previously went unnoticed:
+#  - the Render data API being down / asleep
+#  - the published Market Map going stale or reverting to SAMPLE/synthetic data
+# Fails the run (red X + GitHub's default failure email) so a human is alerted.
+
+on:
+  schedule:
+    - cron: "0 13 * * 1-6"   # ~13:00 UTC every weekday + Sat (after the nightly build)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Data API /health is OK
+        run: |
+          set -e
+          code=$(curl -s -o /tmp/h.json -w "%{http_code}" --max-time 40 https://mrktprice-data.onrender.com/health || echo 000)
+          echo "HTTP $code"; cat /tmp/h.json || true
+          test "$code" = "200" || { echo "::error::Data API health HTTP $code"; exit 1; }
+          python3 -c "import json;d=json.load(open('/tmp/h.json'));assert d.get('service')=='ok','service not ok';print('service ok; yfinance:',d.get('yfinance',{}).get('status'))"
+
+      - name: Market Map is fresh and NOT synthetic
+        run: |
+          python3 - <<'PY'
+          import json, datetime, sys
+          d = json.load(open("marketmap.json"))
+          src = str(d.get("source",""))
+          asof = str(d.get("asof",""))
+          print("source:", src[:60], "| asof:", asof, "| names:", len(d.get("names",[])))
+          problems = []
+          if "SAMPLE" in src or "synthetic" in src.lower():
+              problems.append("marketmap.json is SYNTHETIC/SAMPLE (real nightly snapshot is not publishing)")
+          try:
+              age = (datetime.date.today() - datetime.date.fromisoformat(asof)).days
+              if age > 4:
+                  problems.append("marketmap.json is stale: asof %s (%d days old)" % (asof, age))
+          except Exception:
+              problems.append("marketmap.json asof unparseable: %r" % asof)
+          if problems:
+              print("::error::" + " | ".join(problems)); sys.exit(1)
+          print("Market Map healthy.")
+          PY

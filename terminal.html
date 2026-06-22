@@ -1877,5 +1877,65 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
   restoreWatch();
   refreshIdxBoard();
  }
- if(document.readyState!=='loading')mount();else document.addEventList
+ if(document.readyState!=='loading')mount();else document.addEventListener('DOMContentLoaded',mount);
+})();
+</script>
+<script>
+/* MrktPrice — surface GEX / Black-Scholes / valuation for the active ticker (reads marketmap.json) */
+(function(){
+  var MMAP=null, host=null;
+  function ensureHost(){
+    if(host&&document.body.contains(host))return host;
+    host=document.createElement('div'); host.id='optspanel'; host.style.cssText='margin:8px 0';
+    var a=document.getElementById('decision');
+    if(a&&a.parentNode){a.parentNode.insertBefore(host,a.nextSibling);}else{document.body.appendChild(host);}
+    return host;
+  }
+  function row(k,v){return '<tr><td style="color:var(--muted,#8a93a0);padding:1px 8px;width:46%">'+k+'</td><td style="padding:1px 8px">'+v+'</td></tr>';}
+  function badge(cls,txt){var c=cls==='g'?'#11331f;color:#5fd08a':cls==='r'?'#3a1620;color:#ff8198':cls==='y'?'#3a3416;color:#e0c14a':'#2a2f3a;color:#9aa';return '<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600;background:'+c+'">'+txt+'</span>';}
+  function tbl(inner){return '<table style="width:100%;border-collapse:collapse;font-size:12px">'+inner+'</table>';}
+  function sec(title,inner){return '<div style="margin-top:8px"><div style="font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#8a93a0);border-bottom:1px solid var(--line,#2a2f3a);padding-bottom:2px;margin-bottom:3px">'+title+'</div>'+inner+'</div>';}
+  function render(sym){
+    var h=ensureHost(); if(!MMAP){h.innerHTML='';return;}
+    var n=MMAP[sym]; if(!n||(!n.gex&&!n.bs&&!n.val)){h.innerHTML='';return;}
+    var html='<div style="background:var(--panel,#11161f);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:10px 14px">'
+      +'<div style="font-size:12px;font-weight:600;color:var(--brand,#16c79a)">Options &amp; valuation — '+sym+'</div>';
+    var v=n.val;
+    if(v){var ov=v.overall==='supported'?'g':v.overall==='rejected'?'r':v.overall==='mixed'?'y':'n';
+      html+=sec('Valuation (FMP)',tbl(
+        row('Trailing / forward P&#47;E',(v.pe!=null?v.pe:'—')+' / '+(v.fpe!=null?v.fpe:'—')+(v.peSec!=null?' <span style="color:var(--muted,#8a93a0)">(sec '+v.peSec+')</span>':''))
+        +row('PEG · EV&#47;EBITDA',(v.peg!=null?v.peg:'—')+' · '+(v.evb!=null?v.evb:'—'))
+        +row('Verdict',badge(ov,v.overall||'n/a'))));}
+    var g=n.gex;
+    if(g){var gr=(g.regime&&g.regime.indexOf('positive')>=0)?'g':'r';
+      html+=sec('Dealer gamma (GEX)',tbl(
+        row('Regime',badge(gr,(g.regime||'—'))+(g.frontDays!=null?' <span style="color:var(--muted,#8a93a0)">'+g.frontDays+'d</span>':''))
+        +row('Walls (sup&#47;res)',(g.wallDn!=null?g.wallDn:'—')+' / '+(g.wallUp!=null?g.wallUp:'—')+(g.flip!=null?' · flip '+g.flip:''))
+        +row('Exp move · ATM IV','±'+(g.expMovePct!=null?g.expMovePct+'%':'—')+(g.atmIV!=null?' · '+g.atmIV+'%':''))
+        +row('Put&#47;call · skew',(g.pcr!=null?g.pcr:'—')+(g.skew!=null?' · '+g.skew:''))));}
+    var b=n.bs;
+    if(b){var rich=b.avgRichnessPct,rc=(rich==null)?'n':(rich>110?'r':rich<95?'g':'y');
+      html+=sec('Black-Scholes-Merton',tbl(
+        row('Richness vs model',(rich!=null?rich+'%':'—')+' '+badge(rc,rich==null?'—':rich>110?'rich':rich<95?'cheap':'fair'))
+        +row('Realized&#47;ATM IV · VRP',(b.refVolPct!=null?b.refVolPct+'%':'—')+' / '+(b.atmIVpct!=null?b.atmIVpct+'%':'—')+(b.vrpVolPts!=null?' · VRP '+(b.vrpVolPts>0?'+':'')+b.vrpVolPts:''))
+        +row('RN skew · kurt',(b.rnSkew!=null?b.rnSkew:'—')+(b.rnKurt!=null?' · '+b.rnKurt:''))
+        +row('Fwd · impl div',(b.forward!=null?b.forward:'—')+(b.impliedDivYield!=null?' · '+(Math.round(b.impliedDivYield*10000)/100)+'%':'')+(b.hardToBorrow?' '+badge('r','HTB'):''))
+        +(b.optTilt!=null?row('Composite tilt',(b.optTilt>0?'+':'')+b.optTilt+' '+badge('n',b.optTiltStatus||'provisional')):'')))
+        +'<div style="font-size:10px;color:var(--muted,#8a93a0);margin-top:3px">Richness &gt;110% = options rich vs realized; tilt is provisional &amp; uncalibrated — not a recommendation.</div>';}
+    html+='</div>'; h.innerHTML=html;
+  }
+  function curSym(){var b=document.getElementById('sym');return b?(b.textContent||'').trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,''):'';}
+  function boot(){
+    fetch('marketmap.json',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
+      MMAP={}; (d.names||[]).forEach(function(n){if(n&&n.t)MMAP[n.t]=n;});
+      render(curSym());
+      var bg=document.getElementById('sym');
+      if(bg&&window.MutationObserver){new MutationObserver(function(){render(curSym());}).observe(bg,{childList:true,characterData:true,subtree:true});}
+      var sel=document.getElementById('symsel'); if(sel)sel.addEventListener('change',function(){setTimeout(function(){render(curSym());},60);});
+    }).catch(function(){});
+  }
+  if(document.readyState!=='loading')boot(); else document.addEventListener('DOMContentLoaded',boot);
+})();
+
+</script>
 </body></html>

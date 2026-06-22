@@ -1,0 +1,14 @@
+#!/bin/sh
+# Block a commit if any inline <script> block fails to parse.
+#
+# Enable once per clone:
+#     git config core.hooksPath .githooks
+#
+# (chmod +x .githooks/pre-commit on macOS/Linux; not required on Windows.)
+
+node tools/check-scripts.mjs || {
+  echo ""
+  echo "x commit blocked: an inline <script> block has a syntax error (see above)."
+  echo "  Fix it, or bypass once with: git commit --no-verify"
+  exit 1
+}

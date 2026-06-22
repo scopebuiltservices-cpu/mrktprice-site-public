@@ -1,0 +1,20 @@
+name: syntax-check
+
+# Fails the build if any inline <script> block in an HTML file has a syntax
+# error. This is the gate that would have caught the truncated live-ticker
+# IIFE the moment it was committed instead of letting it ship.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify inline <script> blocks parse
+        run: node tools/check-scripts.mjs

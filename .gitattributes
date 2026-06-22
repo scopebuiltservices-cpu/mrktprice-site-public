@@ -1,2 +1,11 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Shell scripts and git hooks must stay LF on every checkout — a CRLF
+# shebang (#!/bin/sh\r) breaks the interpreter on Unix and Git Bash.
+*.sh         text eol=lf
+.githooks/** text eol=lf
+
+# Keep the syntax-check tooling LF for consistent cross-platform runs
+*.mjs        text eol=lf
+*.yml        text eol=lf

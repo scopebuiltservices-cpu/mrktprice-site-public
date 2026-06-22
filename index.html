@@ -1,242 +1,88 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>MrktPrice — Sign in</title>
-<meta name="description" content="MrktPrice — institutional-grade market intelligence. Sign in."/>
+<meta name="description" content="MrktPrice — institutional-grade market intelligence. Sign in with your access code."/>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="icon" type="image/png" sizes="64x64" href="splash/favicon-dove.png"/><link rel="icon" type="image/png" sizes="32x32" href="splash/favicon-32.png"/><link rel="apple-touch-icon" href="splash/apple-touch-dove.png"/>
-<meta name="theme-color" content="#070d0b"/>
-<meta name="color-scheme" content="dark"/>
-<meta property="og:type" content="website"/>
-<meta property="og:title" content="MrktPrice — institutional-grade market intelligence"/>
+<link rel="icon" type="image/png" sizes="64x64" href="splash/favicon-dove-green.png"/>
+<link rel="icon" type="image/png" sizes="32x32" href="splash/favicon-32-green.png"/>
+<link rel="apple-touch-icon" href="splash/apple-touch-dove-green.png"/>
+<meta name="theme-color" content="#0f3d33"/><meta name="color-scheme" content="dark"/>
+<meta property="og:type" content="website"/><meta property="og:title" content="MrktPrice — institutional-grade market intelligence"/>
 <meta property="og:description" content="Sign in to MrktPrice. Read Opportunity News free."/>
 <meta property="og:url" content="https://mrktprice.com/"/>
 <meta property="og:image" content="https://mrktprice.com/splash/og-card.png"/>
-<meta property="og:image:width" content="1200"/>
-<meta property="og:image:height" content="630"/>
-<meta name="twitter:image" content="https://mrktprice.com/splash/og-card.png"/>
-<meta name="twitter:card" content="summary_large_image"/>
-<link rel="preconnect" href="https://jnatyouqlrdhmghnluzv.supabase.co" crossorigin>
-<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-<link rel="dns-prefetch" href="https://mrktprice-data.onrender.com"><style>
-:root{--text:#f4f7f5;--muted:#9aa9a2;--line:rgba(255,255,255,.09);--line2:rgba(255,255,255,.15);
- --accent:#2fd1c0;--accent-2:#49e6d0;--accent-ink:#04231d;--pink:#ff3da6;--green:#21e6a4;--blue:#2bb6ff;--err:#ff9b9b;--ok:#86e6c6}
+<style>
+:root{--ink:#f3f8f5;--muted:#a9c5ba;--line:rgba(255,255,255,.12);--line2:rgba(255,255,255,.2);
+ --mint:#2fd1c0;--mint2:#27e0b0;--accent-ink:#06231d}
 *{box-sizing:border-box}
-::selection{background:rgba(55,211,182,.32);color:#fff}
-html,body{margin:0;min-height:100%;color:var(--text);
- background:radial-gradient(1100px 700px at 50% -8%,#0d1b17 0%,#070d0b 54%),#070d0b;
- font:15px/1.55 'Inter',-apple-system,Segoe UI,Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
-.glow{position:fixed;inset:0;z-index:0;pointer-events:none;
- background:radial-gradient(820px 560px at 50% 9%,rgba(55,211,182,.10),transparent 60%),radial-gradient(640px 460px at 50% 116%,rgba(40,120,160,.06),transparent 60%)}
-.grain{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.035;mix-blend-mode:overlay;
- background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='160'%20height='160'%3E%3Cfilter%20id='n'%3E%3CfeTurbulence%20type='fractalNoise'%20baseFrequency='0.9'%20numOctaves='2'/%3E%3C/filter%3E%3Crect%20width='100%25'%20height='100%25'%20filter='url(%23n)'/%3E%3C/svg%3E");background-size:170px 170px}
-.geo{position:fixed;z-index:0;pointer-events:none;height:auto;mix-blend-mode:screen;filter:saturate(1.06)}
-.geo-tl{top:0;left:0;width:clamp(208px,31vw,432px)}
-.geo-br{bottom:0;right:0;width:clamp(146px,22vw,296px);transform:rotate(180deg)}
-.depth{position:fixed;z-index:0;pointer-events:none;height:auto;opacity:.5;filter:blur(36px) saturate(1.1);mix-blend-mode:screen}
-.depth-1{top:-7vh;right:-9vw;width:46vw;max-width:640px}
-.depth-2{bottom:-11vh;left:-7vw;width:34vw;max-width:460px}
-@media (max-width:560px){.geo-tl{width:56vw}.geo-br{width:42vw}.depth{opacity:.34}}
+::selection{background:rgba(47,209,192,.34);color:#fff}
+html,body{margin:0;min-height:100%;color:var(--ink);overflow-x:hidden;
+ font:15px/1.55 'Inter',-apple-system,Segoe UI,Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+/* crisp vector low-poly background */
+body{background:#0f3d33 url("splash/bg-green.svg") center/cover no-repeat fixed}
+.veil{position:fixed;inset:0;z-index:0;pointer-events:none;
+ background:radial-gradient(900px 620px at 50% 22%,rgba(58,156,132,.18),transparent 62%),linear-gradient(180deg,rgba(7,30,25,.10),rgba(7,30,25,.34))}
 .wrap{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:34px 22px}
 @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
-.an{opacity:0;animation:rise .85s cubic-bezier(.4,.1,.2,1) forwards}
-/* flight-in entrance: dove arcs in from the lower left, overshoots, settles */
-@keyframes flyin{0%{opacity:0;transform:translate(-64px,92px) scale(.64) rotate(-13deg)}
- 45%{opacity:1}72%{transform:translate(11px,-15px) scale(1.05) rotate(4deg)}
- 100%{opacity:1;transform:translate(0,0) scale(1) rotate(0)}}
-.doveframe{position:relative;display:flex;align-items:center;justify-content:center}
-.dove{height:clamp(118px,19vw,182px);width:auto;display:block;
- filter:drop-shadow(0 20px 42px rgba(0,0,0,.55)) drop-shadow(0 0 34px rgba(55,211,182,.13));
- animation:flyin 1.6s cubic-bezier(.18,.72,.2,1) .12s both}
-.dovelink{display:inline-block;cursor:pointer;transition:transform .25s cubic-bezier(.34,1.4,.5,1)}
-.dovelink:hover{transform:scale(1.035)}
-.dovelink:active{transform:scale(.99)}
-/* interactive color-cycling dove: shimmers through the spectrum; holds green on hover */
-.huecycle{display:inline-block;line-height:0;animation:huespin 7s linear infinite}
-@keyframes huespin{from{filter:hue-rotate(0deg)}to{filter:hue-rotate(360deg)}}
-.dovelink:hover .huecycle{animation:none;filter:sepia(.5) saturate(2.6) hue-rotate(70deg) brightness(1.03)}
-.brand{display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:2px}
-.brandtext{display:flex;flex-direction:column;align-items:center;min-width:0}
-.title{font-size:clamp(30px,7vw,50px);font-weight:200;letter-spacing:.006em;line-height:1;color:#fff;white-space:nowrap}
-.title b{font-weight:600}
-.title .d{font-weight:200;color:#fff;opacity:.5;font-size:.56em;letter-spacing:.02em}
-.rule{width:124px;height:2px;margin:15px auto 0;border-radius:2px;background:linear-gradient(90deg,transparent,#ff3da6,#21e6a4,#2bb6ff,transparent);opacity:.92}
-.tag{font-size:13px;letter-spacing:.01em;color:var(--muted);font-weight:400;margin-top:14px}
-.card{position:relative;width:min(366px,92vw);margin-top:30px;display:flex;flex-direction:column;gap:11px;
- background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:16px;padding:22px 20px;
- -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
- box-shadow:0 30px 70px -34px rgba(0,0,0,.8);transition:opacity .45s,transform .45s}
-.card.gone{opacity:0;transform:translateY(18px) scale(.97);pointer-events:none}
-.btn{position:relative;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
- padding:13px;font-size:14px;font-weight:600;cursor:pointer;border-radius:11px;border:1px solid transparent;
- transition:background .16s,border-color .16s,box-shadow .16s,transform .1s}
+.an{opacity:0;animation:rise .8s cubic-bezier(.4,.1,.2,1) forwards}
+.dove{width:clamp(132px,20vw,184px);height:auto;display:block;margin:0 auto;
+ image-rendering:auto;filter:drop-shadow(0 18px 40px rgba(0,0,0,.5)) drop-shadow(0 0 30px rgba(47,209,192,.16))}
+.title{font-size:clamp(32px,7.4vw,54px);font-weight:200;letter-spacing:.004em;line-height:1;color:#fff;white-space:nowrap;margin-top:14px}
+.title b{font-weight:600}.title .d{font-weight:200;opacity:.55;font-size:.56em;letter-spacing:.02em}
+.tag{font-size:11px;letter-spacing:.34em;text-transform:uppercase;color:var(--muted);font-weight:500;margin-top:12px}
+.card{position:relative;width:min(380px,92vw);margin-top:30px;display:flex;flex-direction:column;gap:11px;
+ background:rgba(8,34,28,.46);border:1px solid var(--line);border-radius:16px;padding:22px 20px;
+ -webkit-backdrop-filter:blur(10px) saturate(1.1);backdrop-filter:blur(10px) saturate(1.1);
+ box-shadow:0 30px 70px -34px rgba(0,0,0,.7)}
+label.cl{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);text-align:left;margin:0 2px -3px}
+.card input{width:100%;background:rgba(255,255,255,.05);border:1px solid var(--line2);border-radius:11px;color:#fff;
+ padding:13px 14px;font:15px 'Inter',sans-serif;letter-spacing:.04em;outline:none;transition:border-color .15s,box-shadow .15s}
+.card input::placeholder{color:#8fb0a5}
+.card input:focus{border-color:var(--mint);box-shadow:0 0 0 3px rgba(47,209,192,.18)}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;font-size:15px;font-weight:700;
+ cursor:pointer;border-radius:11px;border:1px solid transparent;color:var(--accent-ink);
+ background:linear-gradient(120deg,var(--mint2),var(--mint));transition:filter .15s,box-shadow .15s,transform .08s}
+.btn:hover{filter:brightness(1.06);box-shadow:0 12px 28px -12px rgba(47,209,192,.6)}
 .btn:active{transform:translateY(1px)}
-.gbtn{background:transparent;border-color:var(--line2);color:var(--text);font-weight:500}
-.gbtn:hover{border-color:var(--accent);background:rgba(255,255,255,.05);color:#fff}
-.gbtn.hot{border-color:var(--accent);box-shadow:0 0 0 1px rgba(47,209,192,.5)}
-.gtxt{font-weight:600}
-.act{background:linear-gradient(120deg,var(--green),var(--blue));color:var(--accent-ink);font-weight:700}
-.act:hover{filter:brightness(1.06);box-shadow:0 12px 28px -12px rgba(43,182,255,.6)}
-.ghost{background:transparent;border-color:var(--line2);color:var(--text);font-weight:500}
-.ghost:hover{border-color:var(--accent);background:rgba(55,211,182,.06);color:#fff}
-#codego{background:transparent;border-color:var(--line2);color:var(--text)}
-#codego:hover{border-color:var(--accent);background:rgba(55,211,182,.06)}
-button[disabled]{opacity:.5;cursor:default}
-.ghint{font-size:11px;color:var(--accent);margin:-4px 2px 0;display:none}
-.caps{display:none;font-size:10.5px;color:#e6c06a;margin:-4px 2px 2px}.caps.on{display:block}
-.divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:10px;letter-spacing:.16em;text-transform:uppercase;margin:5px 0 2px}
-.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
-.card input{width:100%;background:rgba(255,255,255,.04);border:1px solid var(--line2);border-radius:11px;color:#fff;
- padding:12px 13px;font:14px 'Inter',sans-serif;outline:none;transition:border-color .15s,box-shadow .15s}
-.card input::placeholder{color:#8a9a93}
-.card input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(55,211,182,.16)}
-.pwwrap{position:relative}.pwwrap input{padding-right:58px}
-.pweye{position:absolute;right:7px;top:50%;transform:translateY(-50%);background:none;border:0;color:#8a9a93;font-size:11px;font-weight:600;letter-spacing:.04em;cursor:pointer;padding:5px 7px;border-radius:7px}
-.pweye:hover{color:#fff;background:rgba(255,255,255,.06)}
-.row{display:flex;gap:9px}.row>button{flex:1}
-.linkrow{display:flex;justify-content:space-between;font-size:12px;margin-top:3px;flex-wrap:wrap;gap:6px}
-.linkrow a{color:var(--muted);cursor:pointer;text-decoration:none}
-.linkrow a:hover{color:var(--accent)}
-#codebox{display:none;flex-direction:column;gap:10px;margin-top:2px}
-.msg{min-height:16px;font-size:12px;color:var(--muted);text-align:center}.msg.err{color:var(--err)}.msg.ok{color:var(--ok)}
-.news{margin-top:22px;font-size:12.5px;color:var(--muted);text-decoration:none;display:inline-flex;align-items:center}.news:hover{color:#fff}
-.newsdove{height:18px;width:auto;margin-right:8px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))}
-.userchip{position:fixed;left:50%;bottom:15vh;transform:translateX(-50%) translateY(12px);z-index:6;display:flex;align-items:center;gap:13px;
- background:rgba(13,22,18,.92);border:1px solid var(--line2);border-radius:20px;padding:11px 14px 11px 11px;
- box-shadow:0 26px 64px -28px rgba(0,0,0,.85);opacity:0;pointer-events:none;transition:opacity .5s,transform .5s;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
-.userchip.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
-.perchwrap{position:relative;width:50px;height:50px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
-.perchdove{height:48px;width:auto;opacity:0;transform-origin:bottom center;filter:drop-shadow(0 0 14px rgba(55,211,182,.55))}
-.userchip.landed .perchdove{animation:perchbob 3.4s ease-in-out infinite}
-@keyframes perchbob{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-2px) rotate(-2deg)}}
-.uinfo{display:flex;flex-direction:column;align-items:flex-start;line-height:1.25;min-width:0}
-.uname{font-size:14px;font-weight:600;color:#fff;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.usub{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
-.enterbtn{margin-left:4px;padding:11px 17px;font-weight:700;font-size:13px;color:var(--accent-ink);text-decoration:none;white-space:nowrap;
- background:var(--accent);border-radius:11px}
-.enterbtn:hover{background:var(--accent-2)}
-.flydove{position:fixed;z-index:50;pointer-events:none;filter:drop-shadow(0 12px 26px rgba(0,0,0,.5)) drop-shadow(0 0 26px rgba(55,211,182,.45))}
-@media (prefers-reduced-motion:reduce){.huecycle{animation:none}.an{animation:none;opacity:1}.dove{animation:none}.userchip.landed .perchdove{animation:none}}
+.msg{min-height:16px;font-size:12px;margin:2px 2px 0;color:var(--muted)}
+.msg.err{color:#ffb1b1}.msg.ok{color:var(--mint2)}
+.news{margin-top:22px}.news a{color:var(--muted);text-decoration:none;font-size:13px;border-bottom:1px solid transparent;transition:color .15s,border-color .15s}
+.news a:hover{color:#fff;border-color:var(--mint)}
+.hint{font-size:11px;color:var(--muted);opacity:.85;margin-top:8px}
+@media (prefers-reduced-motion:reduce){.an{animation:none;opacity:1}body{background-attachment:scroll}}
 </style></head>
 <body>
-<div class="glow"></div><div class="grain"></div><svg class="geo geo-tl" viewBox="0 0 320 320" aria-hidden="true"><defs><linearGradient id="gP" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff8fd0"/><stop offset="1" stop-color="#e0247f"/></linearGradient><linearGradient id="gG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7bf3c8"/><stop offset="1" stop-color="#12b483"/></linearGradient><linearGradient id="gB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#86d6ff"/><stop offset="1" stop-color="#1f86d6"/></linearGradient><linearGradient id="gO" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd57a"/><stop offset="1" stop-color="#e0892a"/></linearGradient></defs><polygon points="0,0 175,0 0,185" fill="url(#gP)" opacity=".78"/><polygon points="175,0 0,185 190,165" fill="url(#gB)" opacity=".6"/><polygon points="0,185 190,165 60,320" fill="url(#gG)" opacity=".54"/><polygon points="175,0 280,55 190,165" fill="url(#gG)" opacity=".4"/><polygon points="190,165 280,55 320,200" fill="url(#gP)" opacity=".3"/><polygon points="0,185 60,320 0,320" fill="url(#gB)" opacity=".42"/><polygon points="190,165 320,200 246,300" fill="url(#gO)" opacity=".3"/><polygon points="118,40 150,72 98,82" fill="#c8fff2" opacity=".5"/><path d="M64,256 A128,128 0 0 1 256,88" fill="none" stroke="url(#gB)" stroke-width="2.2" opacity=".34"/></svg><svg class="geo geo-br" viewBox="0 0 320 320" aria-hidden="true"><polygon points="0,0 175,0 0,185" fill="url(#gP)" opacity=".78"/><polygon points="175,0 0,185 190,165" fill="url(#gB)" opacity=".6"/><polygon points="0,185 190,165 60,320" fill="url(#gG)" opacity=".54"/><polygon points="175,0 280,55 190,165" fill="url(#gG)" opacity=".4"/><polygon points="190,165 280,55 320,200" fill="url(#gP)" opacity=".3"/><polygon points="0,185 60,320 0,320" fill="url(#gB)" opacity=".42"/><polygon points="190,165 320,200 246,300" fill="url(#gO)" opacity=".3"/><polygon points="118,40 150,72 98,82" fill="#c8fff2" opacity=".5"/><path d="M64,256 A128,128 0 0 1 256,88" fill="none" stroke="url(#gB)" stroke-width="2.2" opacity=".34"/></svg><svg class="depth depth-1" viewBox="0 0 400 400" aria-hidden="true"><polygon points="40,0 400,120 220,400" fill="url(#gB)" opacity=".55"/></svg><svg class="depth depth-2" viewBox="0 0 400 400" aria-hidden="true"><polygon points="0,80 360,0 120,400" fill="url(#gP)" opacity=".45"/></svg>
+<div class="veil"></div>
 <div class="wrap">
-  <div class="brand">
-    <a id="enter" href="terminal.html" class="dovelink" title="Click the dove to enter"><span class="doveframe"><span class="huecycle"><img class="dove" src="splash/dove.png" alt="MrktPrice — click the dove to enter"/></span></span></a>
-    <div class="brandtext an" style="animation-delay:.62s">
-      <div class="title"><b>mrkt</b>price<span class="d">.com</span></div>
-      <div class="rule" aria-hidden="true"></div>
-    </div>
-  </div>
-  <div class="tag an" style="animation-delay:.74s">Institutional-grade market intelligence</div>
-  <div class="card an" style="animation-delay:.88s">
-    <input id="email" name="email" placeholder="you@email.com" autocomplete="email" inputmode="email" aria-label="Email address" autocapitalize="off" autocorrect="off" spellcheck="false"/>
-    <div class="pwwrap"><input id="pw" name="password" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password"/><button type="button" id="pwtoggle" class="pweye" aria-label="Show password">Show</button></div>
-    <div id="caps" class="caps" aria-hidden="true">⇪ Caps Lock is on</div>
-    <div class="row"><button id="signin" class="btn act">Log in</button><button id="signup" class="btn ghost">Create account</button></div>
-    <div class="linkrow"><a id="magic">Email me a one-tap link</a><a id="forgot">Forgot password?</a><a id="codetoggle">Have an access code?</a></div>
-    <div class="divider">or continue with</div>
-    <div class="ghint" id="ghint">Gmail detected — Google or the one-tap link is quickest.</div>
-    <button id="google" class="btn gbtn">
-      <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.4 29.3 35 24 35c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 20-7.6 20-21 0-1.2-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 16 3 9.1 7.6 6.3 14.7z"/><path fill="#4CAF50" d="M24 45c5.2 0 10-2 13.6-5.2l-6.3-5.2C29.2 35.5 26.7 36.5 24 36.5c-5.3 0-9.7-2.6-11.3-7l-6.5 5C9 40.3 15.9 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.6l6.3 5.2C41.5 36.6 44 31 44 24c0-1.2-.1-2.3-.4-3.5z"/></svg>
-      <span class="gtxt">Continue with Google</span>
-    </button>
-    <div id="codebox"><input id="code" placeholder="Owner / team access code" autocomplete="off" aria-label="Access code" autocapitalize="off" autocorrect="off" spellcheck="false"/><button id="codego" class="btn">Enter with access code</button></div>
+  <img class="dove an" style="animation-delay:.05s" src="splash/dove-green.png" width="698" height="848" alt="MrktPrice dove" decoding="async"/>
+  <h1 class="title an" style="animation-delay:.16s"><b>mrkt</b>price<span class="d">.com</span></h1>
+  <div class="tag an" style="animation-delay:.24s">Institutional-grade market intelligence</div>
+  <div class="card an" style="animation-delay:.32s">
+    <label class="cl" for="code">Access code</label>
+    <input id="code" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Enter your access code" aria-label="Access code"/>
+    <button class="btn" id="go" type="button">Enter →</button>
     <div class="msg" id="msg" role="status" aria-live="polite"></div>
+    <div class="hint">Owner access. Your code unlocks the live terminal &amp; Opportunity Map.</div>
   </div>
-  <a class="news an" style="animation-delay:1s" href="reports/index.html"><img class="newsdove" src="splash/dove.png" alt=""/>Read Opportunity News — free &rarr;</a>
+  <div class="news an" style="animation-delay:.4s"><a href="reports/index.html">Read Opportunity News — free →</a></div>
 </div>
-<div id="userchip" class="userchip">
-  <div class="perchwrap"><img id="perch" class="perchdove" src="splash/dove.png" alt=""/></div>
-  <div class="uinfo"><span class="uname" id="uname">Signed in</span><span class="usub">your guardian · signed in</span></div>
-  <a class="enterbtn" id="enterbtn" href="terminal.html">Enter <span aria-hidden="true">&rarr;</span></a>
-</div>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 (function(){
-  var SUPABASE_URL='https://jnatyouqlrdhmghnluzv.supabase.co', SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpuYXR5b3VxbHJkaG1naG5sdXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0NzY0MzgsImV4cCI6MjA5NzA1MjQzOH0.AdJLcTE46ci7XSKckxv2cQWIFWPp6BXdHrIspay4Ajg';
-  var API=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:8000':'https://mrktprice-data.onrender.com';
-  var $=function(i){return document.getElementById(i);};
-  var email=$('email'),pw=$('pw'),gbtn=$('google'),ghint=$('ghint'),card=document.querySelector('.card'),chip=$('userchip'),hero=$('enter');
-  function msgset(t,c){var m=$('msg');if(m){m.textContent=t;m.className='msg'+(c?' '+c:'');}}
-  var sb=(window.supabase&&/^https:\/\//.test(SUPABASE_URL))?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON):null;
-  function persist(s){try{localStorage.setItem('mrkt.token',s.access_token);localStorage.setItem('mrkt.refresh',s.refresh_token||'');localStorage.setItem('mrkt.email',(s.user&&s.user.email)||'');localStorage.setItem('mrkt.ok','1');}catch(e){}}
-  function isGoogle(v){return /@(gmail|googlemail)\.com\s*$/i.test(v);}
-  function validEmail(v){return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v||'');}
-  function safeOrigin(){return /^https?:$/.test(location.protocol)?location.origin:'https://mrktprice.com';}
-  function friendly(m){m=(m||'').toLowerCase();
-    if(/provider is not enabled|unsupported provider/.test(m))return 'Google sign-in isn’t switched on yet — use the email one-tap link below for now.';
-    if(/redirect|callback|not allowed|invalid.*url/.test(m))return 'This address isn’t whitelisted for Google yet — use the email link, or sign in from mrktprice.com.';
-    return null;}
-  var _authed=false;
-  function flyToPerch(){
-    var hi=hero.querySelector('.dove'), perch=$('perch');
-    var rm=window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches;
-    var a=hi.getBoundingClientRect(), b=perch.getBoundingClientRect();
-    if(rm||!a.width||!b.width){perch.style.opacity='1';chip.classList.add('landed');hero.style.visibility='hidden';return;}
-    var fly=hi.cloneNode(true);fly.removeAttribute('class');fly.className='flydove';
-    fly.style.left=a.left+'px';fly.style.top=a.top+'px';fly.style.width=a.width+'px';fly.style.height=a.height+'px';fly.style.margin='0';
-    document.body.appendChild(fly);hero.style.visibility='hidden';
-    var dx=b.left-a.left, dy=b.top-a.top, sc=b.width/a.width, lift=Math.max(70,Math.abs(dx)*0.18);
-    var anim=fly.animate([
-      {transform:'translate(0,0) scale(1) rotate(0deg)',offset:0},
-      {transform:'translate('+(dx*0.3)+'px,'+(dy*0.3-lift)+'px) scale('+(0.84+0.16*sc)+') rotate(-8deg)',offset:.34},
-      {transform:'translate('+(dx*0.64)+'px,'+(dy*0.64-lift*0.45)+'px) scale('+(0.55+0.45*sc)+') rotate(6deg)',offset:.64},
-      {transform:'translate('+dx+'px,'+dy+'px) scale('+sc+') rotate(0deg)',offset:1}
-    ],{duration:1300,easing:'cubic-bezier(.45,.03,.2,1)',fill:'forwards'});
-    anim.onfinish=function(){perch.style.opacity='1';chip.classList.add('landed');try{fly.remove();}catch(e){}};
+  var $=function(id){return document.getElementById(id);};
+  function msg(t,cls){var m=$('msg');m.textContent=t||'';m.className='msg'+(cls?' '+cls:'');}
+  function enter(){
+    var c=($('code').value||'').trim();
+    if(!c){msg('Enter your access code to continue.','err');$('code').focus();return;}
+    try{localStorage.setItem('mrkt.code',c);localStorage.removeItem('mrkt.token');}catch(e){}
+    msg('Welcome — opening your terminal…','ok');
+    setTimeout(function(){location.href='terminal.html';},320);
   }
-  function goAuthed(label){
-    if(_authed)return;_authed=true;
-    $('uname').textContent=label||'Signed in';
-    if(card)card.classList.add('gone');
-    chip.classList.add('show');
-    requestAnimationFrame(function(){requestAnimationFrame(flyToPerch);});
-  }
-  if(sb){
-    sb.auth.onAuthStateChange(function(ev,session){
-      if(session&&(ev==='SIGNED_IN'||ev==='INITIAL_SESSION'||ev==='TOKEN_REFRESHED')){persist(session);goAuthed((session.user&&session.user.email)||'Signed in');}
-    });
-  }
-  function needSb(){if(!sb){msgset("Sign-in didn't load — check your connection and refresh, or use an access code.",'err');return false;}return true;}
-  {
-    gbtn.onclick=function(){if(!needSb())return;
-      if(location.protocol==='file:'){msgset('Google sign-in needs the live site. From a local file, use the email one-tap link or an access code.','err');return;}
-      msgset('Connecting to Google…');gbtn.disabled=true;
-      sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:safeOrigin()+'/index.html',skipBrowserRedirect:true}}).then(function(r){
-        if(r&&r.error){gbtn.disabled=false;msgset(friendly(r.error.message)||r.error.message,'err');return;}
-        var url=r&&r.data&&r.data.url;
-        if(!url){gbtn.disabled=false;msgset('Could not start Google sign-in — use the email one-tap link.','err');return;}
-        fetch(url,{method:'GET',redirect:'manual'}).then(function(resp){
-          if(resp.type==='opaqueredirect'||resp.status===0||resp.ok){location.href=url;return;}
-          resp.text().then(function(t){
-            if(/not enabled|unsupported provider|validation_failed/i.test(t)){gbtn.disabled=false;msgset('Google sign-in isn’t switched on yet — use the email one-tap link below.','err');}
-            else{location.href=url;}
-          }).catch(function(){location.href=url;});
-        }).catch(function(){location.href=url;});
-      });};
-    email.addEventListener('input',function(){var hot=isGoogle(email.value.trim());ghint.style.display=hot?'block':'none';gbtn.classList.toggle('hot',hot);});
-    $('signin').onclick=function(){var e=email.value.trim(),p=pw.value;if(!validEmail(e)||!p){msgset('Enter a valid email and your password — or use the one-tap link.','err');return;}
-      if(!needSb())return;try{localStorage.setItem('mrkt.email',e);}catch(_){}var b=$('signin');b.disabled=true;msgset('Signing in…');sb.auth.signInWithPassword({email:e,password:p}).then(function(r){b.disabled=false;if(r.error)msgset(r.error.message,'err');}).catch(function(){b.disabled=false;msgset('Network error — please try again.','err');});};
-    $('signup').onclick=function(){var e=email.value.trim(),p=pw.value;if(!validEmail(e)||p.length<8){msgset('Use a valid email and an 8+ character password.','err');return;}
-      if(!needSb())return;var b=$('signup');b.disabled=true;msgset('Creating your account…');sb.auth.signUp({email:e,password:p}).then(function(r){b.disabled=false;if(r.error)msgset(r.error.message,'err');else if(!(r.data&&r.data.session))msgset('Account created — check your email to confirm, then log in.','ok');}).catch(function(){b.disabled=false;msgset('Network error — please try again.','err');});};
-    $('magic').onclick=function(){var e=email.value.trim();if(!validEmail(e)){msgset('Enter a valid email first.','err');email.focus();return;}if(!needSb())return;try{localStorage.setItem('mrkt.email',e);}catch(_){}msgset('Sending your one-tap link…');
-      sb.auth.signInWithOtp({email:e,options:{emailRedirectTo:safeOrigin()+'/index.html',shouldCreateUser:true}}).then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Check your '+(isGoogle(e)?'Gmail':'email')+' — tap the link to finish.','ok');}).catch(function(){msgset('Network error — please try again.','err');});};
-  }
-  var pwtoggle=$('pwtoggle');if(pwtoggle)pwtoggle.onclick=function(){var sh=pw.type==='password';pw.type=sh?'text':'password';pwtoggle.textContent=sh?'Hide':'Show';pwtoggle.setAttribute('aria-label',(sh?'Hide':'Show')+' password');pw.focus();};
-  var forgot=$('forgot');if(forgot)forgot.onclick=function(){var e=email.value.trim();if(!validEmail(e)){msgset('Enter your email above, then tap Forgot password?','err');email.focus();return;}if(!needSb())return;msgset('Sending a reset link…');sb.auth.resetPasswordForEmail(e,{redirectTo:safeOrigin()+'/index.html'}).then(function(r){if(r.error)msgset(r.error.message,'err');else msgset('Check your email for a password-reset link.','ok');}).catch(function(){msgset('Network error — please try again.','err');});};
-  if(email)email.addEventListener('keydown',function(ev){if(ev.key==='Enter'){ev.preventDefault();pw.focus();}});
-  document.addEventListener('visibilitychange',function(){if(!document.hidden&&!_authed&&gbtn)gbtn.disabled=false;});
-  var capsEl=$('caps');function capChk(ev){if(capsEl&&ev.getModifierState)capsEl.classList.toggle('on',ev.getModifierState('CapsLock'));}
-  if(pw){pw.addEventListener('keydown',capChk);pw.addEventListener('keyup',capChk);pw.addEventListener('blur',function(){if(capsEl)capsEl.classList.remove('on');});}
-  ['magic','forgot','codetoggle'].forEach(function(id){var el=$(id);if(el){el.setAttribute('role','button');el.setAttribute('tabindex','0');el.addEventListener('keydown',function(ev){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();el.click();}});}});
-  $('codetoggle').onclick=function(){var bx=$('codebox');bx.style.display=bx.style.display==='flex'?'none':'flex';if(bx.style.display==='flex')$('code').focus();};
-  $('codego').onclick=function(){var c=$('code').value.trim();if(!c){msgset('Enter your access code.','err');return;}msgset('Checking code…');
-    fetch(API+'/auth',{headers:{'X-Access-Code':c},cache:'no-store'}).then(function(r){if(r.status===200){try{localStorage.setItem('mrkt.code',c);localStorage.setItem('mrkt.ok','1');}catch(e){}goAuthed('Owner / team access');}else msgset('That access code was not accepted.','err');}).catch(function(){msgset('Could not reach the data service.','err');});};
-  hero.addEventListener('click',function(e){if(!_authed){e.preventDefault();if(email)email.focus();msgset('Sign in below — your dove will perch by your name, then take you in.','ok');}});
-  if(pw)pw.addEventListener('keydown',function(ev){if(ev.key==='Enter')$('signin').click();});
-  window.addEventListener('load',function(){var d=document.querySelector('.dovelink');if(d)d.classList.add('ready');try{var le=localStorage.getItem('mrkt.email');if(le&&email&&!email.value){email.value=le;var hot=isGoogle(le);ghint.style.display=hot?'block':'none';gbtn.classList.toggle('hot',hot);}}catch(e){}if(email){if(email.value){pw&&pw.focus();}else{email.focus();}}});
+  $('go').addEventListener('click',enter);
+  $('code').addEventListener('keydown',function(e){if(e.key==='Enter')enter();});
+  // already signed in? offer straight through
+  try{if(localStorage.getItem('mrkt.code')||localStorage.getItem('mrkt.token')){msg('You have an active session — press Enter to continue.');}}catch(e){}
+  $('code').focus();
 })();
 </script>
 </body></html>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        

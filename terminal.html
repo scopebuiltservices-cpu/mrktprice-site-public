@@ -198,6 +198,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
  <div id="coneInstrument"></div>
  <div id="coneContext"></div>
  <div id="intradayStrip"></div>
+ <div id="xsectionPanel"></div>
  <div id="htrend" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:3px;align-items:center"></div>
  <div id="cadence" style="margin-top:6px"></div>
  <div id="qledger" style="margin-top:6px"></div>
@@ -1617,7 +1618,7 @@ function renderConeInstrument(sym,mcOverride){
     var xs=coneCrossSection(pj,last,[1,5,10,20].filter(function(h){return h<=nP;}));
     var _ctr={};xs.forEach(function(x){_ctr[x.h]=x.q50;});var cf=null;try{cf=coneConformalQuantiles(CUR.c,xs.map(function(x){return x.h;}),_ctr);}catch(_ce){}
     var _regs=_coneBuildRegimes(last,nP);var mc=null;if(mcOverride&&mcOverride._sym===sym){mc=mcOverride;}else{try{mc=coneMixtureMC(last,nP,_regs,{high:A.high,low:A.low,mid:A.mid},3000);}catch(_me){}try{var _kk=sym+':'+nP+':'+((last||0).toFixed(2))+':'+((A.high||0)+'/'+(A.low||0)+'/'+(A.mid||0));if(_kk!==_coneLastKick){_coneLastKick=_kk;coneMCAsync(last,nP,_regs,{high:A.high,low:A.low,mid:A.mid},10000).then(function(hi){hi._sym=sym;if(typeof CUR==='object'&&CUR&&CUR.sym===sym){try{renderConeInstrument(sym,hi);}catch(_re){}}}).catch(function(){});}}catch(_ke){}}
-    var pp=mc?{pUp:mc.pUp,pFinAboveMid:mc.pFinAboveMid,pTouchHi:mc.pTouchHi,pTouchLo:mc.pTouchLo,eMFE:mc.eMFE,eMAE:mc.eMAE,N:mc.N}:conePathProbs(pj,last,{high:A.high,low:A.low,mid:A.mid});
+    var pp=mc?{pUp:mc.pUp,pFinAboveMid:mc.pFinAboveMid,pTouchHi:mc.pTouchHi,pTouchLo:mc.pTouchLo,eMFE:mc.eMFE,eMAE:mc.eMAE,N:mc.N}:conePathProbs(pj,last,{high:A.high,low:A.low,mid:A.mid});if(mc&&typeof CUR==='object'&&CUR){CUR._coneDir={up:mc.pUp>=0.5,p:mc.pUp};}
     var _regLine=mc?('<div style="margin-top:4px;font-size:9px;color:var(--muted,#8a93a0)">regime mix: '+_regs.map(function(rg,i){return rg.name+' '+(100*mc.mix[i]).toFixed(0)+'%';}).join(' \u00b7 ')+'</div>'):'';
     var cal=coneCalibration(CUR.c,Math.min(nP,10));
     var ev=coneEventInfo(sym,nP,lastDate);
@@ -2025,6 +2026,151 @@ function coneMCAsync(last,nP,regimes,levels,N){
   });
 }
 
+/* ===== cross-sectional comparison engine + worker (injected) ===== */
+/* ===== CROSS-SECTIONAL COMPARISON ENGINE (pure, worker-serializable) =====
+   Across the loaded universe: Pearson correlation, lead-lag (who moves first), relative strength,
+   rolling beta to a benchmark AND to a rate proxy, all conditioned on the INTEREST-RATE REGIME
+   (winding up = rates rising / unwinding = rates falling). Pure math; unit-tested. */
+function _alignReturns(seriesMap){
+  /* seriesMap: {T:{dates:[...], closes:[...]}} -> common ascending date axis -> {tickers, dates, R} */
+  var tickers=Object.keys(seriesMap),idx={},k,t;
+  for(k=0;k<tickers.length;k++){t=tickers[k];var sm=seriesMap[t];if(!sm||!sm.dates)continue;
+    for(var i=0;i<sm.dates.length;i++){var d=String(sm.dates[i]).slice(0,10);idx[d]=(idx[d]||0)+1;}}
+  var need=tickers.length,common=Object.keys(idx).filter(function(d){return idx[d]===need;}).sort();
+  if(common.length<20)return null;
+  var pos={};for(k=0;k<tickers.length;k++){t=tickers[k];pos[t]={};var s2=seriesMap[t];for(var j=0;j<s2.dates.length;j++)pos[t][String(s2.dates[j]).slice(0,10)]=s2.closes[j];}
+  var R={};for(k=0;k<tickers.length;k++){t=tickers[k];var arr=[];for(var m=1;m<common.length;m++){var c0=pos[t][common[m-1]],c1=pos[t][common[m]];arr.push((c0>0&&c1>0)?Math.log(c1/c0):0);}R[t]=arr;}
+  return {tickers:tickers,dates:common.slice(1),R:R};
+}
+function _pearson(a,b){var n=Math.min(a.length,b.length);if(n<8)return 0;var sa=0,sb=0,i;for(i=0;i<n;i++){sa+=a[i];sb+=b[i];}var ma=sa/n,mb=sb/n,sab=0,saa=0,sbb=0;for(i=0;i<n;i++){var da=a[i]-ma,db=b[i]-mb;sab+=da*db;saa+=da*da;sbb+=db*db;}var dn=Math.sqrt(saa*sbb);return dn>0?sab/dn:0;}
+function _leadLag(a,b,maxLag){
+  /* best lag in [-maxLag,maxLag]; lag>0 => a LEADS b (a_t ~ b_{t+lag}). returns {lag,corr} */
+  maxLag=maxLag||5;var best={lag:0,corr:_pearson(a,b)};
+  for(var L=1;L<=maxLag;L++){
+    var aL=a.slice(0,a.length-L),bL=b.slice(L);var c1=_pearson(aL,bL); /* a leads b by L */
+    var aR=a.slice(L),bR=b.slice(0,b.length-L);var c2=_pearson(aR,bR); /* b leads a by L */
+    if(Math.abs(c1)>Math.abs(best.corr)){best={lag:L,corr:c1};}
+    if(Math.abs(c2)>Math.abs(best.corr)){best={lag:-L,corr:c2};}
+  }
+  return best;
+}
+function _beta(asset,mkt){var n=Math.min(asset.length,mkt.length);if(n<8)return null;var sm=0,smm=0,sam=0,sa=0,i;for(i=0;i<n;i++){sm+=mkt[i];sa+=asset[i];}var mm=sm/n,ma=sa/n;for(i=0;i<n;i++){var dm=mkt[i]-mm;sam+=(asset[i]-ma)*dm;smm+=dm*dm;}return smm>0?sam/smm:null;}
+function _maskBeta(asset,mkt,mask,sign){var a=[],m=[];for(var i=0;i<asset.length&&i<mask.length;i++){if(mask[i]===sign){a.push(asset[i]);m.push(mkt[i]);}}return (a.length>=8)?_beta(a,m):null;}
+function _maskCorr(a,b,mask,sign){var x=[],y=[];for(var i=0;i<a.length&&i<mask.length;i++){if(mask[i]===sign){x.push(a[i]);y.push(b[i]);}}return (x.length>=8)?_pearson(x,y):null;}
+function rateRegimeMask(rateCloses,win){
+  /* +1 = winding UP (rates rising over trailing win), -1 = unwinding (falling), aligned to RETURNS (len-1) */
+  win=win||20;var m=[];for(var i=1;i<rateCloses.length;i++){var j=Math.max(0,i-win);var chg=rateCloses[i]-rateCloses[j];m.push(chg>0?1:(chg<0?-1:0));}return m;
+}
+function rateRegimeFromReturns(rRet,win){win=win||20;var m=[];for(var i=0;i<rRet.length;i++){var j=Math.max(0,i-win+1),s=0;for(var z=j;z<=i;z++)s+=rRet[z];m.push(s>0?1:(s<0?-1:0));}return m;}
+function relStrength(R){
+  /* cumulative log-return per ticker -> rank (1=strongest). also 1m/3m windows */
+  var out={};for(var t in R){var a=R[t],cum=0,c1=0,c3=0,n=a.length;for(var i=0;i<n;i++)cum+=a[i];for(i=Math.max(0,n-21);i<n;i++)c1+=a[i];for(i=Math.max(0,n-63);i<n;i++)c3+=a[i];out[t]={cum:cum,m1:c1,m3:c3};}
+  var arr=Object.keys(out).sort(function(x,y){return out[y].cum-out[x].cum;});arr.forEach(function(t,i){out[t].rank=i+1;});out._n=arr.length;return out;
+}
+function xsCompute(seriesMap,focus,opts){
+  opts=opts||{};var al=_alignReturns(seriesMap);if(!al)return {error:'need>=20 common dates across loaded universe'};
+  var R=al.R,tickers=al.tickers,bench=opts.benchmark,rate=opts.rateProxy,maxLag=opts.maxLag||5;
+  if(tickers.indexOf(focus)<0)focus=tickers[0];
+  var fa=R[focus];
+  /* benchmark returns: explicit, else equal-weight universe mean */
+  var bR=(bench&&R[bench])?R[bench]:(function(){var n=fa.length,avg=new Array(n);for(var i=0;i<n;i++){var s=0,c=0;for(var k=0;k<tickers.length;k++){var v=R[tickers[k]][i];if(v===v){s+=v;c++;}}avg[i]=c?s/c:0;}return avg;})();
+  /* correlation + lead-lag of focus vs every peer */
+  var peers=[];for(var k=0;k<tickers.length;k++){var t=tickers[k];if(t===focus||t===bench||t===rate)continue;
+    var c=_pearson(fa,R[t]),ll=_leadLag(fa,R[t],maxLag);peers.push({t:t,corr:c,lag:ll.lag,lagCorr:ll.corr});}
+  peers.sort(function(a,b){return Math.abs(b.corr)-Math.abs(a.corr);});
+  var leaders=peers.slice().filter(function(x){return x.lag<0;}).sort(function(a,b){return Math.abs(b.lagCorr)-Math.abs(a.lagCorr);}).slice(0,3); /* lag<0 => peer leads focus */
+  var laggards=peers.slice().filter(function(x){return x.lag>0;}).sort(function(a,b){return Math.abs(b.lagCorr)-Math.abs(a.lagCorr);}).slice(0,3);
+  var rs=relStrength(R);
+  var betaMkt=_beta(fa,bR);
+  /* rate-regime conditioning */
+  var rateRes=null;
+  if(rate&&R[rate]){
+    var mask=rateRegimeFromReturns(R[rate],opts.rateWin||20);
+    var nUp=mask.filter(function(x){return x>0;}).length,nDn=mask.filter(function(x){return x<0;}).length;
+    rateRes={proxy:rate,betaRate:_beta(fa,R[rate]),
+      betaUp:_maskBeta(fa,bR,mask,1),betaDn:_maskBeta(fa,bR,mask,-1),
+      corrUp:_maskCorr(fa,bR,mask,1),corrDn:_maskCorr(fa,bR,mask,-1),
+      nUp:nUp,nDn:nDn,regimeNow:mask.length?mask[mask.length-1]:0};
+  }
+  return {focus:focus,n:al.dates.length,tickers:tickers.length,benchmark:bench||'(equal-weight universe)',
+    peers:peers.slice(0,8),leaders:leaders,laggards:laggards,
+    rs:{rank:rs[focus]?rs[focus].rank:null,n:rs._n,m1:rs[focus]?rs[focus].m1:null,m3:rs[focus]?rs[focus].m3:null},
+    betaMkt:betaMkt,rate:rateRes};
+}
+
+/* ===== cross-sectional comparison: inline Web-Worker + render panel + cone tie ===== */
+var _xsWorker=null,_xsReq=0,_xsCbs={},_xsKey='';
+function _xsWorkerSrc(){
+  return [_alignReturns.toString(),_pearson.toString(),_leadLag.toString(),_beta.toString(),_maskBeta.toString(),_maskCorr.toString(),
+    rateRegimeMask.toString(),rateRegimeFromReturns.toString(),relStrength.toString(),xsCompute.toString(),
+    "self.onmessage=function(e){var d=e.data;try{var r=xsCompute(d.seriesMap,d.focus,d.opts);self.postMessage({id:d.id,ok:true,r:r});}catch(err){self.postMessage({id:d.id,ok:false,e:String(err)});}};"
+  ].join('\n');
+}
+function _xsEnsureWorker(){
+  if(_xsWorker)return _xsWorker;
+  if(typeof Worker==='undefined'||typeof Blob==='undefined'||!URL.createObjectURL)return null;
+  try{var b=new Blob([_xsWorkerSrc()],{type:'application/javascript'});_xsWorker=new Worker(URL.createObjectURL(b));
+    _xsWorker.onmessage=function(e){var cb=_xsCbs[e.data.id];if(cb){delete _xsCbs[e.data.id];cb(e.data);}};
+    _xsWorker.onerror=function(){try{_xsWorker.terminate();}catch(_e){}_xsWorker=null;};
+  }catch(_e){_xsWorker=null;}return _xsWorker;
+}
+function xsAsync(seriesMap,focus,opts){return new Promise(function(res,rej){
+  var w=_xsEnsureWorker();if(!w){rej('no-worker');return;}
+  var id=++_xsReq,to=setTimeout(function(){delete _xsCbs[id];rej('timeout');},12000);
+  _xsCbs[id]=function(d){clearTimeout(to);if(d.ok)res(d.r);else rej(d.e);};
+  try{w.postMessage({id:id,seriesMap:seriesMap,focus:focus,opts:opts});}catch(_e){clearTimeout(to);rej('post');}
+});}
+function _xsSeriesMap(maxN){
+  var out={},keys=[];try{keys=(typeof ACTIVE==='function')?ACTIVE().slice():Object.keys(DATA);}catch(_e){try{keys=Object.keys(DATA||{});}catch(_e2){keys=[];}}
+  ['SPY','QQQ','IWM','^TNX','^TYX','TLT','IEF'].forEach(function(t){if(typeof DATA==='object'&&DATA[t]&&keys.indexOf(t)<0)keys.push(t);});
+  keys.slice(0,maxN||60).forEach(function(t){var d=(typeof DATA==='object')?DATA[t]:null;if(d&&d.dates&&d.closes&&d.closes.length>=40)out[t]={dates:d.dates,closes:d.closes};});
+  return out;
+}
+function _xsBench(m){return m['SPY']?'SPY':(m['QQQ']?'QQQ':(m['IWM']?'IWM':null));}
+function _xsRate(m){return m['^TNX']?'^TNX':(m['^TYX']?'^TYX':(m['TLT']?'TLT':(m['IEF']?'IEF':null)));}
+function _xsRow(k,v,c){return '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:var(--muted,#8a93a0)">'+k+'</span><span style="font-weight:700;color:'+(c||'var(--ink,#eef3f8)')+'">'+v+'</span></div>';}
+function _renderXsResult(host,r){
+  if(!r||r.error){host.innerHTML='<div style="font-size:10px;color:var(--faint,#646e7c);margin-top:7px">cross-section: '+((r&&r.error)||'unavailable')+'</div>';return;}
+  function pc(x){return (x==null||x!==x)?'—':(x>=0?'+':'')+x.toFixed(2);}
+  var card='background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:7px 9px';
+  var head='<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8a93a0);margin-bottom:4px">';
+  var topc=r.peers.slice(0,5).map(function(x){return x.t+' '+pc(x.corr);}).join(' · ');
+  var lead=r.leaders.length?r.leaders.map(function(x){return x.t+'(-'+Math.abs(x.lag)+'d '+pc(x.lagCorr)+')';}).join(' · '):'—';
+  var lag=r.laggards.length?r.laggards.map(function(x){return x.t+'(+'+x.lag+'d '+pc(x.lagCorr)+')';}).join(' · '):'—';
+  var rate=r.rate;
+  var rateHtml=rate?(_xsRow('rate proxy',rate.proxy+' · now '+(rate.regimeNow>0?'WINDING UP':(rate.regimeNow<0?'UNWINDING':'flat')),rate.regimeNow>0?'#ef5f4e':(rate.regimeNow<0?'#2ecc8f':'#8a93a0'))
+     +_xsRow('β vs mkt — rates up / down',(rate.betaUp!=null?rate.betaUp.toFixed(2):'—')+' / '+(rate.betaDn!=null?rate.betaDn.toFixed(2):'—')+' <span style="font-size:9px;color:var(--faint,#646e7c)">('+rate.nUp+'/'+rate.nDn+'d)</span>')
+     +_xsRow('corr vs mkt — up / down',(rate.corrUp!=null?rate.corrUp.toFixed(2):'—')+' / '+(rate.corrDn!=null?rate.corrDn.toFixed(2):'—'))
+     +(((rate.betaUp!=null)&&(rate.betaDn!=null)&&Math.abs(rate.betaUp-rate.betaDn)>0.3)?('<div style="font-size:9px;color:var(--caution,#e0c14a);margin-top:2px">&#9888; rate-regime dependent: '+(rate.betaUp>rate.betaDn?'more':'less')+' market-sensitive when rates wind up</div>'):'')
+   ):'<div style="font-size:9px;color:var(--faint,#646e7c)">load a rate proxy (^TNX / TLT / IEF) for rate-regime betas</div>';
+  /* cone <-> cross-section agreement */
+  var tie='';try{var cd=CUR._coneDir;if(cd){var rsUp=(r.rs.m1!=null)?(r.rs.m1>0):null;var agree=(rsUp!=null)?(cd.up===rsUp):null;
+    tie='<div style="'+card+';margin-top:7px">'+head+'Cone &harr; cross-section'+'</div><div style="font-size:11px">'
+      +_xsRow('cone direction','P(up) '+(100*cd.p).toFixed(0)+'% → '+(cd.up?'UP':'DOWN'),cd.up?'#2ecc8f':'#ef5f4e')
+      +_xsRow('focus 1m relative strength',(r.rs.rank!=null?('#'+r.rs.rank+' of '+r.rs.n):'—')+' → '+(rsUp?'UP':'DOWN'),rsUp?'#2ecc8f':'#ef5f4e')
+      +(agree!=null?_xsRow('agreement',agree?'ALIGNED (cone + tape agree)':'CONFLICT (treat as low-conviction)',agree?'#2ecc8f':'#e0c14a'):'')
+      +'</div></div>';}}catch(_te){}
+  host.innerHTML='<div style="'+card+';margin-top:7px">'+head+'Cross-section ('+r.tickers+' loaded, '+r.n+'d, off-thread)</div>'
+    +'<div style="font-size:11px;display:flex;flex-direction:column;gap:2px">'
+    +_xsRow('top |correlation|',topc||'—')
+    +_xsRow('leads '+r.focus+' (peer first)',lead,'#8fb0e0')
+    +_xsRow('lags '+r.focus+' (peer after)',lag,'#b98ad0')
+    +_xsRow('relative strength',r.rs.rank!=null?('#'+r.rs.rank+' of '+r.rs.n+' (1m '+pc(100*r.rs.m1)+'%)'):'—')
+    +_xsRow('beta vs '+r.benchmark,r.betaMkt!=null?r.betaMkt.toFixed(2):'—')
+    +rateHtml
+    +'</div></div>'+tie;
+}
+function renderXsection(sym){
+  var host=document.getElementById('xsectionPanel');if(!host)return;
+  var map=_xsSeriesMap(60),nt=Object.keys(map).length;
+  if(nt<3){host.innerHTML='<div style="font-size:9px;color:var(--faint,#646e7c);margin-top:7px">Cross-section compares the loaded universe (correlation · lead-lag · relative strength · beta · rate winding-up/unwinding). Load 3+ tickers to populate.</div>';return;}
+  var opts={benchmark:_xsBench(map),rateProxy:_xsRate(map),maxLag:5,rateWin:20};
+  var key=sym+':'+nt;
+  xsAsync(map,sym,opts).then(function(r){if(typeof CUR==='object'&&CUR){CUR._xs=r;}_renderXsResult(host,r);}).catch(function(){
+    try{var r2=xsCompute(map,sym,opts);if(typeof CUR==='object'&&CUR){CUR._xs=r2;}_renderXsResult(host,r2);}catch(_e){host.innerHTML='<div style="font-size:10px;color:var(--faint,#646e7c);margin-top:7px">cross-section unavailable</div>';}
+  });
+}
+
 function drawCone(){const cv=document.getElementById('cone');const {W,H,g}=fitCanvas(cv);
  const co=(CUR.cone||[]).filter(x=>isFinite(x.p5)&&isFinite(x.p25)&&isFinite(x.p50)&&isFinite(x.p75)&&isFinite(x.p95));const padL=4,padR=30,padB=16,padT=6;
  if(co.length<2){g.fillStyle='#69727f';g.font='10px sans-serif';g.fillText('insufficient history for vol cone',8,Math.round(H/2));document.getElementById('conenote').textContent='';return;}
@@ -2244,7 +2390,7 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
  var WATCH_KEY="mrkt.watchlist",CAP=520,MAXW=50,TKRE=/^[A-Z0-9.\-]{1,12}$/,_drag=null;
  function st(m,c){var s=document.getElementById('liveStatus');if(s){s.textContent=m;s.style.color=c||'var(--muted)';}}
  function ensureFund(t){if(typeof FUND==='object'&&FUND&&!FUND[t]&&DATA[t])liveFund(t);}        /* lazy: fetch fundamentals only when needed */
- function selLoad(t){var s=document.getElementById('symsel');if(s)s.value=t;if(typeof load==='function')load(t,DATA[t]);ensureFund(t);if(typeof computeMacro==='function')computeMacro(t);try{autoFreshen(t);}catch(_e){}try{intradayWatch(t);}catch(_e){}}
+ function selLoad(t){var s=document.getElementById('symsel');if(s)s.value=t;if(typeof load==='function')load(t,DATA[t]);ensureFund(t);if(typeof computeMacro==='function')computeMacro(t);try{autoFreshen(t);}catch(_e){}try{intradayWatch(t);}catch(_e){}try{renderXsection(t);}catch(_e){}}
  function loadWatch(){try{return JSON.parse(localStorage.getItem(WATCH_KEY)||'[]');}catch(e){return [];}}
  function saveWatch(a){try{localStorage.setItem(WATCH_KEY,JSON.stringify(a));}catch(e){}}
  function addToWatch(t){var w=loadWatch();if(w.indexOf(t)<0){if(w.length>=MAXW){st('watchlist full ('+MAXW+')','var(--warn)');return;}w.push(t);saveWatch(w);}renderChips();refreshTracker();}

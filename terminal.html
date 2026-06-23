@@ -1749,7 +1749,7 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
  var WATCH_KEY="mrkt.watchlist",CAP=520,MAXW=50,TKRE=/^[A-Z0-9.\-]{1,12}$/,_drag=null;
  function st(m,c){var s=document.getElementById('liveStatus');if(s){s.textContent=m;s.style.color=c||'var(--muted)';}}
  function ensureFund(t){if(typeof FUND==='object'&&FUND&&!FUND[t]&&DATA[t])liveFund(t);}        /* lazy: fetch fundamentals only when needed */
- function selLoad(t){var s=document.getElementById('symsel');if(s)s.value=t;if(typeof load==='function')load(t,DATA[t]);ensureFund(t);if(typeof computeMacro==='function')computeMacro(t);}
+ function selLoad(t){var s=document.getElementById('symsel');if(s)s.value=t;if(typeof load==='function')load(t,DATA[t]);ensureFund(t);if(typeof computeMacro==='function')computeMacro(t);try{autoFreshen(t);}catch(_e){}}
  function loadWatch(){try{return JSON.parse(localStorage.getItem(WATCH_KEY)||'[]');}catch(e){return [];}}
  function saveWatch(a){try{localStorage.setItem(WATCH_KEY,JSON.stringify(a));}catch(e){}}
  function addToWatch(t){var w=loadWatch();if(w.indexOf(t)<0){if(w.length>=MAXW){st('watchlist full ('+MAXW+')','var(--warn)');return;}w.push(t);saveWatch(w);}renderChips();refreshTracker();}
@@ -1803,6 +1803,16 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
    }
   });
  }
+ var _autoFresh={};
+ function _staleDays(t){try{var D=DATA[t];if(!D||!D.dates||!D.dates.length)return 0;var last=D.dates[D.dates.length-1];return Math.round((Date.now()-(Date.parse(String(last).slice(0,10)+'T00:00:00Z')||Date.now()))/86400000);}catch(e){return 0;}}
+ function autoFreshen(t){try{
+   if(!t||_autoFresh[t])return;
+   if(!(MRKT_TOKEN||MRKT_CODE))return;            /* live mode (signed in / owner code) required */
+   if(_staleDays(t)<=3)return;                    /* baked snapshot already current */
+   _autoFresh[t]=1;
+   st('auto-refreshing '+t+' to latest EOD \u2026','var(--accent)');
+   loadTicker(t,false,true).then(function(){try{if(typeof CUR!=='undefined'&&CUR&&CUR.sym===t)selLoad(t);}catch(_e){}}).catch(function(){});
+ }catch(e){}}
  /* bounded-concurrency runner: process items limit-at-a-time, resolve when all settle */
  function runLimited(items,limit,worker){
   return new Promise(function(resolve){var i=0,active=0,done=0,N=items.length;if(!N){resolve();return;}

@@ -196,6 +196,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
    <span class="note" id="asym" style="margin:0"></span></div></div>
  <canvas id="cv2"></canvas><div class="readout" id="ro"></div>
  <div id="coneInstrument"></div>
+ <div id="coneContext"></div>
  <div id="htrend" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:3px;align-items:center"></div>
  <div id="cadence" style="margin-top:6px"></div>
  <div id="qledger" style="margin-top:6px"></div>
@@ -1491,7 +1492,7 @@ function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementByI
  const rk={pass:0,caution:1,fail:2,'weak-id':1};let w=0;S.forEach(s=>w=Math.max(w,rk[s]??1));const gs=['pass','caution','fail'][w];
  setPill('gate',gs,gs==='pass'?'PASS':gs==='caution'?'PASS · CAUTION':'REJECT');
  document.getElementById('gatewhy').textContent=gs==='pass'?'volatility, RV-ratio, tail, skew within tolerance (timing daily-proxy; dependence degraded).':gs==='caution'?'a risk component elevated/weak-id; size conservatively.':'a hard risk band breached — release withheld.';
- buildAlerts();try{renderConeInstrument(CUR.sym);}catch(_e){}draw();buildInsightTiles(CUR.sym);renderDecision(CUR.sym);renderReaction(CUR.sym);renderMacro(CUR.sym);}
+ buildAlerts();try{renderConeInstrument(CUR.sym);}catch(_e){}try{renderConeContext(CUR.sym);}catch(_e){}draw();buildInsightTiles(CUR.sym);renderDecision(CUR.sym);renderReaction(CUR.sym);renderMacro(CUR.sym);}
 function buildAlerts(){const A=[];const c=CUR.c,r=CUR.r,ic=CUR.icss,last=CUR.last,n=c.length;
  const rvolNow=CUR.rvolS[CUR.rvolS.length-1],v20=CUR.v20[CUR.v20.length-1],v20p=CUR.v20[CUR.v20.length-2];
  const ao=CUR.ao[CUR.ao.length-1],aop=CUR.ao[CUR.ao.length-2];const rvolTh=+document.getElementById('rvolTh').value||2,ddTh=(+document.getElementById('ddTh').value||-15)/100;
@@ -1655,6 +1656,103 @@ function renderConeInstrument(sym){
         +(alerts.length?'<div style="margin-top:5px;font-size:10px;color:var(--caution,#e0c14a);display:flex;flex-direction:column;gap:2px">'+alerts.map(function(a){return '<div>'+a+'</div>';}).join('')+'</div>':'')
         +'<div style="margin-top:4px;font-size:8.5px;color:var(--faint,#646e7c)">Quantiles are asymmetric (skew-aware), read off the same fan drawn above. Path odds are Monte-Carlo ('+pp.N+' paths) on the displayed cone. Calibration is walk-forward coverage of this name&rsquo;s own history. IV annualized 252-day (trading). Research only; not advice.</div></div>';
   }catch(e){host.innerHTML='<div style="font-size:10px;color:var(--faint,#646e7c);margin-top:6px">cone instrument unavailable: '+(e&&e.message||e)+'</div>';CUR.coneExtra=null;}
+}
+
+/* ===== cone context module (injected) ===== */
+/* ===== CONE CONTEXT — expectations · peer-relative valuation · exposure-ranked macro/commodity =====
+   Reads window.MMAP (cross-sectional snapshot: val w/ sector medians, mb macro betas, macroR2, drv),
+   FUND[sym] estimates + the post-earnings reaction history, and CUR.coneExtra (event/iv). All present
+   in the existing pipeline; no new data feed required. */
+function _pctRank(val,arr){if(val==null||!isFinite(val)||!arr||!arr.length)return null;
+  var b=arr.filter(function(x){return x!=null&&isFinite(x);});if(!b.length)return null;
+  var below=b.filter(function(x){return x<=val;}).length;return Math.round(100*below/b.length);}
+function conePeerValuation(sym){try{var M=(typeof window!=='undefined'&&window.MMAP)?window.MMAP[sym]:null;
+  if(!M||!M.val)return null;var v=M.val,sec=M.sec;var peers=[];
+  for(var k in window.MMAP){var nn=window.MMAP[k];if(nn&&nn.sec===sec&&nn.val)peers.push(nn.val);}
+  function col(f){return peers.map(function(p){return p[f];});}
+  return {sector:sec,nPeers:peers.length,
+    fpe:v.fpe,fpePct:_pctRank(v.fpe,col('fpe')),fpeSec:(v.peSec!=null?v.peSec:null),
+    evb:v.evb,evbPct:_pctRank(v.evb,col('evb')),evbSec:(v.evSec!=null?v.evSec:null),
+    peg:v.peg,pegPct:_pctRank(v.peg,col('peg')),fcfY:(M.fcfY!=null?M.fcfY:null),
+    overall:v.overall,reason:v.reason};}catch(_e){return null;}}
+function coneMacroExposure(sym){try{var M=(typeof window!=='undefined'&&window.MMAP)?window.MMAP[sym]:null;
+  if(!M||!M.mb)return null;var lab={MKT:'Equity beta',RATE:'10Y rate',VIX:'Volatility',OIL:'Crude oil',DXY:'US dollar'};
+  var arr=[];for(var f in M.mb){var bv=M.mb[f];if(bv!=null&&isFinite(bv))arr.push({factor:f,label:lab[f]||f,beta:bv});}
+  arr.sort(function(a,b){return Math.abs(b.beta)-Math.abs(a.beta);});
+  var sec=(M.sec||'').toLowerCase(),commod=[];
+  if(/energy|oil|gas/.test(sec))commod=['WTI crude','Henry Hub'];
+  else if(/material|metal|mining|industrial/.test(sec))commod=['Copper','Aluminum'];
+  else if(/tech|semis|hardware|electr/.test(sec))commod=['Copper','US 10Y'];
+  else if(/financ|bank|insur/.test(sec))commod=['US 10Y','HY spread'];
+  else if(/consumer|food|staple/.test(sec))commod=['US 10Y','US dollar'];
+  else commod=['US 10Y','US dollar'];
+  return {drv:M.drv,macroR2:M.macroR2,top:arr.slice(0,3),commod:commod,sector:M.sec};}catch(_e){return null;}}
+function coneExpectations(sym,ev,iv){try{
+  var rm=(typeof reactionMatrix==='function')?reactionMatrix(sym):null;
+  var beatRate=(rm&&rm.epsRate!=null)?rm.epsRate:null,beatN=(rm?rm.epsN:null);
+  var m1=[],m5=[];if(rm&&rm.rows)rm.rows.forEach(function(r){if(r.d1!=null&&isFinite(r.d1))m1.push(Math.abs(r.d1)/100);if(r.d5!=null&&isFinite(r.d5))m5.push(Math.abs(r.d5)/100);});
+  var med1=_cmed(m1),med5=_cmed(m5);
+  var impMove=(iv&&iv.expMovePct!=null)?(iv.expMovePct>1?iv.expMovePct/100:iv.expMovePct):null;
+  return {daysToEvent:ev?ev.calDays:null,date:ev?ev.date:null,within:ev?ev.within:false,
+    beatRate:beatRate,beatN:beatN,medPost1:med1,medPost5:med5,impMove:impMove,
+    wedge:(impMove!=null&&med1!=null&&med1>0)?(impMove/med1):null};}catch(_e){return null;}}
+
+function renderConeContext(sym){var host=document.getElementById('coneContext');if(!host)return;
+  try{
+    var ce=CUR.coneExtra||{},ev=ce.event||null,iv=ce.iv||null;
+    var val=conePeerValuation(sym),mac=coneMacroExposure(sym),exp=coneExpectations(sym,ev,iv);
+    if(!val&&!mac&&!exp){host.innerHTML='<div style="font-size:9px;color:var(--faint,#646e7c);margin-top:6px">Context cards (expectations · valuation · macro) populate in live mode once the market-map snapshot is loaded.</div>';return;}
+    var card='background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:7px 9px';
+    var head='<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8a93a0);margin-bottom:4px">';
+    function kv(k,v,c){return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px"><span style="color:var(--muted,#8a93a0)">'+k+'</span><span style="font-weight:700;color:'+(c||'var(--ink,#eef3f8)')+'">'+v+'</span></div>';}
+    function pctBadge(p,richHigh){if(p==null)return '';var rich=richHigh?p>=70:p<=30;var cheap=richHigh?p<=30:p>=70;
+      var c=rich?'#ef5f4e':(cheap?'#2ecc8f':'#8a93a0');return ' <span style="font-size:9px;color:'+c+'">'+p+'th pctile</span>';}
+    /* EXPECTATIONS */
+    var expHtml='';
+    if(exp){var dte=exp.daysToEvent;
+      expHtml=kv('Next earnings',(exp.date||'—')+(dte!=null?(' ('+dte+'d)'):''),exp.within?'#f5c451':'var(--ink,#eef3f8)')
+        +kv('Beat rate (last '+(exp.beatN||0)+'Q)',exp.beatRate!=null?_pc(exp.beatRate):'—',exp.beatRate!=null?(exp.beatRate>=0.5?'#2ecc8f':'#ef5f4e'):'#8a93a0')
+        +kv('Median post-earn |1d|',exp.medPost1!=null?_pc(exp.medPost1):'—')
+        +kv('Median post-earn |5d|',exp.medPost5!=null?_pc(exp.medPost5):'—')
+        +(exp.impMove!=null?kv('Options-implied move',_pc(exp.impMove),'#b98ad0'):kv('Options-implied move','add-on n/c','#646e7c'))
+        +(exp.wedge!=null?kv('Implied vs realized',(exp.wedge).toFixed(2)+'×',exp.wedge>1.25?'#e0c14a':(exp.wedge<0.8?'#2ecc8f':'var(--ink,#eef3f8)')):'');}
+    else expHtml='<div style="font-size:10px;color:var(--faint,#646e7c)">no earnings history</div>';
+    /* VALUATION (peer-relative) */
+    var valHtml='';
+    if(val){
+      valHtml=kv('Sector',(val.sector||'—')+' · '+val.nPeers+' peers','#8a93a0')
+        +kv('Fwd P/E',(val.fpe!=null?val.fpe.toFixed(1)+'×':'—')+(val.fpeSec!=null&&val.fpe!=null?' <span style="font-size:9px;color:var(--faint,#646e7c)">(sec '+val.fpeSec.toFixed(1)+'×)</span>':'')+pctBadge(val.fpePct,true))
+        +kv('EV/EBITDA',(val.evb!=null?val.evb.toFixed(1)+'×':'—')+(val.evbSec!=null&&val.evb!=null?' <span style="font-size:9px;color:var(--faint,#646e7c)">(sec '+val.evbSec.toFixed(1)+'×)</span>':'')+pctBadge(val.evbPct,true))
+        +kv('PEG',(val.peg!=null?val.peg.toFixed(2):'—')+pctBadge(val.pegPct,true))
+        +kv('FCF yield',val.fcfY!=null?_pc(val.fcfY>1?val.fcfY/100:val.fcfY):'—')
+        +(val.overall?kv('Verdict',val.overall,val.overall==='supported'?'#2ecc8f':(val.overall==='rejected'?'#ef5f4e':'#e0c14a')):'');}
+    else valHtml='<div style="font-size:10px;color:var(--faint,#646e7c)">valuation snapshot not loaded</div>';
+    /* MACRO / COMMODITY (exposure-ranked) */
+    var macHtml='';
+    if(mac){var maxB=Math.max.apply(null,mac.top.map(function(x){return Math.abs(x.beta);}).concat([0.2]));
+      macHtml=kv('Macro-driven',mac.macroR2!=null?(mac.macroR2+'%'):'—',mac.macroR2!=null&&mac.macroR2>=40?'#e0c14a':'var(--ink,#eef3f8)')
+        +kv('Dominant factor',mac.drv||'—','#8fb0e0');
+      mac.top.forEach(function(x){var w=Math.round(100*Math.abs(x.beta)/maxB);var c=x.beta>=0?'#2ecc8f':'#ef5f4e';
+        macHtml+='<div style="display:flex;align-items:center;gap:6px;font-size:10px;margin-top:2px"><span style="width:62px;color:var(--muted,#8a93a0)">'+x.label+'</span>'
+          +'<span style="flex:1;height:6px;background:rgba(120,140,170,.12);border-radius:3px;position:relative"><span style="position:absolute;left:'+(x.beta>=0?50:50-w/2)+'%;width:'+(w/2)+'%;top:0;bottom:0;background:'+c+';border-radius:3px"></span></span>'
+          +'<span style="width:34px;text-align:right;color:'+c+'">'+(x.beta>=0?'+':'')+x.beta.toFixed(2)+'</span></div>';});
+      macHtml+='<div style="font-size:9px;color:var(--faint,#646e7c);margin-top:3px">commodity strip: '+mac.commod.join(' · ')+'</div>';}
+    else macHtml='<div style="font-size:10px;color:var(--faint,#646e7c)">macro exposures not loaded</div>';
+    /* EXTENDED ALERTS (valuation tension · macro · event wedge) */
+    var alerts=[];
+    if(val&&val.fpePct!=null&&val.fpePct>=75){var weak=false;try{var M=window.MMAP[sym];weak=(M&&M.ret&&M.ret['1m']!=null&&M.ret['1m']<0)||(M&&M.z&&M.z.mom!=null&&M.z.mom<0);}catch(_e){}
+      if(weak)alerts.push(['valuation','&#9888; Rich vs sector ('+val.fpePct+'th pctile fwd P/E) with weakening momentum']);}
+    if(val&&val.fpePct!=null&&val.fpePct<=25){var firm=false;try{var M2=window.MMAP[sym];firm=(M2&&M2.ret&&M2.ret['1m']!=null&&M2.ret['1m']>0);}catch(_e){}
+      if(firm)alerts.push(['valuation','Cheap vs sector ('+val.fpePct+'th pctile) with firming price']);}
+    if(exp&&exp.wedge!=null&&exp.wedge>1.25)alerts.push(['event','&#9888; Options pricing a larger-than-usual earnings move ('+(exp.wedge).toFixed(2)+'× the realized 1d)']);
+    if(mac&&mac.macroR2!=null&&mac.macroR2>=50&&mac.top.length)alerts.push(['macro','Heavily macro-driven ('+mac.macroR2+'%) — watch '+(mac.drv||mac.top[0].factor)]);
+    var alertHtml=alerts.length?('<div style="'+card+';margin-top:7px">'+head+'Context alerts</div><div style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--caution,#e0c14a)">'+alerts.map(function(a){return '<div>'+a[1]+'</div>';}).join('')+'</div></div>'):'';
+    host.innerHTML='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-top:7px">'
+      +'<div style="'+card+'">'+head+'Expectations</div>'+expHtml+'</div>'
+      +'<div style="'+card+'">'+head+'Valuation (peer-relative)</div>'+valHtml+'</div>'
+      +'<div style="'+card+'">'+head+'Macro exposure'+'</div>'+macHtml+'</div>'
+      +'</div>'+alertHtml;
+  }catch(e){host.innerHTML='<div style="font-size:10px;color:var(--faint,#646e7c);margin-top:6px">context cards unavailable: '+(e&&e.message||e)+'</div>';}
 }
 
 function drawCone(){const cv=document.getElementById('cone');const {W,H,g}=fitCanvas(cv);

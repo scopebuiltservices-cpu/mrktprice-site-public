@@ -1774,6 +1774,8 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
  }
  function splitRows(rows){var dates=[],closes=[],vols=[];rows.forEach(function(r){dates.push(r[0]);closes.push(+r[1]);vols.push(+r[2]||0);});return{dates:dates,closes:closes,volumes:vols};}
  function mergeLatest(cached,rows){var d=cached.dates.slice(),c=cached.closes.slice(),v=cached.volumes.slice();var last=d.length?d[d.length-1]:'';
+   var _first=rows.length?rows[0][0]:null;
+   if(_first&&last){var _hole=Math.round((Date.parse(String(_first).slice(0,10)+'T00:00:00Z')-Date.parse(String(last).slice(0,10)+'T00:00:00Z'))/86400000);if(_hole>7)return null;}  /* would leave a date hole -> signal full refetch */
    rows.forEach(function(r){var dt=r[0];if(dt>last){d.push(dt);c.push(+r[1]);v.push(+r[2]||0);}else if(dt===last){c[c.length-1]=+r[1];v[v.length-1]=+r[2]||0;}});
    return{dates:d.slice(-CAP),closes:c.slice(-CAP),volumes:v.slice(-CAP)};}
  function fetchJSON(url){return fetch(url,{headers:_hdrs()}).then(function(r){if(r.status===401){needAuth('signin');throw new Error('sign in required');}if(r.status===402){needAuth('subscribe');throw new Error('subscription required');}if(!r.ok)return r.json().then(function(j){throw new Error(j.detail||('HTTP '+r.status));});return r.json();});}
@@ -1788,9 +1790,13 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
   if(select)st('loading '+t+' …','var(--accent)');
   return idbGet(t).then(function(cached){
    if(cached&&cached.dates&&cached.dates.length>=40){
+     var _lc=String(cached.dates[cached.dates.length-1]).slice(0,10);
+     var _gap=Math.round((Date.now()-(Date.parse(_lc+'T00:00:00Z')||Date.now()))/86400000);
+     if(_gap>10){return apiFetch(t,select);}   /* cache too far behind -> full contiguous refetch (no date gap) */
      if(!force||!DATA[t])applyRows(t,cached.dates,cached.closes,cached.volumes,cached.dates[cached.dates.length-1],'cached',select);
      return fetchJSON(MRKT_API+'/history?ticker='+encodeURIComponent(t)+'&rows=12').then(function(j){
         if(!j.rows||!j.rows.length)return;var merged=mergeLatest(cached,j.rows);
+        if(!merged){return apiFetch(t,select);}   /* contiguity hole -> full refetch */
         applyRows(t,merged.dates,merged.closes,merged.volumes,j.asof,'local+'+(merged.dates.length-cached.dates.length)+' new',select);idbPut(t,merged);refreshTracker();
       }).catch(function(e){if(select)st(t+' ✓ cached (offline · '+e.message+')','var(--warn)');_dbg('refresh '+t,e);});
    }else{

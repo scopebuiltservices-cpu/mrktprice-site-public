@@ -197,6 +197,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
  <canvas id="cv2"></canvas><div class="readout" id="ro"></div>
  <div id="htrend" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:3px;align-items:center"></div>
  <div id="cadence" style="margin-top:6px"></div>
+ <div id="qledger" style="margin-top:6px"></div>
  <div class="note">Panes: price + VWAP + fan + regimes · volume coloured by RVOL · Awesome Oscillator (SMA5−SMA34) · drawdown. Daily-bar VWAP (typical price = close); true intraday VWAP needs ticks. Fan = parametric σ-bands (50/80/95, regime-aware) <b>shaded</b> + the <b>conformal 90%</b> distribution-free band (blue dashed, with its realised coverage). +5/10/20d ticks mark the horizon <b>with calendar dates</b>. Thin overlaid lines = the <b>5 triangulated forecast methods</b> (OU reversion · EMA-momentum · Trend · empirical-median · random-walk) with an empirical 10–90% envelope; the on-chart box gives <b>terminal odds</b> — P(up), P(≥P6 high), P(≤P6 low), median. The cone is a calibrated <b>reference range</b>, not a point forecast — the central path is the OU/blend mean, never advice.</div></div>
 <div class="right">
 <div id="insightTiles"></div>
@@ -746,6 +747,30 @@ function drawScatter(X,Y,R,xn,yn){const cv=document.getElementById('slCanvas');c
  g.strokeStyle='#e0a13c';g.lineWidth=2;g.beginPath();g.moveTo(PX(xlo),PY(R.a+R.b*xlo));g.lineTo(PX(xhi),PY(R.a+R.b*xhi));g.stroke();
  g.fillStyle='#69727f';g.font='10px sans-serif';g.fillText(xn==='zsig'?'signal-z (price vs SMA20, σ)':xn==='rvol'?'RVOL':xn==='flow'?'signed $flow':xn==='emamom'?'EMA momentum':'log return',W/2-30,H-8);}
 function nextEarnings(lastDateStr){const d=new Date(lastDateStr+'T00:00:00Z');const qMon=[2,5,8,11];let best=null;for(let yy=d.getUTCFullYear();yy<=d.getUTCFullYear()+1&&!best;yy++){for(const qm of qMon){const qe=new Date(Date.UTC(yy,qm+1,0));const rep=new Date(qe.getTime()+40*86400000);if(rep>d){best=rep;break;}}}return best;}
+function buildQLedger(sym,c,d){var el=document.getElementById('qledger');if(!el)return;
+ var C=(typeof FUND==='object'&&FUND)?FUND[sym]:null;
+ if(!C||!C.quarters||!C.quarters.length){el.innerHTML='<span style="font-size:10px;color:var(--muted)"><b style="color:var(--gold)">QUARTERLY REPORT LEDGER</b> — no quarterly filings embedded for '+sym+'. Run the SEC EDGAR refresh (or live mode) to populate report dates &amp; figures.</span>';return;}
+ var qs=C.quarters.filter(function(q){return (q.filedDate||q.endDate);});
+ if(!qs.length){el.innerHTML='<span style="font-size:10px;color:var(--muted)"><b style="color:var(--gold)">QUARTERLY REPORT LEDGER</b> — quarters present but WITHOUT report dates for '+sym+', so they cannot be aligned to the chart. Re-run the SEC quarterly pull (needs filedDate).</span>';return;}
+ qs=qs.slice().sort(function(a,b){var da=(a.filedDate||a.endDate),db=(b.filedDate||b.endDate);return da<db?1:-1;});
+ var price=c[c.length-1],lastD=d[d.length-1];
+ var dB=function(x){return x==null?'—':(Math.abs(x)>=1e9?'$'+(x/1e9).toFixed(2)+'B':Math.abs(x)>=1e6?'$'+(x/1e6).toFixed(0)+'M':'$'+x.toFixed(0));};
+ var pR=function(x){return x==null?'—':((x>=0?'+':'')+(x*100).toFixed(0)+'%');};
+ function closeOn(fd){for(var i=0;i<d.length;i++){if(d[i]>=fd)return {px:c[i],idx:i};}return null;}
+ var body=qs.map(function(q){var fd=q.filedDate||q.endDate;var co=closeOn(fd);var px=co?co.px:null;var r5=(co&&co.idx+5<c.length)?(c[co.idx+5]/c[co.idx]-1):null;var adj=(q.adjEbitda!=null?q.adjEbitda:q.ebitda);
+   return '<tr style="border-top:1px solid var(--line)"><td style="padding:2px 6px"><b>'+(q.label||'Q')+'</b></td>'
+    +'<td style="padding:2px 6px;color:var(--gold)">'+fd+'</td>'
+    +'<td style="padding:2px 6px;text-align:right;color:#f5d489">'+(px!=null?'$'+px.toFixed(2):'—')+'</td>'
+    +'<td style="padding:2px 6px;text-align:right">'+dB(q.rev)+'</td>'
+    +'<td style="padding:2px 6px;text-align:right">'+(q.eps!=null?'$'+q.eps.toFixed(2):'—')+'</td>'
+    +'<td style="padding:2px 6px;text-align:right;color:var(--gold)">'+dB(adj)+'</td>'
+    +'<td style="padding:2px 6px;text-align:right;color:'+(((q.revYoY||0)>=0)?'var(--pass)':'var(--fail)')+'">'+pR(q.revYoY)+'</td>'
+    +'<td style="padding:2px 6px;text-align:right;color:'+(((r5||0)>=0)?'var(--pass)':'var(--fail)')+'">'+(r5!=null?((r5>=0?'+':'')+(r5*100).toFixed(0)+'%'):'—')+'</td></tr>';}).join('');
+ var ne=(typeof nextEarnings==='function'&&lastD)?nextEarnings(lastD):null;var neTxt=ne?ne.toISOString().slice(0,10):'—';
+ var exp='';var yk=Object.keys(C.years||{}).sort();if(yk.length){var fy=yk[yk.length-1],ry=C.years[fy]||{};var g=(C.summary&&C.summary.revCAGR2!=null)?C.summary.revCAGR2:ry.revGrowth;var nrev=(ry._rev!=null&&g!=null)?ry._rev*(1+g):null;var neps=(ry.eps!=null&&g!=null)?ry.eps*(1+g):null;exp='exp next FY (mechanical trend, not consensus): rev '+dB(nrev)+(g!=null?' ('+(g>=0?'+':'')+(g*100).toFixed(0)+'%)':'')+(neps!=null?' · EPS $'+neps.toFixed(2):'');}
+ el.innerHTML='<div style="font-size:10px;margin:2px 0 3px"><b style="color:var(--gold)">QUARTERLY REPORT LEDGER</b> · <b>'+sym+'</b> — every SEC-reported quarter, the close <b>locked in on the report date</b>, and the +5d reaction. <span style="color:var(--muted)">current price <b style="color:var(--ink)">$'+price.toFixed(2)+'</b> · next report <b style="color:var(--gold)">'+neTxt+'</b> · '+exp+'</span></div>'
+  +'<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:10px;min-width:560px"><tr style="color:var(--muted);text-align:left"><th style="padding:2px 6px">quarter</th><th style="padding:2px 6px">report date</th><th style="padding:2px 6px;text-align:right">close @ date</th><th style="padding:2px 6px;text-align:right">revenue</th><th style="padding:2px 6px;text-align:right">EPS</th><th style="padding:2px 6px;text-align:right">adj EBITDA</th><th style="padding:2px 6px;text-align:right">rev YoY</th><th style="padding:2px 6px;text-align:right">+5d</th></tr>'+body+'</table></div>'
+  +'<div style="font-size:9px;color:var(--muted);margin-top:2px">Reported = SEC actuals (10-Q). <b>Per-quarter analyst expectations are NOT embedded</b> — they need the FMP analyst-estimates feed; the "exp" above is a mechanical FY-trend projection, not consensus. <b>adj EBITDA</b> falls back to EBITDA where the stock-comp add-back is not yet populated (run the extended SEC quarterly pull).</div>';}
 function buildCadence(sym,c,d){const el=document.getElementById('cadence');if(!el)return;const n=c.length,price=c[n-1];
  const lv=[5,8,13,21].map(function(N){const e=(CUR.emaM&&CUR.emaM[N])?CUR.emaM[N].last:null;if(e==null)return '';const dd=(price/e-1)*100;return '<span style="font-size:9px;padding:1px 4px;border:1px solid var(--line);border-radius:4px;color:'+EMACOL[N]+'">EMA'+N+' '+e.toFixed(2)+' <b style="color:'+(dd>=0?'var(--pass)':'var(--fail)')+'">'+(dd>=0?'▲+':'▼')+dd.toFixed(1)+'%</b></span>';}).filter(Boolean).join(' ');
  var earn='';const last=(d&&d.length)?d[d.length-1]:null;if(last){const ne=nextEarnings(last);if(ne){const days=Math.round((ne-new Date(last+'T00:00:00Z'))/86400000);earn='<b>≈ next earnings</b> '+ne.toISOString().slice(0,10)+' (~'+days+'d out, est. from fiscal calendar — the cone should widen here)';}}
@@ -1398,7 +1423,7 @@ function load(sym,s){const c=s.closes,d=s.dates,vol=s.volumes||c.map(()=>0);cons
  const ret=n=>c.length>n?((c[c.length-1]/c[c.length-1-n]-1)*100).toFixed(1)+'%':'—';
  document.getElementById('trail').innerHTML=`<tr><td>1W</td><td class=r>${ret(5)}</td></tr><tr><td>1M</td><td class=r>${ret(21)}</td></tr><tr><td>3M</td><td class=r>${ret(63)}</td></tr><tr><td>Realized σ</td><td class=r>${(rvAnn*100).toFixed(0)}%</td></tr>`;
  if(!document.getElementById('mid').value||document.getElementById('mid').dataset.sym!==sym){document.getElementById('mid').value=last.toFixed(2);document.getElementById('low').value=(last*.90).toFixed(2);document.getElementById('high').value=(last*1.10).toFixed(2);document.getElementById('mid').dataset.sym=sym;}
- redraw();drawCone();buildCadence(sym,c,d);}
+ redraw();drawCone();buildCadence(sym,c,d);try{buildQLedger(sym,c,d);}catch(_e){}}
 function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementById('mid').value,low=+document.getElementById('low').value,high=+document.getElementById('high').value,H=+document.getElementById('hz').value,cf=(+document.getElementById('cf').value)/100,lev=document.getElementById('lev').checked;
  const vs=document.getElementById('volsrc').value;const sig=vs==='regime'?CUR.curRms:(vs==='garch'?CUR.garch.annVol/Math.sqrt(252):0.6*CUR.garch.annVol/Math.sqrt(252)+0.4*CUR.rvDaily);
  const am=document.getElementById('anchorSel').value;let pj;

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>MrktPrice · Macro Complex</title>
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#111824; --panel2:#0e1521; --ink:#e8eef7; --mut:#8aa0b8;
+    --line:#1d2a3a; --up:#15c26b; --dn:#f0556b; --flat:#c9a23a; --accent:#39b6ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#0a0e14,#0c121c);color:var(--ink);
+    font:15px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  header{padding:18px 22px 6px;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{margin:0;font-size:20px;letter-spacing:.5px;font-weight:700}
+  header h1 b{color:var(--accent)}
+  .sub{color:var(--mut);font-size:13px}
+  .asof{margin-left:auto;color:var(--mut);font-size:12px;text-align:right}
+  .wrap{padding:8px 18px 40px;max-width:1280px;margin:0 auto}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:12px}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 18px 16px;
+    position:relative;overflow:hidden;min-height:172px;display:flex;flex-direction:column}
+  .tile .theme{font-size:13px;letter-spacing:.8px;text-transform:uppercase;color:var(--mut);font-weight:700}
+  .tile .big{font-size:42px;font-weight:800;line-height:1.05;margin:6px 0 2px;display:flex;align-items:center;gap:10px}
+  .tile .arrow{font-size:30px}
+  .tile .regime{font-size:14px;font-weight:600;margin:2px 0 10px}
+  .tile .cons{margin-top:auto;display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-size:12px;padding:3px 8px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);
+    display:inline-flex;gap:6px;align-items:center}
+  .chip b{font-weight:700}
+  .up{color:var(--up)} .dn{color:var(--dn)} .flat{color:var(--flat)}
+  .bg-up{box-shadow:inset 0 0 0 1px rgba(21,194,107,.35)} .bg-dn{box-shadow:inset 0 0 0 1px rgba(240,85,107,.35)}
+  .strip{height:5px;border-radius:999px;background:#16202e;margin:10px 0 4px;overflow:hidden}
+  .strip > span{display:block;height:100%}
+  .section-title{margin:24px 4px 2px;font-size:13px;letter-spacing:1px;text-transform:uppercase;color:var(--mut);font-weight:700}
+  .sectors{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px}
+  .scell{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px 12px}
+  .scell .nm{font-size:12px;color:var(--mut)} .scell .v{font-size:20px;font-weight:800;margin-top:2px}
+  .note{color:var(--mut);font-size:12px;margin-top:18px;line-height:1.5}
+  .err{background:#2a1116;border:1px solid #5a2230;color:#ffb3bf;padding:12px 14px;border-radius:12px;margin-top:14px}
+  a.back{color:var(--accent);text-decoration:none;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Mrkt<b>Price</b> · Macro Complex</h1>
+  <span class="sub">Currencies · Interest&nbsp;Rates · Bonds · Commodities — directional read across the 57-ETF factor panel</span>
+  <span class="asof" id="asof">loading…</span>
+</header>
+<div class="wrap">
+  <div id="err"></div>
+  <div class="grid" id="themes"></div>
+  <div class="section-title">Sector rotation (11 SPDRs · 1-month)</div>
+  <div class="sectors" id="sectors"></div>
+  <div class="section-title">Style &amp; risk regime</div>
+  <div class="sectors" id="styles"></div>
+  <p class="note" id="note"></p>
+  <p style="margin-top:14px"><a class="back" href="terminal.html">← Back to terminal</a></p>
+</div>
+<script>
+const F={
+  // theme -> {label, members:[ticker...], subs:{name:[t...]}}
+};
+const fmtPct=v=>(v==null?'—':(v>=0?'+':'')+v.toFixed(1)+'%');
+const cls=v=>v==null?'flat':(v>0.15?'up':v<-0.15?'dn':'flat');
+const arrow=v=>v==null?'•':(v>0.15?'▲':v<-0.15?'▼':'▬');
+
+// momentum blend: lean on 1-month, confirm with 1-week
+function mom(n){const r=n&&n.ret||{};const a=r['1m'],b=r['1w'];
+  if(a==null&&b==null)return null; return 0.65*(a??0)+0.35*(b??0);}
+
+function avg(arr){const x=arr.filter(v=>v!=null);return x.length?x.reduce((s,v)=>s+v,0)/x.length:null;}
+
+function tile(theme,score,regime,regimeCls,cons){
+  const c=cls(score);
+  return `<div class="tile ${score>0?'bg-up':score<0?'bg-dn':''}">
+    <div class="theme">${theme}</div>
+    <div class="big ${c}"><span class="arrow">${arrow(score)}</span>${fmtPct(score)}</div>
+    <div class="regime ${regimeCls||c}">${regime}</div>
+    <div class="strip"><span style="width:${Math.min(100,Math.abs(score||0)*8)}%;background:var(--${c==='up'?'up':c==='dn'?'dn':'flat'})"></span></div>
+    <div class="cons">${cons.map(x=>`<span class="chip">${x.t} <b class="${cls(x.v)}">${fmtPct(x.v)}</b></span>`).join('')}</div>
+  </div>`;
+}
+
+function topMovers(names,map,k=3){
+  return map.map(t=>{const n=names[t];return {t,v:n?mom(n):null};})
+            .filter(x=>x.v!=null).sort((a,b)=>Math.abs(b.v)-Math.abs(a.v)).slice(0,k);
+}
+
+fetch('marketmap.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+  const byT={}; (d.names||[]).forEach(n=>byT[n.t]=n);
+  const asof=d.asof||'—'; const live=String(d.source||'').toLowerCase().includes('live');
+  document.getElementById('asof').textContent=(live?'LIVE · ':'')+'as of '+asof;
+  if(!live){document.getElementById('err').innerHTML=
+    `<div class="err">Showing <b>${d.source||'sample'}</b> — the nightly build hasn't refreshed. Numbers may be illustrative.</div>`;}
+
+  // ---- COMMODITIES ----
+  const COMMOD=['USO','BNO','UNG','GLD','SLV','CPER','PPLT','PALL','DBB','DBA','CORN','WEAT','SOYB','CANE','JO','URA','LIT','REMX','DBC','GSG'];
+  const cScore=avg(COMMOD.map(t=>byT[t]?mom(byT[t]):null));
+  const energy=avg(['USO','BNO','UNG'].map(t=>byT[t]?mom(byT[t]):null));
+  const metals=avg(['GLD','SLV','PPLT','PALL','CPER','DBB'].map(t=>byT[t]?mom(byT[t]):null));
+  const ags=avg(['DBA','CORN','WEAT','SOYB','CANE','JO'].map(t=>byT[t]?mom(byT[t]):null));
+  const cRegime=`Energy ${fmtPct(energy)} · Metals ${fmtPct(metals)} · Ags ${fmtPct(ags)}`;
+
+  // ---- INTEREST RATES & BONDS ----  (bond price up => yields down)
+  const bondMom=avg(['SHY','IEF','TLT'].map(t=>byT[t]?mom(byT[t]):null));
+  const yieldDir = bondMom==null?null:-bondMom; // proxy: yields move opposite to bond price
+  const credit=avg(['HYG','LQD','EMB'].map(t=>byT[t]?mom(byT[t]):null));
+  const rRegime = yieldDir==null?'—':(yieldDir>0.15?'Yields winding UP — duration headwind':yieldDir<-0.15?'Yields unwinding — duration tailwind':'Yields flat')+` · Credit ${fmtPct(credit)}`;
+  const rCls = yieldDir==null?'flat':(yieldDir>0.15?'dn':yieldDir<-0.15?'up':'flat'); // rising yields = risk for most equities
+
+  // ---- US DOLLAR / FX ----
+  const usd=byT['UUP']?mom(byT['UUP']):null;
+  const eur=byT['FXE']?mom(byT['FXE']):null, jpy=byT['FXY']?mom(byT['FXY']):null;
+  const fxRegime = usd==null?'—':(usd>0.15?'Dollar STRENGTHENING — headwind for commodities & EM':usd<-0.15?'Dollar WEAKENING — tailwind for commodities & EM':'Dollar flat');
+  const fxCls = usd==null?'flat':(usd>0.15?'dn':usd<-0.15?'up':'flat');
+
+  document.getElementById('themes').innerHTML=
+    tile('Commodities', cScore, cRegime, cls(cScore), [{t:'Energy',v:energy},{t:'Metals',v:metals},{t:'Ags',v:ags}].concat(topMovers(byT,COMMOD,2)))
+  + tile('Interest Rates &amp; Bonds', yieldDir, rRegime, rCls, topMovers(byT,['SHY','IEF','TLT','TIP','LQD','HYG','EMB'],4).map(x=>({t:x.t,v:-x.v})))
+  + tile('US Dollar &amp; FX', usd, fxRegime, fxCls, [{t:'USD',v:usd},{t:'EUR',v:eur},{t:'JPY',v:jpy}])
+  + tile('Risk Regime', avg([byT['SPY'],byT['QQQ'],byT['IWM']].map(n=>n?mom(n):null)),
+        (function(){const eq=avg([byT['SPY'],byT['QQQ'],byT['IWM']].map(n=>n?mom(n):null));
+         return eq==null?'—':(eq>0.15?'Risk-ON — equities leading':eq<-0.15?'Risk-OFF — defensives leading':'Mixed');})(),null,
+        [{t:'SPY',v:byT['SPY']?mom(byT['SPY']):null},{t:'QQQ',v:byT['QQQ']?mom(byT['QQQ']):null},{t:'IWM',v:byT['IWM']?mom(byT['IWM']):null}]);
+
+  // ---- SECTORS ----
+  const SEC=[['XLK','Tech'],['XLF','Fin'],['XLV','Health'],['XLY','Disc'],['XLP','Staples'],['XLE','Energy'],['XLI','Indu'],['XLB','Mat'],['XLU','Util'],['XLRE','RE'],['XLC','Comm']];
+  document.getElementById('sectors').innerHTML=SEC.map(([t,nm])=>{
+    const v=byT[t]?mom(byT[t]):null;return `<div class="scell"><div class="nm">${nm} · ${t}</div><div class="v ${cls(v)}">${fmtPct(v)}</div></div>`;
+  }).join('');
+
+  // ---- STYLES ----
+  const STY=[['MTUM','Momentum'],['QUAL','Quality'],['VLUE','Value'],['USMV','Low Vol'],['IWF','Growth'],['IWD','Value R1k'],['RSP','Equal-Wt']];
+  document.getElementById('styles').innerHTML=STY.map(([t,nm])=>{
+    const v=byT[t]?mom(byT[t]):null;return `<div class="scell"><div class="nm">${nm} · ${t}</div><div class="v ${cls(v)}">${fmtPct(v)}</div></div>`;
+  }).join('');
+
+  document.getElementById('note').innerHTML=
+    'Each tile blends 1-month (65%) and 1-week (35%) returns of its factor ETFs. Bonds shown as <i>yield direction</i> (inverse of bond price). '
+   +'This is the macro complex that conditions every ticker’s cross-sectional beta and cone direction. Research only — not investment advice.';
+}).catch(e=>{
+  document.getElementById('err').innerHTML=`<div class="err">Couldn’t load marketmap.json (${e}). Open this page on mrktprice.com so it can read the live data file.</div>`;
+  document.getElementById('asof').textContent='offline';
+});
+</script>
+</body>
+</html>

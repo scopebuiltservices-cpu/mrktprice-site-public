@@ -199,6 +199,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
  <div id="coneContext"></div>
  <div id="intradayStrip"></div>
  <div id="xsectionPanel"></div>
+ <div id="xsectionUniverse"></div>
  <div id="htrend" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:3px;align-items:center"></div>
  <div id="cadence" style="margin-top:6px"></div>
  <div id="qledger" style="margin-top:6px"></div>
@@ -2161,7 +2162,7 @@ function _renderXsResult(host,r){
     +'</div></div>'+tie;
 }
 function renderXsection(sym){
-  var host=document.getElementById('xsectionPanel');if(!host)return;
+  var host=document.getElementById('xsectionPanel');if(!host)return;try{loadXsectionUniverse().then(function(U){_renderXsUniverse(sym,U);});}catch(_xu){}
   var map=_xsSeriesMap(60),nt=Object.keys(map).length;
   if(nt<3){host.innerHTML='<div style="font-size:9px;color:var(--faint,#646e7c);margin-top:7px">Cross-section compares the loaded universe (correlation · lead-lag · relative strength · beta · rate winding-up/unwinding). Load 3+ tickers to populate.</div>';return;}
   var opts={benchmark:_xsBench(map),rateProxy:_xsRate(map),maxLag:5,rateWin:20};
@@ -2169,6 +2170,37 @@ function renderXsection(sym){
   xsAsync(map,sym,opts).then(function(r){if(typeof CUR==='object'&&CUR){CUR._xs=r;}_renderXsResult(host,r);}).catch(function(){
     try{var r2=xsCompute(map,sym,opts);if(typeof CUR==='object'&&CUR){CUR._xs=r2;}_renderXsResult(host,r2);}catch(_e){host.innerHTML='<div style="font-size:10px;color:var(--faint,#646e7c);margin-top:7px">cross-section unavailable</div>';}
   });
+}
+
+/* ===== full-universe xsection.json consumption (injected) ===== */
+/* ===== client consumption of the nightly full-universe matrix (xsection.json) ===== */
+var _XSU=null;
+function loadXsectionUniverse(){
+  if(_XSU!==null)return Promise.resolve(_XSU);
+  return fetch('xsection.json',{cache:'no-cache'}).then(function(r){return r.ok?r.json():null;})
+    .then(function(j){_XSU=(j&&j.names)?j:false;return _XSU;}).catch(function(){_XSU=false;return false;});
+}
+function _renderXsUniverse(sym,U){
+  var host=document.getElementById('xsectionUniverse');if(!host)return;
+  if(!U||!U.names){host.innerHTML='';return;}
+  var r=U.names[sym];
+  var card='background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:7px 9px';
+  var head='<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8a93a0);margin-bottom:4px">';
+  if(!r){host.innerHTML='<div style="'+card+';margin-top:7px">'+head+'Full universe — nightly</div><div style="font-size:9px;color:var(--faint,#646e7c)">'+sym+' is not in the nightly universe matrix yet.</div></div>';return;}
+  function row(k,v,c){return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px"><span style="color:var(--muted,#8a93a0)">'+k+'</span><span style="font-weight:700;color:'+(c||'var(--ink,#eef3f8)')+'">'+v+'</span></div>';}
+  function pc(x){return (x==null||x!==x)?'—':(x>=0?'+':'')+x.toFixed(2);}
+  var tc=(r.topCorr||[]).slice(0,5).map(function(x){return x.t+' '+pc(x.c);}).join(' · ');
+  var lead=r.leadMktLag<0?('leads mkt '+Math.abs(r.leadMktLag)+'d'):(r.leadMktLag>0?('lags mkt '+r.leadMktLag+'d'):'coincident');
+  var rateHtml=(r.betaUp!=null&&r.betaDn!=null)?row('β vs mkt — rates up / down',r.betaUp.toFixed(2)+' / '+r.betaDn.toFixed(2),Math.abs(r.betaUp-r.betaDn)>0.3?'#e0c14a':'var(--ink,#eef3f8)'):'';
+  var reg=U.regimeNow>0?'rates WINDING UP':(U.regimeNow<0?'rates UNWINDING':'rates flat');
+  host.innerHTML='<div style="'+card+';margin-top:7px">'+head+'Full universe — nightly ('+U.tickers+' names, '+U.n+'d · '+reg+')</div>'
+    +'<div style="display:flex;flex-direction:column;gap:2px">'
+    +row('relative strength','#'+r.rsRank+' of '+U.tickers)
+    +row('beta vs market',r.betaMkt!=null?r.betaMkt.toFixed(2):'—')
+    +row('lead/lag vs market',lead+' ('+pc(r.leadMktCorr)+')',r.leadMktLag<0?'#8fb0e0':(r.leadMktLag>0?'#b98ad0':'var(--ink,#eef3f8)'))
+    +row('top correlations (universe)',tc||'—')
+    +rateHtml
+    +'</div><div style="margin-top:3px;font-size:8.5px;color:var(--faint,#646e7c)">Nightly server-side matrix over the whole universe (scales the count cheaply); the basket panel above is the live off-thread view.</div></div>';
 }
 
 function drawCone(){const cv=document.getElementById('cone');const {W,H,g}=fitCanvas(cv);

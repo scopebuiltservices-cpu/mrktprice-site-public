@@ -746,7 +746,7 @@ function drawScatter(X,Y,R,xn,yn){const cv=document.getElementById('slCanvas');c
  g.fillStyle='rgba(91,157,255,.55)';for(let i=0;i<X.length;i++){g.beginPath();g.arc(PX(X[i]),PY(Y[i]),1.7,0,7);g.fill();}
  g.strokeStyle='#e0a13c';g.lineWidth=2;g.beginPath();g.moveTo(PX(xlo),PY(R.a+R.b*xlo));g.lineTo(PX(xhi),PY(R.a+R.b*xhi));g.stroke();
  g.fillStyle='#69727f';g.font='10px sans-serif';g.fillText(xn==='zsig'?'signal-z (price vs SMA20, σ)':xn==='rvol'?'RVOL':xn==='flow'?'signed $flow':xn==='emamom'?'EMA momentum':'log return',W/2-30,H-8);}
-function nextEarnings(lastDateStr){const d=new Date(lastDateStr+'T00:00:00Z');const qMon=[2,5,8,11];let best=null;for(let yy=d.getUTCFullYear();yy<=d.getUTCFullYear()+1&&!best;yy++){for(const qm of qMon){const qe=new Date(Date.UTC(yy,qm+1,0));const rep=new Date(qe.getTime()+40*86400000);if(rep>d){best=rep;break;}}}return best;}
+function nextEarnings(lastDateStr,sym){var todayISO=new Date().toISOString().slice(0,10);try{if(!sym&&typeof CUR==='object'&&CUR)sym=CUR.sym;}catch(_e){}try{var C=(typeof FUND==='object'&&FUND)?FUND[sym]:null;if(C&&C.estimates&&C.estimates.length){var fut=C.estimates.map(function(e){return e&&e.date;}).filter(function(dt){return dt&&dt>todayISO;}).sort();if(fut.length)return new Date(fut[0]+'T00:00:00Z');}}catch(_e2){}var refMs=Math.max(Date.now(),Date.parse((lastDateStr||'')+'T00:00:00Z')||0);var d=new Date(refMs);var qMon=[2,5,8,11];var best=null;for(var yy=d.getUTCFullYear();yy<=d.getUTCFullYear()+1&&!best;yy++){for(var i=0;i<qMon.length;i++){var qe=new Date(Date.UTC(yy,qMon[i]+1,0));var rep=new Date(qe.getTime()+40*86400000);if(rep>d){best=rep;break;}}}return best;}
 function buildQLedger(sym,c,d){var el=document.getElementById('qledger');if(!el)return;
  var C=(typeof FUND==='object'&&FUND)?FUND[sym]:null;
  if(!C||!C.quarters||!C.quarters.length){el.innerHTML='<span style="font-size:10px;color:var(--muted)"><b style="color:var(--gold)">QUARTERLY REPORT LEDGER</b> — no quarterly filings embedded for '+sym+'. Run the SEC EDGAR refresh (or live mode) to populate report dates &amp; figures.</span>';return;}
@@ -766,14 +766,14 @@ function buildQLedger(sym,c,d){var el=document.getElementById('qledger');if(!el)
     +'<td style="padding:2px 6px;text-align:right;color:var(--gold)">'+dB(adj)+'</td>'
     +'<td style="padding:2px 6px;text-align:right;color:'+(((q.revYoY||0)>=0)?'var(--pass)':'var(--fail)')+'">'+pR(q.revYoY)+'</td>'
     +'<td style="padding:2px 6px;text-align:right;color:'+(((r5||0)>=0)?'var(--pass)':'var(--fail)')+'">'+(r5!=null?((r5>=0?'+':'')+(r5*100).toFixed(0)+'%'):'—')+'</td></tr>';}).join('');
- var ne=(typeof nextEarnings==='function'&&lastD)?nextEarnings(lastD):null;var neTxt=ne?ne.toISOString().slice(0,10):'—';
+ var ne=(typeof nextEarnings==='function'&&lastD)?nextEarnings(lastD,sym):null;var neTxt=ne?ne.toISOString().slice(0,10):'—';
  var exp='';var yk=Object.keys(C.years||{}).sort();if(yk.length){var fy=yk[yk.length-1],ry=C.years[fy]||{};var g=(C.summary&&C.summary.revCAGR2!=null)?C.summary.revCAGR2:ry.revGrowth;var nrev=(ry._rev!=null&&g!=null)?ry._rev*(1+g):null;var neps=(ry.eps!=null&&g!=null)?ry.eps*(1+g):null;exp='exp next FY (mechanical trend, not consensus): rev '+dB(nrev)+(g!=null?' ('+(g>=0?'+':'')+(g*100).toFixed(0)+'%)':'')+(neps!=null?' · EPS $'+neps.toFixed(2):'');}
  el.innerHTML='<div style="font-size:10px;margin:2px 0 3px"><b style="color:var(--gold)">QUARTERLY REPORT LEDGER</b> · <b>'+sym+'</b> — every SEC-reported quarter, the close <b>locked in on the report date</b>, and the +5d reaction. <span style="color:var(--muted)">current price <b style="color:var(--ink)">$'+price.toFixed(2)+'</b> · next report <b style="color:var(--gold)">'+neTxt+'</b> · '+exp+'</span></div>'
   +'<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:10px;min-width:560px"><tr style="color:var(--muted);text-align:left"><th style="padding:2px 6px">quarter</th><th style="padding:2px 6px">report date</th><th style="padding:2px 6px;text-align:right">close @ date</th><th style="padding:2px 6px;text-align:right">revenue</th><th style="padding:2px 6px;text-align:right">EPS</th><th style="padding:2px 6px;text-align:right">adj EBITDA</th><th style="padding:2px 6px;text-align:right">rev YoY</th><th style="padding:2px 6px;text-align:right">+5d</th></tr>'+body+'</table></div>'
   +'<div style="font-size:9px;color:var(--muted);margin-top:2px">Reported = SEC actuals (10-Q). <b>Per-quarter analyst expectations are NOT embedded</b> — they need the FMP analyst-estimates feed; the "exp" above is a mechanical FY-trend projection, not consensus. <b>adj EBITDA</b> falls back to EBITDA where the stock-comp add-back is not yet populated (run the extended SEC quarterly pull).</div>';}
 function buildCadence(sym,c,d){const el=document.getElementById('cadence');if(!el)return;const n=c.length,price=c[n-1];
  const lv=[5,8,13,21].map(function(N){const e=(CUR.emaM&&CUR.emaM[N])?CUR.emaM[N].last:null;if(e==null)return '';const dd=(price/e-1)*100;return '<span style="font-size:9px;padding:1px 4px;border:1px solid var(--line);border-radius:4px;color:'+EMACOL[N]+'">EMA'+N+' '+e.toFixed(2)+' <b style="color:'+(dd>=0?'var(--pass)':'var(--fail)')+'">'+(dd>=0?'▲+':'▼')+dd.toFixed(1)+'%</b></span>';}).filter(Boolean).join(' ');
- var earn='';const last=(d&&d.length)?d[d.length-1]:null;if(last){const ne=nextEarnings(last);if(ne){const days=Math.round((ne-new Date(last+'T00:00:00Z'))/86400000);earn='<b>≈ next earnings</b> '+ne.toISOString().slice(0,10)+' (~'+days+'d out, est. from fiscal calendar — the cone should widen here)';}}
+ var earn='';const last=(d&&d.length)?d[d.length-1]:null;if(last){const ne=nextEarnings(last,sym);if(ne){const days=Math.round((ne-Date.now())/86400000);earn='<b>≈ next earnings</b> '+ne.toISOString().slice(0,10)+' (~'+days+'d out, est. from fiscal calendar — the cone should widen here)';}}
  var fund='';const dB=function(x){return x==null?'—':(Math.abs(x)>=1e9?'$'+(x/1e9).toFixed(1)+'B':Math.abs(x)>=1e6?'$'+(x/1e6).toFixed(0)+'M':'$'+x.toFixed(0));};
  if(typeof FUND==='object'&&FUND[sym]){const C=FUND[sym],yk=Object.keys(C.years).sort();const fy=yk[yk.length-1],r=C.years[fy];const g=(C.summary&&C.summary.revCAGR2!=null)?C.summary.revCAGR2:r.revGrowth;const rev=r._rev,eps=r.eps;const nrev=(rev!=null&&g!=null)?rev*(1+g):null;const neps=(eps!=null&&g!=null)?eps*(1+g):null;
   fund='<b>Reported</b> FY'+fy+': rev '+dB(rev)+(eps!=null?' · EPS $'+eps.toFixed(2):'')+' &nbsp;→&nbsp; <b>Expected</b> FY'+(parseInt(fy,10)+1)+' <span style="color:var(--muted)">(mechanical trend, not analyst consensus)</span>: rev '+dB(nrev)+(g!=null?' ('+(g>=0?'+':'')+(g*100).toFixed(0)+'%)':'')+(neps!=null?' · EPS $'+neps.toFixed(2):'');
@@ -784,7 +784,7 @@ function buildCadence(sym,c,d){const el=document.getElementById('cadence');if(!e
    var _eps=(_r.eps!=null)?_r.eps:null,_pe=(price!=null&&_eps!=null&&_eps>0)?price/_eps:null;
    var _eg=(_py&&_py.eps!=null&&_py.eps>0&&_eps!=null)?(_eps/_py.eps-1):null;
    var _peg=(_pe!=null&&_eg!=null&&_eg>0)?_pe/(_eg*100):null;if(_peg!=null)_pegT=_peg.toFixed(2);}
-  if(last){var _ne=nextEarnings(last);if(_ne)_neT=_ne.toISOString().slice(0,10);}
+  if(last){var _ne=nextEarnings(last,sym);if(_ne)_neT=_ne.toISOString().slice(0,10);}
   _qb.innerHTML='next report '+_neT+' · PEG '+_pegT;}}catch(_e){}
  el.innerHTML='<div style="font-size:10px;color:var(--muted);margin-bottom:2px"><b style="color:var(--accent)">CADENCE &amp; LEVELS</b> · <b>price</b> '+price.toFixed(2)+' = the traded value; <i>levels</i> = the EMA ribbon (dynamic support/resistance) — price fluctuates between these levels.</div>'
   +'<div style="margin-bottom:3px">'+lv+'</div>'
@@ -1024,7 +1024,7 @@ function renderDecision(sym){
  var _hvD=((CUR.garch&&CUR.garch.annVol)?CUR.garch.annVol:CUR.rvAnn)||0,_sigD=_hvD>0?_hvD/Math.sqrt(252):0;
  function pTouch(B){if(!(last>0&&B>0)||_sigD<=0)return null;var sg=_sigD*Math.sqrt(21),dd=Math.abs(Math.log(B/last));if(sg<=0)return null;return Math.max(0,Math.min(1,2*(1-normCDF(dd/sg))));}
  function lvl(o){if(!o)return '<span style="color:var(--faint)">none</span>';var dp=(o.v/last-1)*100,sd=s20?(o.v-last)/s20:null,pt=pTouch(o.v);return o.lab+' <b>'+o.v.toFixed(2)+'</b> <span style="color:var(--muted)">('+(dp>=0?'+':'')+dp.toFixed(1)+'%'+(sd!=null?' &middot; '+_fmtSign(sd,1)+'\u03c3':'')+(pt!=null?' &middot; '+Math.round(pt*100)+'% touch':'')+')</span>';}
- var ev='&mdash;',ne=(d&&d.length)?nextEarnings(d[n-1]):null;if(ne){var days=Math.round((ne-new Date(d[n-1]+'T00:00:00Z'))/86400000);ev='~'+days+'d ('+ne.toISOString().slice(0,10)+')';}
+ var ev='&mdash;',ne=(d&&d.length)?nextEarnings(d[n-1]):null;if(ne){var days=Math.round((ne-Date.now())/86400000);ev='~'+days+'d ('+ne.toISOString().slice(0,10)+')';}
  var asof=(d&&d.length)?d[n-1]:'&mdash;';
  var live=(typeof FUND==='object'&&FUND&&FUND[sym]&&/\(live\)/.test(FUND[sym].name||''));
  var ageD=999;try{if(d&&d.length)ageD=Math.round((Date.now()-new Date(d[n-1]+'T00:00:00Z').getTime())/86400000);}catch(e){}
@@ -1595,6 +1595,7 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
  // horizon ticks WITH dates
  const _lastD=(d&&d.length)?d[d.length-1]:null;g.font='8px sans-serif';
  [5,10,20].forEach(hd=>{if(hd<=nP){const x=X(jx+hd);g.strokeStyle='rgba(105,114,127,.22)';g.setLineDash([1,3]);g.lineWidth=1;g.beginPath();g.moveTo(x,yP0);g.lineTo(x,yP0+Hp);g.stroke();g.setLineDash([]);g.fillStyle='#69727f';g.fillText('+'+hd+'d',x-7,yP0+Hp-2);if(_lastD){g.fillStyle='#586472';g.fillText(_mdd(_addBizDays(_lastD,hd)),x-13,yP0+Hp-11);}}});
+ if(_lastD){var _ageD=Math.round((Date.now()-(Date.parse(_lastD+'T00:00:00Z')||Date.now()))/86400000);if(_ageD>3){g.fillStyle='rgba(224,161,60,.95)';g.font='9px sans-serif';g.fillText('\u26a0 cone from last bar '+_lastD+' \u00b7 data '+_ageD+'d old',X(jx)+4,yP0+11);}}
  // conformal distribution-free band
  const _cf=CUR.integrity&&CUR.integrity.checks?CUR.integrity.checks.conformal:null;
  if(_cf&&_cf.q&&_cf.sigLast){g.strokeStyle='rgba(123,179,240,.6)';g.setLineDash([5,3]);g.lineWidth=1.1;[1,-1].forEach(sgn=>{g.beginPath();g.moveTo(X(jx),Yp(CUR.last));for(let k=0;k<nP;k++){const bd=CUR.last*Math.exp(sgn*_cf.q*_cf.sigLast*Math.sqrt(k+1));g.lineTo(X(jx+1+k),Ypc(bd));}g.stroke();});g.setLineDash([]);

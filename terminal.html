@@ -1608,7 +1608,7 @@ function coneOptionsIV(sym){try{var M=(typeof window!=='undefined'&&window.MMAP)
 /* ---- render the compact instrument strip below the chart ---- */
 function _pc(x,d){return (x==null||!isFinite(x))?'—':(100*x).toFixed(d==null?0:d)+'%';}
 function _sg(x,d){return (x>=0?'+':'')+(100*x).toFixed(d==null?1:d)+'%';}
-function renderConeInstrument(sym){
+function renderConeInstrument(sym,mcOverride){
   var host=document.getElementById('coneInstrument');if(!host)return;
   try{
     var pj=CUR.pj;if(!pj||!pj.path||!pj.path.length){host.innerHTML='';CUR.coneExtra=null;return;}
@@ -1616,7 +1616,7 @@ function renderConeInstrument(sym){
     var lastDate=(CUR.d&&CUR.d.length)?CUR.d[CUR.d.length-1]:null;
     var xs=coneCrossSection(pj,last,[1,5,10,20].filter(function(h){return h<=nP;}));
     var _ctr={};xs.forEach(function(x){_ctr[x.h]=x.q50;});var cf=null;try{cf=coneConformalQuantiles(CUR.c,xs.map(function(x){return x.h;}),_ctr);}catch(_ce){}
-    var _regs=_coneBuildRegimes(last,nP);var mc=null;try{mc=coneMixtureMC(last,nP,_regs,{high:A.high,low:A.low,mid:A.mid},3500);}catch(_me){}
+    var _regs=_coneBuildRegimes(last,nP);var mc=null;if(mcOverride&&mcOverride._sym===sym){mc=mcOverride;}else{try{mc=coneMixtureMC(last,nP,_regs,{high:A.high,low:A.low,mid:A.mid},3000);}catch(_me){}try{var _kk=sym+':'+nP+':'+((last||0).toFixed(2))+':'+((A.high||0)+'/'+(A.low||0)+'/'+(A.mid||0));if(_kk!==_coneLastKick){_coneLastKick=_kk;coneMCAsync(last,nP,_regs,{high:A.high,low:A.low,mid:A.mid},10000).then(function(hi){hi._sym=sym;if(typeof CUR==='object'&&CUR&&CUR.sym===sym){try{renderConeInstrument(sym,hi);}catch(_re){}}}).catch(function(){});}}catch(_ke){}}
     var pp=mc?{pUp:mc.pUp,pFinAboveMid:mc.pFinAboveMid,pTouchHi:mc.pTouchHi,pTouchLo:mc.pTouchLo,eMFE:mc.eMFE,eMAE:mc.eMAE,N:mc.N}:conePathProbs(pj,last,{high:A.high,low:A.low,mid:A.mid});
     var _regLine=mc?('<div style="margin-top:4px;font-size:9px;color:var(--muted,#8a93a0)">regime mix: '+_regs.map(function(rg,i){return rg.name+' '+(100*mc.mix[i]).toFixed(0)+'%';}).join(' \u00b7 ')+'</div>'):'';
     var cal=coneCalibration(CUR.c,Math.min(nP,10));
@@ -1996,6 +1996,35 @@ function energyNormal(z){if(!z||z.length<8)return null;var a=z.slice().sort(func
   var s=0;for(i=0;i<n;i++)s+=(2*(i+1)-n-1)*a[i];var B=s/(n*n)*2; /* (1/n^2)*sum_ij|zi-zj| = 2*sum_{i<j}(z_j-z_i)/n^2 */
   var C=1.1283791671; /* 2/sqrt(pi)=E|G-G'| */
   return Math.sqrt(Math.max(2*A-B-C,0));}
+/* ===== inline Web-Worker accelerator for the cone MC (progressive refinement to 10k paths) =====
+   Serializes the (already verified) antithetic/stratified engine into a Blob worker so heavy path
+   counts run off the main thread. Synchronous MC still renders instantly; the worker result, when
+   it returns, re-renders the path-probabilities / VaR / confidence at higher precision. */
+var _coneWorker=null,_coneWReq=0,_coneWcbs={},_coneLastKick='';
+function _coneWorkerSrc(){
+  return [_gauss.toString(),_studentT.toString(),_bridgeTouch.toString(),_qSorted.toString(),_meanA.toString(),coneMixtureMC.toString(),
+    "self.onmessage=function(e){var d=e.data;try{var m=coneMixtureMC(d.last,d.nP,d.regimes,d.levels,d.N);self.postMessage({id:d.id,ok:true,r:{pUp:m.pUp,pFinAboveMid:m.pFinAboveMid,pTouchHi:m.pTouchHi,pTouchLo:m.pTouchLo,eMFE:m.eMFE,eMAE:m.eMAE,var05:m.var05,var01:m.var01,mix:m.mix,regStats:m.regStats,N:m.N,worker:true}});}catch(err){self.postMessage({id:d.id,ok:false,e:String(err)});}};"
+  ].join('\n');
+}
+function _coneEnsureWorker(){
+  if(_coneWorker)return _coneWorker;
+  if(typeof Worker==='undefined'||typeof Blob==='undefined'||typeof URL==='undefined'||!URL.createObjectURL)return null;
+  try{var blob=new Blob([_coneWorkerSrc()],{type:'application/javascript'});
+    _coneWorker=new Worker(URL.createObjectURL(blob));
+    _coneWorker.onmessage=function(e){var cb=_coneWcbs[e.data.id];if(cb){delete _coneWcbs[e.data.id];cb(e.data);}};
+    _coneWorker.onerror=function(){try{_coneWorker.terminate();}catch(_e){}_coneWorker=null;};
+  }catch(_e){_coneWorker=null;}
+  return _coneWorker;
+}
+function coneMCAsync(last,nP,regimes,levels,N){
+  return new Promise(function(res,rej){
+    var w=_coneEnsureWorker();if(!w){rej('no-worker');return;}
+    var id=++_coneWReq,to=setTimeout(function(){delete _coneWcbs[id];rej('timeout');},9000);
+    _coneWcbs[id]=function(d){clearTimeout(to);if(d.ok)res(d.r);else rej(d.e);};
+    try{w.postMessage({id:id,last:last,nP:nP,regimes:regimes,levels:levels,N:N});}catch(_e){clearTimeout(to);rej('post-failed');}
+  });
+}
+
 function drawCone(){const cv=document.getElementById('cone');const {W,H,g}=fitCanvas(cv);
  const co=(CUR.cone||[]).filter(x=>isFinite(x.p5)&&isFinite(x.p25)&&isFinite(x.p50)&&isFinite(x.p75)&&isFinite(x.p95));const padL=4,padR=30,padB=16,padT=6;
  if(co.length<2){g.fillStyle='#69727f';g.font='10px sans-serif';g.fillText('insufficient history for vol cone',8,Math.round(H/2));document.getElementById('conenote').textContent='';return;}

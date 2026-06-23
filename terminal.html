@@ -195,6 +195,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
    <label><input type="checkbox" id="tScen">scenarios</label>
    <span class="note" id="asym" style="margin:0"></span></div></div>
  <canvas id="cv2"></canvas><div class="readout" id="ro"></div>
+ <div id="coneInstrument"></div>
  <div id="htrend" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:3px;align-items:center"></div>
  <div id="cadence" style="margin-top:6px"></div>
  <div id="qledger" style="margin-top:6px"></div>
@@ -1490,7 +1491,7 @@ function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementByI
  const rk={pass:0,caution:1,fail:2,'weak-id':1};let w=0;S.forEach(s=>w=Math.max(w,rk[s]??1));const gs=['pass','caution','fail'][w];
  setPill('gate',gs,gs==='pass'?'PASS':gs==='caution'?'PASS · CAUTION':'REJECT');
  document.getElementById('gatewhy').textContent=gs==='pass'?'volatility, RV-ratio, tail, skew within tolerance (timing daily-proxy; dependence degraded).':gs==='caution'?'a risk component elevated/weak-id; size conservatively.':'a hard risk band breached — release withheld.';
- buildAlerts();draw();buildInsightTiles(CUR.sym);renderDecision(CUR.sym);renderReaction(CUR.sym);renderMacro(CUR.sym);}
+ buildAlerts();try{renderConeInstrument(CUR.sym);}catch(_e){}draw();buildInsightTiles(CUR.sym);renderDecision(CUR.sym);renderReaction(CUR.sym);renderMacro(CUR.sym);}
 function buildAlerts(){const A=[];const c=CUR.c,r=CUR.r,ic=CUR.icss,last=CUR.last,n=c.length;
  const rvolNow=CUR.rvolS[CUR.rvolS.length-1],v20=CUR.v20[CUR.v20.length-1],v20p=CUR.v20[CUR.v20.length-2];
  const ao=CUR.ao[CUR.ao.length-1],aop=CUR.ao[CUR.ao.length-2];const rvolTh=+document.getElementById('rvolTh').value||2,ddTh=(+document.getElementById('ddTh').value||-15)/100;
@@ -1530,6 +1531,132 @@ function buildAlerts(){const A=[];const c=CUR.c,r=CUR.r,ic=CUR.icss,last=CUR.las
  const el=document.getElementById('alerts');
  el.innerHTML=A.length?sum+A.map(a=>`<div class="alert ${a.sev}"><span class="ic">${IC[a.sev]}</span><div><div class="t">${a.t}</div><div class="d">${a.d}</div></div></div>`).join(''):'<div class="note">no active alerts — all clear ✓</div>';
  const cb=document.getElementById('acount');const crit=nC+nW;if(crit>0){cb.style.display='inline-block';cb.textContent=crit;cb.style.background=nC>0?'var(--fail)':'var(--caution)';}else cb.style.display='none';}
+/* ===== cone instrument module (injected) ===== */
+/* ===== CONE INSTRUMENT — quantile cross-section · path probabilities · self-calibration · 3-layer cone =====
+   Pure client-side; reads CUR.pj (asymmetric projection), CUR.c (closes), marketmap IV, and the
+   post-earnings reaction history. Turns the cone from a picture into a calibrated decision object. */
+var Z90=1.6448536283; /* one-sided z for a 90% TWO-SIDED band (5% each tail) */
+function _cmed(a){if(!a||!a.length)return null;var b=a.slice().sort(function(x,y){return x-y;});var m=b.length>>1;return b.length%2?b[m]:(b[m-1]+b[m])/2;}
+function _gauss(){var u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+/* effective per-step log-sigma (down,up) implied by the drawn 95% band around the central path */
+function _coneStepSig(pj,k){var ph=pj.path[k].price,b=pj.p95[k];
+  var sdn=Math.log(ph/Math.max(b.low,1e-9))/Z[95],sup=Math.log(Math.max(b.high,1e-9)/ph)/Z[95];
+  return {ph:ph,sdn:Math.max(sdn,1e-9),sup:Math.max(sup,1e-9)};}
+/* price at horizon-step index k (0-based) for cumulative probability qLevel (0..1), asymmetric */
+function coneQuantileAt(pj,k,qLevel){var s=_coneStepSig(pj,k),z=normInv(qLevel);return s.ph*Math.exp((z>=0?s.sup:s.sdn)*z);}
+/* explicit quantile cross-section at fixed horizons */
+function coneCrossSection(pj,last,horizons){var nP=pj.path.length,out=[];
+  horizons.forEach(function(h){if(h<1||h>nP)return;var k=h-1;
+    var q10=coneQuantileAt(pj,k,0.10),q50=pj.path[k].price,q90=coneQuantileAt(pj,k,0.90);
+    out.push({h:h,q10:q10,q25:coneQuantileAt(pj,k,0.25),q50:q50,q75:coneQuantileAt(pj,k,0.75),q90:q90,
+      retMid:(q50/last-1),width:(q90-q10)/last,
+      tailSkew:((q90-q50)-(q50-q10))/Math.max(q90-q10,1e-9)});});
+  return out;}
+/* Monte-Carlo path probabilities consistent with the displayed asymmetric cone */
+function conePathProbs(pj,last,levels){var nP=pj.path.length,N=2500;
+  var mu=[],sdnC=[],supC=[],prev=Math.log(last);
+  for(var k=0;k<nP;k++){var lp=Math.log(pj.path[k].price);mu.push(lp-prev);prev=lp;var s=_coneStepSig(pj,k);sdnC.push(s.sdn);supC.push(s.sup);}
+  function incr(arr){var o=[];for(var k=0;k<arr.length;k++){var vk=arr[k]*arr[k]*(k+1),vp=k>0?arr[k-1]*arr[k-1]*k:0;o.push(Math.sqrt(Math.max(vk-vp,1e-12)));}return o;}
+  var iDn=incr(sdnC),iUp=incr(supC),hiL=levels.high,loL=levels.low,midL=levels.mid;
+  /* the asymmetric half-shock has mean phi(0)*(iUp-iDn)=0.39894*(iUp-iDn); subtract it per step
+     so the simulated MEDIAN tracks the central path (q50) instead of acquiring a spurious drift */
+  var mShock=[];for(var k=0;k<nP;k++)mShock.push(0.3989422804*(iUp[k]-iDn[k]));
+  var nUp=0,nFin=0,nTHi=0,nTLo=0,sMFE=0,sMAE=0;
+  for(var p=0;p<N;p++){var x=Math.log(last),mfe=0,mae=0,tHi=false,tLo=false;
+    for(var k=0;k<nP;k++){var gg=_gauss();x+=mu[k]-mShock[k]+gg*(gg>=0?iUp[k]:iDn[k]);var px=Math.exp(x),r=px/last-1;
+      if(r>mfe)mfe=r;if(r<mae)mae=r;if(hiL&&px>=hiL)tHi=true;if(loL&&px<=loL)tLo=true;}
+    var fin=Math.exp(x);if(fin>=last)nUp++;if(midL&&fin>=midL)nFin++;if(tHi)nTHi++;if(tLo)nTLo++;sMFE+=mfe;sMAE+=mae;}
+  return {pUp:nUp/N,pFinAboveMid:(midL!=null)?nFin/N:null,pTouchHi:(hiL!=null)?nTHi/N:null,pTouchLo:(loL!=null)?nTLo/N:null,eMFE:sMFE/N,eMAE:sMAE/N,N:N};}
+/* walk-forward self-calibration: do the 50/80/90 bands actually cover at their advertised rate? */
+function coneCalibration(closes,H){
+  if(!closes||closes.length<H+120)return null;
+  var r=[];for(var i=1;i<closes.length;i++)r.push(Math.log(closes[i]/closes[i-1]));
+  var lam=0.94,s2=(r[0]*r[0])||1e-6,sig=[];for(var i=0;i<r.length;i++){s2=lam*s2+(1-lam)*r[i]*r[i];sig.push(Math.sqrt(s2));}
+  var n50=0,n80=0,n90=0,wsum=0,tot=0,stride=Math.max(1,Math.floor((closes.length-H-30)/250));
+  for(var t=30;t+H<closes.length;t+=stride){var s=sig[Math.min(t-1,sig.length-1)];if(!(s>0))continue;
+    var P0=closes[t],rz=closes[t+H],sd=s*Math.sqrt(H);
+    if(rz>=P0*Math.exp(-Z[50]*sd)&&rz<=P0*Math.exp(Z[50]*sd))n50++;
+    if(rz>=P0*Math.exp(-Z[80]*sd)&&rz<=P0*Math.exp(Z[80]*sd))n80++;
+    if(rz>=P0*Math.exp(-Z90*sd)&&rz<=P0*Math.exp(Z90*sd))n90++;
+    wsum+=(P0*Math.exp(Z90*sd)-P0*Math.exp(-Z90*sd))/P0;tot++;}
+  if(tot<20)return null;
+  var c90=n90/tot,dev=c90-0.90,verdict=Math.abs(dev)<=0.04?'well calibrated':(c90<0.90?'under-dispersed':'over-dispersed');
+  return {n:tot,H:H,c50:n50/tot,c80:n80/tot,c90:c90,width90:wsum/tot,dev:dev,verdict:verdict};}
+/* event layer: is the next earnings inside the horizon, and how big is this name's own post-earnings move? */
+function coneEventInfo(sym,nP,lastDate){
+  if(!lastDate)return null;var ne=(typeof nextEarnings==='function')?nextEarnings(lastDate,sym):null;if(!ne)return null;
+  var calDays=Math.round((ne-(Date.parse(lastDate+'T00:00:00Z')||Date.now()))/86400000);
+  var bz=Math.max(1,Math.round(calDays*5/7));
+  var rm=(typeof reactionMatrix==='function')?reactionMatrix(sym):null,moves=[];
+  if(rm&&rm.rows)rm.rows.forEach(function(rr){if(rr.d1!=null&&isFinite(rr.d1))moves.push(Math.abs(rr.d1)/100);});
+  var evMove=_cmed(moves);
+  return {within:bz<=nP,bz:bz,date:ne.toISOString().slice(0,10),calDays:calDays,evMove:evMove,nMoves:moves.length};}
+/* options layer: annualized ATM IV -> daily sigma (calendar-day, VIX-style 252 convention noted in UI) */
+function coneOptionsIV(sym){try{var M=(typeof window!=='undefined'&&window.MMAP)?window.MMAP[sym]:null;
+  if(!M||!M.gex)return null;var iv=M.gex.atmIV;if(iv==null||!isFinite(iv))return null;iv=iv>3?iv/100:iv;
+  return {ivAnnual:iv,ivDaily:iv/Math.sqrt(252),expMovePct:(M.gex.expMovePct!=null?M.gex.expMovePct:null),frontDays:M.gex.frontDays||null};}catch(_e){return null;}}
+
+/* ---- render the compact instrument strip below the chart ---- */
+function _pc(x,d){return (x==null||!isFinite(x))?'—':(100*x).toFixed(d==null?0:d)+'%';}
+function _sg(x,d){return (x>=0?'+':'')+(100*x).toFixed(d==null?1:d)+'%';}
+function renderConeInstrument(sym){
+  var host=document.getElementById('coneInstrument');if(!host)return;
+  try{
+    var pj=CUR.pj;if(!pj||!pj.path||!pj.path.length){host.innerHTML='';CUR.coneExtra=null;return;}
+    var last=CUR.last,nP=pj.path.length,A=CUR.anchors||{};
+    var lastDate=(CUR.d&&CUR.d.length)?CUR.d[CUR.d.length-1]:null;
+    var xs=coneCrossSection(pj,last,[1,5,10,20].filter(function(h){return h<=nP;}));
+    var pp=conePathProbs(pj,last,{high:A.high,low:A.low,mid:A.mid});
+    var cal=coneCalibration(CUR.c,Math.min(nP,10));
+    var ev=coneEventInfo(sym,nP,lastDate);
+    var iv=coneOptionsIV(sym);
+    CUR.coneExtra={event:ev,iv:iv};
+    var calCol=cal?(Math.abs(cal.dev)<=0.04?'#5fd08a':(cal.c90<0.90?'#e0c14a':'#9ab4e0')):'#8a93a0';
+    var calTxt=cal?('90% band hit '+_pc(cal.c90)+' · '+cal.verdict+' <span style="color:var(--faint,#646e7c)">('+cal.n+' fwd, '+cal.H+'d)</span>'):'calibration: need more history';
+    var xhead='<tr><td style="color:var(--faint,#646e7c)">horizon</td>'+xs.map(function(x){return '<td class=r style="color:var(--faint,#646e7c)">+'+x.h+'d</td>';}).join('')+'</tr>';
+    var rQ50='<tr><td>q50 (median)</td>'+xs.map(function(x){return '<td class=r style="font-weight:700">'+x.q50.toFixed(2)+'</td>';}).join('')+'</tr>';
+    var rRet='<tr><td>vs spot</td>'+xs.map(function(x){return '<td class=r style="color:'+(x.retMid>=0?'#2ecc8f':'#ef5f4e')+'">'+_sg(x.retMid)+'</td>';}).join('')+'</tr>';
+    var rQ10='<tr><td>q10 / q90</td>'+xs.map(function(x){return '<td class=r style="font-size:10px;color:var(--muted,#8a93a0)">'+x.q10.toFixed(1)+' / '+x.q90.toFixed(1)+'</td>';}).join('')+'</tr>';
+    var rW='<tr><td>band width</td>'+xs.map(function(x){return '<td class=r style="font-size:10px">'+_pc(x.width)+'</td>';}).join('')+'</tr>';
+    var rSk='<tr><td>tail skew</td>'+xs.map(function(x){var s=x.tailSkew;return '<td class=r style="font-size:10px;color:'+(Math.abs(s)<0.06?'var(--muted,#8a93a0)':(s>0?'#2ecc8f':'#ef5f4e'))+'">'+(s>=0?'+':'')+s.toFixed(2)+'</td>';}).join('')+'</tr>';
+    var xtab='<table style="width:100%;border-collapse:collapse;font-size:11px">'+xhead+rQ50+rRet+rQ10+rW+rSk+'</table>';
+    function pr(k,v,c){return '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:var(--muted,#8a93a0)">'+k+'</span><span style="font-weight:700;color:'+(c||'var(--ink,#eef3f8)')+'">'+v+'</span></div>';}
+    var ph='+'+nP+'d path odds';
+    var probHtml=pr(ph,'',' ')
+      +pr('P(up)',_pc(pp.pUp),pp.pUp>=0.5?'#2ecc8f':'#ef5f4e')
+      +(pp.pTouchHi!=null?pr('P(touch '+A.high.toFixed(1)+')',_pc(pp.pTouchHi)):'')
+      +(pp.pTouchLo!=null?pr('P(touch '+A.low.toFixed(1)+')',_pc(pp.pTouchLo)):'')
+      +(pp.pFinAboveMid!=null?pr('P(finish &ge; '+A.mid.toFixed(1)+')',_pc(pp.pFinAboveMid)):'')
+      +pr('E[max favorable]',_sg(pp.eMFE),'#2ecc8f')
+      +pr('E[max adverse]',_sg(pp.eMAE),'#ef5f4e');
+    var L=[];
+    L.push('<span style="color:#8fb0e0">&#9644; base (statistical)</span>');
+    if(ev&&ev.within&&ev.evMove)L.push('<span style="color:#f5c451">&#9644; event +'+ev.bz+'d ('+ev.date+', &plusmn;'+_pc(ev.evMove)+' typ.)</span>');
+    else if(ev)L.push('<span style="color:var(--faint,#646e7c)">event '+ev.date+' beyond horizon</span>');
+    if(iv&&iv.ivDaily)L.push('<span style="color:#b98ad0">&#9644; options-implied (IV '+_pc(iv.ivAnnual)+' ann)</span>');
+    else L.push('<span style="color:var(--faint,#646e7c)">options-implied: add-on not connected</span>');
+    var rvAnn=null;try{var rr=lr(CUR.c).slice(-20);rvAnn=(rr.length?Math.sqrt(rr.reduce(function(s,y){return s+y*y;},0)/rr.length):0)*Math.sqrt(252);}catch(_e){}
+    var vrp=(iv&&iv.ivAnnual&&rvAnn)?(iv.ivAnnual-rvAnn):null;
+    var alerts=[];
+    if(cal&&cal.c90<0.85)alerts.push('&#9888; 90% band under-covering ('+_pc(cal.c90)+') — treat width as a floor');
+    if(ev&&ev.within&&ev.evMove&&iv&&iv.expMovePct!=null&&iv.expMovePct>ev.evMove*1.25)alerts.push('&#9888; options pricing a larger-than-usual earnings move ('+_pc(iv.expMovePct)+' vs '+_pc(ev.evMove)+' typ.)');
+    if(vrp!=null&&Math.abs(vrp)>0.08)alerts.push((vrp>0?'options dearer than realized':'options cheaper than realized')+' (VRP '+_sg(vrp)+')');
+    var xsW=xs.length?xs[xs.length-1].width:null;
+    if(xsW!=null&&xsW>0.18)alerts.push('cone unusually wide ('+_pc(xsW)+') at +'+xs[xs.length-1].h+'d');
+    var card='background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:7px 9px';
+    var head='<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8a93a0);margin-bottom:3px">';
+    host.innerHTML=
+      '<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:7px;margin-top:7px">'
+      +'<div style="'+card+'">'+head+'Quantile cross-section</div>'+xtab
+        +'<div style="margin-top:5px;padding:3px 6px;border-radius:6px;font-size:10px;background:rgba(120,140,170,.08);border-left:3px solid '+calCol+';color:'+calCol+'">'+calTxt+'</div></div>'
+      +'<div style="'+card+'">'+head+'Path probabilities</div><div style="font-size:11px;display:flex;flex-direction:column;gap:2px">'+probHtml+'</div></div>'
+      +'</div>'
+      +'<div style="'+card+';margin-top:7px">'+head+'Cone layers</div><div style="font-size:10px;display:flex;flex-wrap:wrap;gap:12px">'+L.join('')+'</div>'
+        +(alerts.length?'<div style="margin-top:5px;font-size:10px;color:var(--caution,#e0c14a);display:flex;flex-direction:column;gap:2px">'+alerts.map(function(a){return '<div>'+a+'</div>';}).join('')+'</div>':'')
+        +'<div style="margin-top:4px;font-size:8.5px;color:var(--faint,#646e7c)">Quantiles are asymmetric (skew-aware), read off the same fan drawn above. Path odds are Monte-Carlo ('+pp.N+' paths) on the displayed cone. Calibration is walk-forward coverage of this name&rsquo;s own history. IV annualized 252-day (trading). Research only; not advice.</div></div>';
+  }catch(e){host.innerHTML='<div style="font-size:10px;color:var(--faint,#646e7c);margin-top:6px">cone instrument unavailable: '+(e&&e.message||e)+'</div>';CUR.coneExtra=null;}
+}
+
 function drawCone(){const cv=document.getElementById('cone');const {W,H,g}=fitCanvas(cv);
  const co=(CUR.cone||[]).filter(x=>isFinite(x.p5)&&isFinite(x.p25)&&isFinite(x.p50)&&isFinite(x.p75)&&isFinite(x.p95));const padL=4,padR=30,padB=16,padT=6;
  if(co.length<2){g.fillStyle='#69727f';g.font='10px sans-serif';g.fillText('insufficient history for vol cone',8,Math.round(H/2));document.getElementById('conenote').textContent='';return;}
@@ -1560,7 +1687,7 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
   for(let bi=0;bi<vp.vol.length;bi++){const pTop=vp.lo+(bi+1)*vp.w,pBot=vp.lo+bi*vp.w;if(pTop<lo||pBot>hi)continue;const yT=Yp(pTop),yB=Yp(pBot),bw=(vp.vol[bi]/mxv)*vpW;const mid=vp.lo+(bi+0.5)*vp.w;const inVA=mid>=vp.val&&mid<=vp.vah;g.fillStyle=bi===vp.pocBin?'rgba(224,161,60,.30)':(inVA?'rgba(91,157,255,.15)':'rgba(105,114,127,.10)');g.fillRect(W-padR-bw,yT,bw,Math.max(yB-yT-1,1));}
   g.strokeStyle='rgba(224,161,60,.6)';g.setLineDash([1,3]);g.lineWidth=1;g.beginPath();g.moveTo(padL,Yp(vp.pocPrice));g.lineTo(W-padR,Yp(vp.pocPrice));g.stroke();g.setLineDash([]);g.fillStyle='rgba(224,161,60,.85)';g.font='9px sans-serif';g.fillText('POC '+vp.pocPrice.toFixed(1),padL+2,Yp(vp.pocPrice)-2);}
  const fill=(arr,col)=>{g.beginPath();g.moveTo(X(jx),Yp(CUR.last));arr.forEach((b,k)=>g.lineTo(X(jx+1+k),Yp(b.high)));for(let k=arr.length-1;k>=0;k--)g.lineTo(X(jx+1+k),Yp(arr[k].low));g.closePath();g.fillStyle=col;g.fill();};
- const _grad=(c0,c1)=>{const gr=g.createLinearGradient(X(jx),0,X(totX-1),0);gr.addColorStop(0,c0);gr.addColorStop(1,c1);return gr;};const fillP=(arr,c0,c1)=>{g.beginPath();g.moveTo(X(jx),Yp(CUR.last));arr.forEach((b,k)=>g.lineTo(X(jx+1+k),Yp(b.high)));for(let k=arr.length-1;k>=0;k--)g.lineTo(X(jx+1+k),Yp(arr[k].low));g.closePath();g.fillStyle=_grad(c0,c1);g.fill();};fillP(pj.p95,'rgba(91,157,255,.17)','rgba(91,157,255,.05)');fillP(pj.p80,'rgba(91,157,255,.22)','rgba(91,157,255,.07)');
+ const _grad=(c0,c1)=>{const gr=g.createLinearGradient(X(jx),0,X(totX-1),0);gr.addColorStop(0,c0);gr.addColorStop(1,c1);return gr;};const fillP=(arr,c0,c1)=>{g.beginPath();g.moveTo(X(jx),Yp(CUR.last));arr.forEach((b,k)=>g.lineTo(X(jx+1+k),Yp(b.high)));for(let k=arr.length-1;k>=0;k--)g.lineTo(X(jx+1+k),Yp(arr[k].low));g.closePath();g.fillStyle=_grad(c0,c1);g.fill();};fillP(pj.p95,'rgba(91,157,255,.17)','rgba(91,157,255,.05)');fillP(pj.p80,'rgba(91,157,255,.22)','rgba(91,157,255,.07)');;try{var _ce=CUR.coneExtra;if(_ce){if(_ce.event&&_ce.event.within&&_ce.event.evMove){var _bz=_ce.event.bz,_ev=_ce.event.evMove;g.strokeStyle='rgba(245,196,81,.6)';g.setLineDash([4,3]);g.lineWidth=1.1;[1,-1].forEach(function(sgn){g.beginPath();g.moveTo(X(jx),Yp(CUR.last));for(var k=0;k<nP;k++){var s=_coneStepSig(pj,k);var base=(sgn>0?s.sup:s.sdn)*Z[95];var add=(k+1>=_bz)?_ev:0;var tot=Math.sqrt(base*base+add*add);g.lineTo(X(jx+1+k),Ypc(pj.path[k].price*Math.exp(sgn*tot)));}g.stroke();});g.setLineDash([]);if(_bz<=nP){var _xe=X(jx+_bz);g.strokeStyle='rgba(245,196,81,.5)';g.setLineDash([2,2]);g.beginPath();g.moveTo(_xe,yP0);g.lineTo(_xe,yP0+Hp);g.stroke();g.setLineDash([]);g.fillStyle='rgba(245,196,81,.9)';g.font='8px sans-serif';g.fillText('earnings',_xe-15,yP0+Hp-21);}}if(_ce.iv&&_ce.iv.ivDaily){var _sd=_ce.iv.ivDaily;g.strokeStyle='rgba(185,138,208,.65)';g.setLineDash([1,3]);g.lineWidth=1.1;[1,-1].forEach(function(sgn){g.beginPath();g.moveTo(X(jx),Yp(CUR.last));for(var k=0;k<nP;k++){g.lineTo(X(jx+1+k),Ypc(CUR.last*Math.exp(sgn*1.6448536*_sd*Math.sqrt(k+1))));}g.stroke();});g.setLineDash([]);}}}catch(_eC){}
  // VWAP overlays
  if(document.getElementById('tVwap').checked){g.strokeStyle=css('--vwap');g.lineWidth=1;g.setLineDash([4,2]);g.beginPath();let st=false;for(let i=h0;i<c.length;i++){const x=X(i-h0),y=Yp(CUR.va[i]);st?g.lineTo(x,y):g.moveTo(x,y);st=true;}g.stroke();g.setLineDash([]);
   g.strokeStyle=css('--vwap2');g.lineWidth=1;g.beginPath();st=false;for(let i=h0;i<c.length;i++){if(CUR.v20[i]==null)continue;const x=X(i-h0),y=Yp(CUR.v20[i]);st?g.lineTo(x,y):g.moveTo(x,y);st=true;}g.stroke();
@@ -1998,15 +2125,7 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
   function curSym(){var b=document.getElementById('sym');return b?(b.textContent||'').trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,''):'';}
   function boot(){
     fetch('marketmap.json',{cache:'no-cache'}).then(function(r){return r.json();}).then(function(d){
-      MMAP={}; (d.names||[]).forEach(function(n){if(n&&n.t)MMAP[n.t]=n;});
+      MMAP={}; (d.names||[]).forEach(function(n){if(n&&n.t)MMAP[n.t]=n;});try{window.MMAP=MMAP;}catch(_e){}
       render(curSym());
       var bg=document.getElementById('sym');
-      if(bg&&window.MutationObserver){new MutationObserver(function(){render(curSym());}).observe(bg,{childList:true,characterData:true,subtree:true});}
-      var sel=document.getElementById('symsel'); if(sel)sel.addEventListener('change',function(){setTimeout(function(){render(curSym());},60);});
-    }).catch(function(e){if(/[?&]debug\b/.test(location.search)&&window.console)try{console.warn('[mrkt] marketmap',e);}catch(_){}});
-  }
-  if(document.readyState!=='loading')boot(); else document.addEventListener('DOMContentLoaded',boot);
-})();
-
-</script>
-</body></html>
+      if(bg&&window.MutationObserver){new MutationObserver(function(){render(curSym());}).observe(bg,{childLis

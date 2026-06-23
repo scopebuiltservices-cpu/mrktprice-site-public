@@ -1607,6 +1607,7 @@ function renderConeInstrument(sym){
     var last=CUR.last,nP=pj.path.length,A=CUR.anchors||{};
     var lastDate=(CUR.d&&CUR.d.length)?CUR.d[CUR.d.length-1]:null;
     var xs=coneCrossSection(pj,last,[1,5,10,20].filter(function(h){return h<=nP;}));
+    var _ctr={};xs.forEach(function(x){_ctr[x.h]=x.q50;});var cf=null;try{cf=coneConformalQuantiles(CUR.c,xs.map(function(x){return x.h;}),_ctr);}catch(_ce){}
     var pp=conePathProbs(pj,last,{high:A.high,low:A.low,mid:A.mid});
     var cal=coneCalibration(CUR.c,Math.min(nP,10));
     var ev=coneEventInfo(sym,nP,lastDate);
@@ -1620,7 +1621,8 @@ function renderConeInstrument(sym){
     var rQ10='<tr><td>q10 / q90</td>'+xs.map(function(x){return '<td class=r style="font-size:10px;color:var(--muted,#8a93a0)">'+x.q10.toFixed(1)+' / '+x.q90.toFixed(1)+'</td>';}).join('')+'</tr>';
     var rW='<tr><td>band width</td>'+xs.map(function(x){return '<td class=r style="font-size:10px">'+_pc(x.width)+'</td>';}).join('')+'</tr>';
     var rSk='<tr><td>tail skew</td>'+xs.map(function(x){var s=x.tailSkew;return '<td class=r style="font-size:10px;color:'+(Math.abs(s)<0.06?'var(--muted,#8a93a0)':(s>0?'#2ecc8f':'#ef5f4e'))+'">'+(s>=0?'+':'')+s.toFixed(2)+'</td>';}).join('')+'</tr>';
-    var xtab='<table style="width:100%;border-collapse:collapse;font-size:11px">'+xhead+rQ50+rRet+rQ10+rW+rSk+'</table>';
+    var rCf='';if(cf){rCf="<tr><td style='color:#7bb3f0'>conformal q10/q90</td>"+xs.map(function(x){var k=cf[x.h];return "<td class=r style='font-size:10px;color:#7bb3f0'>"+(k?(k.q10.toFixed(1)+' / '+k.q90.toFixed(1)):'\u2014')+"</td>";}).join('')+"</tr>";rCf+="<tr><td style='color:var(--faint,#646e7c)'>tail vs normal</td>"+xs.map(function(x){var k=cf[x.h];if(!k)return "<td class=r>\u2014</td>";var c=k.fat>1.15?'#e0c14a':(k.fat<0.9?'#2ecc8f':'var(--muted,#8a93a0)');return "<td class=r style='font-size:10px;color:"+c+"'>"+k.fat.toFixed(2)+"\u00d7</td>";}).join('')+"</tr>";}
+    var xtab='<table style="width:100%;border-collapse:collapse;font-size:11px">'+xhead+rQ50+rRet+rQ10+rW+rSk+rCf+'</table>';
     function pr(k,v,c){return '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:var(--muted,#8a93a0)">'+k+'</span><span style="font-weight:700;color:'+(c||'var(--ink,#eef3f8)')+'">'+v+'</span></div>';}
     var ph='+'+nP+'d path odds';
     var probHtml=pr(ph,'',' ')
@@ -1643,6 +1645,7 @@ function renderConeInstrument(sym){
     if(ev&&ev.within&&ev.evMove&&iv&&iv.expMovePct!=null&&iv.expMovePct>ev.evMove*1.25)alerts.push('&#9888; options pricing a larger-than-usual earnings move ('+_pc(iv.expMovePct)+' vs '+_pc(ev.evMove)+' typ.)');
     if(vrp!=null&&Math.abs(vrp)>0.08)alerts.push((vrp>0?'options dearer than realized':'options cheaper than realized')+' (VRP '+_sg(vrp)+')');
     var xsW=xs.length?xs[xs.length-1].width:null;
+    if(cf){var _fatH=null;for(var _h in cf){if(_h==='_sigNow')continue;if(cf[_h]&&cf[_h].fat>1.2){_fatH=_h;break;}}if(_fatH)alerts.push('\u26a0 empirical tails fatter than normal at +'+_fatH+'d ('+cf[_fatH].fat.toFixed(2)+'\u00d7) \u2014 model band may be too tight');}
     if(xsW!=null&&xsW>0.18)alerts.push('cone unusually wide ('+_pc(xsW)+') at +'+xs[xs.length-1].h+'d');
     var card='background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:7px 9px';
     var head='<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8a93a0);margin-bottom:3px">';
@@ -1754,6 +1757,38 @@ function renderConeContext(sym){var host=document.getElementById('coneContext');
       +'</div>'+alertHtml;
   }catch(e){host.innerHTML='<div style="font-size:10px;color:var(--faint,#646e7c);margin-top:6px">context cards unavailable: '+(e&&e.message||e)+'</div>';}
 }
+
+/* ===== horizon-specific conformal module (injected) ===== */
+/* ===== HORIZON-SPECIFIC CONFORMAL CALIBRATION =====
+   For each horizon h, build the empirical distribution of h-day standardized log-returns
+   z = ln(P_{t+h}/P_t) / (EWMA_vol_t * sqrt(h)) over history. De-mean by its own median so it
+   measures DISPERSION (not drift), take asymmetric empirical quantiles, and rescale by the
+   CURRENT vol around the model's central path. This is distribution-free (no Gaussian assumption),
+   per-horizon, and skew-aware — exactly "calibrate intervals from past residuals, each horizon
+   separately, prefer empirical tails." The tail-fatness multiplier = empirical / Gaussian. */
+function _empQuantile(sortedAsc,p){if(!sortedAsc||!sortedAsc.length)return null;
+  var idx=(sortedAsc.length-1)*p,lo=Math.floor(idx),hi=Math.ceil(idx);
+  if(lo===hi)return sortedAsc[lo];var w=idx-lo;return sortedAsc[lo]*(1-w)+sortedAsc[hi]*w;}
+function coneConformalQuantiles(closes,horizons,centers){
+  if(!closes||closes.length<160)return null;
+  var r=[];for(var i=1;i<closes.length;i++)r.push(Math.log(closes[i]/closes[i-1]));
+  var lam=0.94,s2=(r[0]*r[0])||1e-6,sig=[];for(var i=0;i<r.length;i++){s2=lam*s2+(1-lam)*r[i]*r[i];sig.push(Math.sqrt(s2));}
+  var sigNow=sig[sig.length-1]||0,lastPx=closes[closes.length-1],ZG=1.2815515594,out={};
+  horizons.forEach(function(h){
+    var zs=[];
+    for(var t=30;t+h<closes.length;t++){var st=sig[Math.min(t-1,sig.length-1)];if(!(st>0))continue;
+      var lrh=Math.log(closes[t+h]/closes[t]),z=lrh/(st*Math.sqrt(h));if(isFinite(z))zs.push(z);}
+    if(zs.length<30){out[h]=null;return;}
+    zs.sort(function(a,b){return a-b;});
+    var z05=_empQuantile(zs,0.05),z10=_empQuantile(zs,0.10),z50=_empQuantile(zs,0.50),z90=_empQuantile(zs,0.90),z95=_empQuantile(zs,0.95);
+    var ZT=1.6448536283; /* Gaussian z at the 95th pctile — tail fatness is measured here, not at the 90th */
+    var zLo=z10-z50,zHi=z90-z50,base=sigNow*Math.sqrt(h),C=(centers&&centers[h]!=null)?centers[h]:lastPx;
+    out[h]={n:zs.length,q10:C*Math.exp(zLo*base),q50:C,q90:C*Math.exp(zHi*base),
+      q05:C*Math.exp((z05-z50)*base),q95:C*Math.exp((z95-z50)*base),
+      multHi:(z95-z50)/ZT,multLo:(z50-z05)/ZT,fat:Math.max(z95-z50,z50-z05)/ZT,
+      skew:((z90-z50)-(z50-z10))/Math.max(z90-z10,1e-9)};
+  });
+  out._sigNow=sigNow;return out;}
 
 function drawCone(){const cv=document.getElementById('cone');const {W,H,g}=fitCanvas(cv);
  const co=(CUR.cone||[]).filter(x=>isFinite(x.p5)&&isFinite(x.p25)&&isFinite(x.p50)&&isFinite(x.p75)&&isFinite(x.p95));const padL=4,padR=30,padB=16,padT=6;

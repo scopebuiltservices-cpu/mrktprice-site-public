@@ -829,11 +829,16 @@ def finnhub_beat(key, names, cap=60):
     """Finnhub consensus earnings -> historical beat-rate -> P(beat next) (Bayesian-shrunk).
     Sets n['_beat']; build() folds it into the odds ladder. Capped to the most-liquid big-3 names."""
     import requests
+    from ratelimit import Limiter
+    lim=Limiter("finnhub")
     big=[n for n in names if "RUT" not in n.get("idx",[])][:cap]
     for n in big:
+        if not lim.acquire(): break          # free-tier budget spent or breaker tripped
         try:
             r=requests.get("https://finnhub.io/api/v1/stock/earnings",
                            params={"symbol":n["t"],"token":key},timeout=15)
+            if Limiter.is_limit(r.status_code, getattr(r,"text","")):
+                lim.trip("finnhub %s"%r.status_code); break
             arr=r.json()
             if not isinstance(arr,list): continue
             tot=[e for e in arr if e.get("surprisePercent") is not None]
@@ -845,12 +850,18 @@ def finnhub_beat(key, names, cap=60):
 def twelvedata_ivol(key, names, cap=40):
     """Twelve Data 1h bars -> annualized INTRADAY realized vol (P3-18 family). Sets n['ivol']."""
     import requests
+    from ratelimit import Limiter
+    lim=Limiter("twelvedata")
     big=sorted([n for n in names if "RUT" not in n.get("idx",[])], key=lambda n:-n.get("mcap",0))[:cap]
     for n in big:
+        if not lim.acquire(): break          # 8/min free tier -> throttle + budget + breaker
         try:
             r=requests.get("https://api.twelvedata.com/time_series",
                 params={"symbol":n["t"],"interval":"1h","outputsize":"200","apikey":key},timeout=15)
-            v=r.json().get("values",[])
+            _body=r.json()
+            if Limiter.is_limit(r.status_code, str(_body)):
+                lim.trip("twelvedata limit"); break
+            v=_body.get("values",[])
             cl=[float(x["close"]) for x in v if x.get("close")][::-1]
             if len(cl)<30: continue
             rr=[math.log(cl[i]/cl[i-1]) for i in range(1,len(cl)) if cl[i-1]>0 and cl[i]>0]

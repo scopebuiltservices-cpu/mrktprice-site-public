@@ -1158,6 +1158,12 @@ def real_universe():
                     if _px.get("dcf") is not None: n["dcf"]=_px["dcf"]; _dcf_ok+=1
                     if _px.get("ptgt"): n["ptgt"]=_px["ptgt"]; _ptgt_ok+=1
                 except Exception: pass
+                # derived premium signals — ONE source of truth reused by card/chart/map/scatter
+                _lastpx=(n.get("_cl") or [None])[-1]
+                if _lastpx:
+                    if n.get("dcf"): n["dcfGap"]=round((_lastpx-n["dcf"])/n["dcf"],4)      # +above / -below intrinsic
+                    _pt=n.get("ptgt") or {}
+                    if _pt.get("tgt"): n["tgtUpside"]=round((_pt["tgt"]-_lastpx)/_lastpx,4) # +upside to consensus
         sp=(n.get("_cl") or [None])[-1]
         if _eod and sp and _gcap<140:
             _eod_try+=1

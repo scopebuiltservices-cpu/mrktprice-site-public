@@ -61,6 +61,19 @@ label.cl{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(
 .pill.ok{background:rgba(39,224,176,.16);color:#27e0b0}.pill.warn{background:rgba(224,193,74,.18);color:#e8d27a}.pill.down{background:rgba(240,85,107,.16);color:#ff9aa8}.pill.na{background:rgba(255,255,255,.08);color:#a9c5ba}
 .srcalert{margin-top:10px;font-size:11.5px;line-height:1.5;padding:8px 10px;border-radius:9px;background:rgba(240,85,107,.14);color:#ffc2c2;border:1px solid rgba(240,85,107,.32);display:none}
 .srcalert.show{display:block}
+.srcrow .nm small{color:var(--muted);display:block;font-size:10.5px;letter-spacing:.01em}
+.covbar{height:3px;border-radius:2px;background:rgba(255,255,255,.08);margin-top:4px;overflow:hidden;max-width:210px}
+.covbar>i{display:block;height:100%;border-radius:2px;background:linear-gradient(90deg,var(--mint),var(--mint2))}
+.covbar>i.lo{background:#e0c14a}.covbar>i.dn{background:#f0556b}
+.flow{margin-top:11px;border-top:1px solid var(--line);padding-top:11px}
+.flow .stage{margin:0 0 7px}
+.flow .lbl{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:5px}
+.flow .chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip2{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(255,255,255,.05);border:1px solid var(--line);color:#cfe7df;white-space:nowrap}
+.chip2.on{border-color:rgba(39,224,176,.5);color:#9af0d6}.chip2.off{opacity:.38}
+.flow .arr{text-align:center;color:var(--muted);font-size:12px;line-height:1;margin:2px 0}
+.srctog{cursor:pointer;color:var(--mint2);font-size:10.5px;letter-spacing:.04em;margin-top:9px;display:inline-block;user-select:none}
+.flowwrap{display:none}.flowwrap.show{display:block}
 </style></head>
 <body>
 <div class="veil"></div>
@@ -77,8 +90,10 @@ label.cl{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(
   </div>
   <div class="news an" style="animation-delay:.4s"><a href="reports/index.html">Read Opportunity News — free →</a></div>
   <div class="srcstat an" id="srcstat" style="animation-delay:.48s;display:none">
-    <h4>Data sources <span class="asof" id="srcAsof"></span></h4>
+    <h4>Data pipeline <span class="asof" id="srcAsof"></span></h4>
     <div id="srcRows"></div>
+    <div class="srctog" id="srcTog">&#9656; Show input &rarr; output flow</div>
+    <div class="flowwrap" id="flowWrap"><div class="flow" id="srcFlow"></div></div>
     <div class="srcalert" id="srcAlert"></div>
   </div>
 </div>
@@ -101,42 +116,62 @@ label.cl{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(
 })();
 </script>
 <script>
-/* === MrktPrice data-source status: reads published health, shows each source live/limited/down === */
+/* === MrktPrice data pipeline: each source live/limited/down, what it feeds, and the input->output flow === */
 (function(){
   function pill(c,t){return '<span class="pill '+c+'">'+t+'</span>';}
   function ageDays(a){try{return Math.floor((Date.now()-new Date(a+'T00:00:00Z').getTime())/86400000);}catch(e){return null;}}
+  function bar(r){var c=r>=0.5?'':(r>0?'lo':'dn');return '<div class="covbar"><i class="'+c+'" style="width:'+Math.round(Math.max(0,Math.min(1,r))*100)+'%"></i></div>';}
   fetch('marketmap.json',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
-    var dh=d.dataHealth||{}, asof=d.asof||'—', live=String(d.source||'').toLowerCase().indexOf('live')>=0;
+    var dh=d.dataHealth||{}, C=dh.coverage||{}, asof=d.asof||'—';
+    var live=String(d.source||'').toLowerCase().indexOf('live')>=0;
     var names=(d.names||[]).filter(function(n){return !(n.idx&&n.idx.indexOf('FACTOR')>=0);});
-    var withVal=names.filter(function(n){return n.val&&n.val.pe!=null;}).length;
-    var valPct=names.length?Math.round(100*withVal/names.length):0;
+    var U=C.universe||names.length||0;
     var age=ageDays(asof), stale=(age==null||age>4);
-    var fr=dh.fmpKeyReason, fv=dh.fmpKeyValid, fmp;
-    if(fv===true||(dh.fmpOk||0)>0) fmp=['ok','Live'];
-    else if(!dh.fmpKey) fmp=['na','Not set'];
-    else if(fr==='invalid_key') fmp=['down','Key invalid'];
-    else if(fr==='rate_limited') fmp=['warn','Rate-limited'];
-    else if(fr==='plan_or_endpoint') fmp=['warn','Plan limit'];
-    else fmp=['warn','No data'];
-    var eod=((dh.eodOk||0)>0)?['ok','Live']:(dh.eodKey?['warn','Add-on off']:['na','Not set']);
-    var rows=[
-      ['Prices & charts','yfinance — live OHLCV', live?['ok','Live']:['down','Down']],
-      ['Valuations','yfinance fundamentals — '+valPct+'% coverage', valPct>50?['ok','Live']:(valPct>0?['warn','Partial']:['down','None'])],
-      ['Cross-section & macro','computed — corr · beta · regime', live?['ok','Live']:['warn','—']],
-      ['Treasury curve','FRED — keyless', live?['ok','Live']:['na','—']],
-      ['Fundamentals','SEC EDGAR — keyless', ['ok','Live']],
-      ['Valuation cross-check','FMP Ultimate', fmp],
-      ['Options & dealer gamma','EODHD UnicornBay', eod]
+    function S(ok,n){ if(ok!=null&&n!=null&&n>0){var r=ok/n; if(ok===0)return['down','0/'+n,0]; if(r<0.5)return['warn',ok+'/'+n,r]; return['ok',ok+'/'+n,r];} return null; }
+    var fr=dh.fmpKeyReason;
+    function fmpStat(){ var s=S(dh.fmpOk,dh.fmpTried); if(s)return s; if(!dh.fmpKey)return['na','Off',null]; if(fr==='invalid_key')return['down','Key invalid',null]; if(fr==='rate_limited')return['warn','Rate-limited',null]; return['warn','No data',null]; }
+    function eodStat(){ var s=S(dh.eodOk,dh.eodTried); if(s)return s; return dh.eodKey?['warn','Add-on off',null]:['na','Off',null]; }
+    var SRC=[
+      ['Prices & charts','yfinance → charts · EMA · cone · β · RS', S(C.priceOk,U)||(live?['ok','Live',null]:['down','Down',null])],
+      ['Market caps','yfinance → size factor · treemap · FCF yield', S(C.mcapOk,U)||(live?['ok','Live',null]:['na','—',null])],
+      ['Valuations','FMP Ultimate → P/E · PEG · EV/EBITDA · fwd EPS', fmpStat()],
+      ['Options & gamma','EODHD → dealer GEX · option fair value', eodStat()],
+      ['Intraday vol','TwelveData → intraday σ → cone width', S(C.ivolOk,U)||['na','—',null]],
+      ['Earnings beat','Finnhub → beat-prob → odds ladder', S(C.beatOk,U)||['na','Off',null]],
+      ['Institutional 13F','SEC EDGAR → ownership flow', S(C.instOk,U)||['na','—',null]],
+      ['Insider','SEC EDGAR → insider buy/sell signal', S(C.insiderOk,U)||['na','—',null]],
+      ['Short / FTD','SEC EDGAR → squeeze signal', S(C.shortOk,U)||['na','—',null]],
+      ['Treasury curve','FRED keyless → risk-free · cone drift · rate regime', live?['ok','Live',null]:['na','—',null]]
     ];
     var sa=document.getElementById('srcAsof'); if(sa) sa.textContent=(stale?'STALE · ':'updated ')+asof;
-    var rr=document.getElementById('srcRows'); if(rr) rr.innerHTML=rows.map(function(r){
-      return '<div class="srcrow"><span class="nm">'+r[0]+'<small>'+r[1]+'</small></span>'+pill(r[2][0],r[2][1])+'</div>';}).join('');
+    var rr=document.getElementById('srcRows'); if(rr) rr.innerHTML=SRC.map(function(r){
+      var st=r[2], b=(st[2]!=null)?bar(st[2]):'';
+      return '<div class="srcrow"><span class="nm">'+r[0]+'<small>'+r[1]+'</small>'+b+'</span>'+pill(st[0],st[1])+'</div>';
+    }).join('');
+    function on(b){return b?'on':'off';}
+    var io={yf:(live||(C.priceOk||0)>0), fmp:(dh.fmpOk||0)>0, eod:(dh.eodOk||0)>0, td:(C.ivolOk||0)>0, fh:(C.beatOk||0)>0, sec:(((C.instOk||0)+(C.insiderOk||0)+(C.shortOk||0))>0), fred:live, tg:false};
+    function chip(t,o){return '<span class="chip2 '+on(o)+'">'+t+'</span>';}
+    var flow=document.getElementById('srcFlow');
+    if(flow) flow.innerHTML=
+      '<div class="stage"><div class="lbl">Input · data pulls</div><div class="chips">'+
+        chip('yfinance',io.yf)+chip('FMP Ultimate',io.fmp)+chip('EODHD',io.eod)+chip('TwelveData',io.td)+chip('Finnhub',io.fh)+chip('SEC EDGAR',io.sec)+chip('FRED',io.fred)+chip('Tiingo · fallback',io.tg)+'</div></div>'+
+      '<div class="arr">↓</div>'+
+      '<div class="stage"><div class="lbl">Engine · calculations</div><div class="chips">'+
+        chip('10-factor z-scores',1)+chip('cross-section corr/β',1)+chip('Monte-Carlo cone',1)+chip('options / GEX',1)+chip('valuation gate',1)+chip('regime HMM',1)+'</div></div>'+
+      '<div class="arr">↓</div>'+
+      '<div class="stage"><div class="lbl">Output · what you see</div><div class="chips">'+
+        chip('Terminal charts',1)+chip('Bull/Bear board',1)+chip('Macro complex',1)+chip('Forecast cone',1)+chip('Decision cards',1)+chip('Opportunity Map',1)+'</div></div>';
+    var tog=document.getElementById('srcTog'), fw=document.getElementById('flowWrap');
+    if(tog&&fw) tog.addEventListener('click',function(){var s=fw.classList.toggle('show');tog.innerHTML=(s?'▾ Hide':'▸ Show')+' input → output flow';});
     var msgs=[];
-    if(stale) msgs.push('⚠ Data not updating — last successful refresh '+asof+'. The nightly pull may have failed.');
-    if(fmp[0]==='down') msgs.push('FMP Ultimate key invalid'+(dh.fmpKeyMessage?' ('+dh.fmpKeyMessage+')':'')+' — valuations are running on the free feed.');
+    if(stale) msgs.push('⚠ Data not updating — last refresh '+asof+'. The nightly pull may have failed.');
+    if(fmpStat()[0]==='down') msgs.push('FMP valuations unavailable'+(dh.fmpKeyMessage?' ('+dh.fmpKeyMessage+')':'')+' — running on free fundamentals.');
+    var downs=SRC.filter(function(r){return r[2][0]==='down';}).map(function(r){return r[0];});
+    if(downs.length&&!stale) msgs.push('Source(s) not pulling: '+downs.join(', ')+'.');
     var al=document.getElementById('srcAlert'); if(al&&msgs.length){al.innerHTML=msgs.join('<br>');al.className='srcalert show';}
     var box=document.getElementById('srcstat'); if(box) box.style.display='block';
   }).catch(function(){});
 })();
+
 </script>
 </body></html>

@@ -825,26 +825,44 @@ def fred_macro(key):
        "VIX":fred_series_weekly(key,"VIXCLS"),"OIL":fred_series_weekly(key,"DCOILWTICO")}
     return {k:v for k,v in m.items() if v}
 
+def _earn_rec(e):
+    """One quarter -> compact record for the chart: date(announce), actual/est EPS, surprise%, fiscal Q/Y."""
+    a=e.get("epsActual"); es=e.get("epsEstimate"); s=None
+    if a is not None and es not in (None,0):
+        try: s=round(100.0*(a-es)/abs(es),1)
+        except Exception: s=None
+    return {"d":e.get("date"),"a":a,"e":es,"q":e.get("quarter"),"y":e.get("year"),"s":s}
+
 def finnhub_beat(key, names, cap=60):
-    """Finnhub consensus earnings -> historical beat-rate -> P(beat next) (Bayesian-shrunk).
-    Sets n['_beat']; build() folds it into the odds ladder. Capped to the most-liquid big-3 names."""
-    import requests
+    """Finnhub EARNINGS CALENDAR (one call/ticker) -> BOTH:
+      n['earn'] = {q:[last ~6 quarters: announce date + actual/est EPS + surprise%], next:{upcoming est}}
+      n['_beat'] = Bayesian-shrunk historical beat-probability (folded into the odds ladder).
+    The per-quarter dates+EPS drive the terminal's Q1-Q4 report-date vertical lines and the
+    market-multiple (P/E) annotation; 'next' drives the 6-month expected-vs-actual view."""
+    import requests, datetime as dt
     from ratelimit import Limiter
     lim=Limiter("finnhub")
+    today=dt.date.today(); frm=(today-dt.timedelta(days=760)).isoformat(); to=(today+dt.timedelta(days=95)).isoformat()
     big=[n for n in names if "RUT" not in n.get("idx",[])][:cap]
     for n in big:
         if not lim.acquire(): break          # free-tier budget spent or breaker tripped
         try:
-            r=requests.get("https://finnhub.io/api/v1/stock/earnings",
-                           params={"symbol":n["t"],"token":key},timeout=15)
+            r=requests.get("https://finnhub.io/api/v1/calendar/earnings",
+                           params={"symbol":n["t"],"from":frm,"to":to,"token":key},timeout=15)
             if Limiter.is_limit(r.status_code, getattr(r,"text","")):
                 lim.trip("finnhub %s"%r.status_code); break
-            arr=r.json()
-            if not isinstance(arr,list): continue
-            tot=[e for e in arr if e.get("surprisePercent") is not None]
-            if not tot: continue
-            beats=[e for e in tot if e["surprisePercent"]>=0]
-            n["_beat"]=round((len(beats)+1.0)/(len(tot)+2.0),2)   # shrink toward 0.5
+            cal=(r.json() or {}).get("earningsCalendar") or []
+            if not isinstance(cal,list) or not cal: continue
+            cal.sort(key=lambda e:(e.get("date") or ""))
+            past=[e for e in cal if e.get("epsActual") is not None]
+            fut =[e for e in cal if e.get("epsActual") is None and (e.get("date") or "")>=today.isoformat()]
+            tot=[e for e in past if e.get("epsEstimate") is not None]
+            if tot:
+                beats=[e for e in tot if (e.get("epsActual") or 0)>=(e.get("epsEstimate") or 0)]
+                n["_beat"]=round((len(beats)+1.0)/(len(tot)+2.0),2)   # shrink toward 0.5
+            earn={"q":[_earn_rec(e) for e in past[-6:]]}
+            if fut: earn["next"]=_earn_rec(fut[0])
+            if earn["q"] or earn.get("next"): n["earn"]=earn
         except Exception: continue
 
 def twelvedata_ivol(key, names, cap=40):

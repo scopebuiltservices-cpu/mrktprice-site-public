@@ -1142,12 +1142,34 @@ def real_universe():
         _sys.stderr.write("::warning::FMP key validated but parsed 0 usable valuations across %d tickers - likely a /stable field/endpoint change in parse_val\n"%_fmp_try)
     if _ke and _eod_try and _eod_ok==0:
         _sys.stderr.write("::warning::EODHD_API_KEY is SET but returned 0 option chains across %d tickers - the UnicornBay options add-on is likely not subscribed (402/403)\n"%_eod_try)
+    # ---- PER-SOURCE COMPLETENESS (derived from the actual records) so EVERY pull is observable,
+    #      not just FMP/EODHD. A silently-empty layer now shows up as 0/N in dataHealth and warns. ----
+    def _cnt(pred):
+        c=0
+        for n in names:
+            try:
+                if pred(n): c+=1
+            except Exception: pass
+        return c
+    _cov={"universe":len(names),
+          "priceOk":_cnt(lambda n:bool(n.get("_cl"))),          # yfinance daily closes (backbone)
+          "mcapOk":_cnt(lambda n:bool(n.get("mcap"))),          # yfinance market cap (info)
+          "instOk":_cnt(lambda n:bool(n.get("inst"))),          # SEC 13F institutional
+          "insiderOk":_cnt(lambda n:bool(n.get("insider"))),    # SEC insider transactions
+          "shortOk":_cnt(lambda n:bool(n.get("short"))),        # SEC short/FTD
+          "ivolOk":_cnt(lambda n:n.get("ivol") is not None),    # TwelveData intraday implied vol
+          "beatOk":_cnt(lambda n:n.get("_beat") is not None)}   # Finnhub earnings-beat probability
+    for _k,_lbl in (("priceOk","yfinance daily closes"),("mcapOk","yfinance market caps"),
+                    ("instOk","SEC 13F institutional"),("insiderOk","SEC insider"),("shortOk","SEC short/FTD")):
+        if _cov[_k]==0:
+            _sys.stderr.write("::warning::%s pull returned 0/%d - source down or throttled\n"%(_lbl,len(names)))
     globals()["_DATA_HEALTH"]={"asof":dt.date.today().isoformat(),
         "fmpKey":_kf,"fmpKeyValid":bool(_fmp_live),"fmpKeyReason":_fmp_probe.get("reason"),"fmpKeyMessage":(_fmp_probe.get("message") or "")[:160],
         "fmpTried":_fmp_try,"fmpOk":_fmp_ok,"fmpErr":_fmp_err,
         "eodKey":_ke,"eodTried":_eod_try,"eodOk":_eod_ok,"eodErr":_eod_err,
         "valCoveragePct":round(100.0*_fmp_ok/max(_fmp_try,1),1),
-        "gexCoveragePct":round(100.0*_eod_ok/max(_eod_try,1),1),"errs":_errs[:4]}
+        "gexCoveragePct":round(100.0*_eod_ok/max(_eod_try,1),1),
+        "coverage":_cov,"errs":_errs[:4]}
     return names,mkt,ff,macro
 
 def main():

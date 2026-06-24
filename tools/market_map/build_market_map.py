@@ -1139,7 +1139,10 @@ def real_universe():
                 vv=fv.get("val") if fv else None
                 # "val present" != "val populated": require >=1 real numeric field, else it's an empty shell
                 if vv and any(vv.get(k) is not None for k in _VALFIELDS):
-                    n["_val"]=vv; _fmp_ok+=1
+                    cur=dict(n.get("_val") or {})                 # start from yfinance valuation
+                    for _vk in _VALFIELDS:                        # FMP fills/refreshes; keep yfinance where FMP is null
+                        if vv.get(_vk) is not None: cur[_vk]=vv[_vk]
+                    n["_val"]=cur; _fmp_ok+=1
             except Exception as e:
                 _fmp_err+=1
                 if len(_errs)<4: _errs.append("FMP %s: %s"%(n["t"], str(e)[:80]))
@@ -1190,7 +1193,8 @@ def real_universe():
           "insiderOk":_cnt(lambda n:bool(n.get("insider"))),    # SEC insider transactions
           "shortOk":_cnt(lambda n:bool(n.get("short"))),        # SEC short/FTD
           "ivolOk":_cnt(lambda n:n.get("ivol") is not None),    # TwelveData intraday implied vol
-          "beatOk":_cnt(lambda n:n.get("_beat") is not None)}   # Finnhub earnings-beat probability
+          "beatOk":_cnt(lambda n:n.get("_beat") is not None),   # Finnhub earnings-beat probability
+          "valOk":_cnt(lambda n:bool(n.get("_val")) and any(n["_val"].get(k) is not None for k in ("pe","fpe","peg","evb")))}  # TRUE valuation coverage (yfinance + FMP)
     for _k,_lbl in (("priceOk","yfinance daily closes"),("mcapOk","yfinance market caps"),
                     ("instOk","SEC 13F institutional"),("insiderOk","SEC insider"),("shortOk","SEC short/FTD")):
         if _cov[_k]==0:
@@ -1199,7 +1203,8 @@ def real_universe():
         "fmpKey":_kf,"fmpKeyValid":bool(_fmp_live),"fmpKeyReason":_fmp_probe.get("reason"),"fmpKeyMessage":(_fmp_probe.get("message") or "")[:160],
         "fmpTried":_fmp_try,"fmpOk":_fmp_ok,"fmpErr":_fmp_err,
         "eodKey":_ke,"eodTried":_eod_try,"eodOk":_eod_ok,"eodErr":_eod_err,
-        "valCoveragePct":round(100.0*_fmp_ok/max(_fmp_try,1),1),
+        "valCoveragePct":round(100.0*_cov.get("valOk",0)/max(len(names),1),1),   # REAL valuation coverage, any source (was FMP-only, hence the misleading 0%)
+        "fmpCoveragePct":round(100.0*_fmp_ok/max(_fmp_try,1),1),                  # FMP cross-check coverage specifically
         "gexCoveragePct":round(100.0*_eod_ok/max(_eod_try,1),1),
         "coverage":_cov,"errs":_errs[:4]}
     return names,mkt,ff,macro

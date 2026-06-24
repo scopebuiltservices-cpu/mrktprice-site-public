@@ -163,7 +163,62 @@ def fetch(ticker, sess=None):
             continue
     return None
 
-__all__=["fetch","probe_key","classify","parse_val"]
+def _fmp_earn_rec(e):
+    d=e.get("date"); a=_num(e.get("epsActual")); es=_num(e.get("epsEstimated") or e.get("epsEstimate"))
+    sp=None
+    if a is not None and es not in (None,0):
+        try: sp=round(100.0*(a-es)/abs(es),1)
+        except Exception: sp=None
+    q=y=None
+    if d:
+        try: y=int(str(d)[:4]); q=(int(str(d)[5:7])-1)//3+1
+        except Exception: pass
+    return {"d":d,"a":a,"e":es,"q":q,"y":y,"s":sp}
+
+def fetch_premium(ticker, sess=None, lim=None):
+    """FMP Ultimate premium pulls the free feed can't give: earnings calendar (announce dates +
+    actual/est EPS + next pending), DCF intrinsic value, analyst price-target consensus.
+    Returns {earn, dcf, ptgt} (any key may be absent). Budget-gated via ratelimit('fmp')."""
+    key=os.environ.get("FMP_API_KEY","").strip()
+    if not key: return {}
+    try:
+        import requests, datetime as dt
+        from ratelimit import Limiter
+    except Exception:
+        return {}
+    s=sess or requests.Session()
+    lim=lim or Limiter("fmp")
+    def g(slug, **params):
+        if not lim.acquire(): return None
+        url="%s/%s?symbol=%s&apikey=%s"%(STABLE, slug, ticker, key)
+        for k,v in params.items(): url+="&%s=%s"%(k, v)
+        try:
+            r=_get(s, url, timeout=20); b=r.json()
+            if Limiter.is_limit(r.status_code, str(b)): lim.trip("fmp premium limit"); return None
+            return b
+        except Exception:
+            return None
+    out={}
+    ec=g("earnings", limit=14)
+    if isinstance(ec, list) and ec:
+        today=dt.date.today().isoformat()
+        ec=[e for e in ec if e.get("date")]; ec.sort(key=lambda e: e["date"])
+        past=[e for e in ec if (e.get("epsActual") is not None) or (e.get("date","") < today)]
+        fut =[e for e in ec if e.get("epsActual") is None and e.get("date","") >= today]
+        earn={"q":[_fmp_earn_rec(e) for e in past[-6:]]}
+        if fut: earn["next"]=_fmp_earn_rec(fut[0])
+        if earn["q"] or earn.get("next"): out["earn"]=earn
+    dcf=g("discounted-cash-flow")
+    if isinstance(dcf, list) and dcf:
+        v=_num(dcf[0].get("dcf") or dcf[0].get("DCF"))
+        if v: out["dcf"]=round(v, 2)
+    pt=g("price-target-consensus")
+    if isinstance(pt, list) and pt:
+        p0=pt[0]; tgt=_num(p0.get("targetConsensus") or p0.get("targetMedian"))
+        if tgt: out["ptgt"]={"tgt":round(tgt,2),"high":_num(p0.get("targetHigh")),"low":_num(p0.get("targetLow"))}
+    return out
+
+__all__=["fetch","probe_key","classify","parse_val","fetch_premium"]
 
 if __name__=="__main__":
     # Self-test: `FMP_API_KEY=xxx python fmp_connector.py`  ->  one-line verdict on the key.

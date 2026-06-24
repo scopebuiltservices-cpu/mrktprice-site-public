@@ -1122,6 +1122,10 @@ def real_universe():
     #      CI ::warning:: lines, and stash a dataHealth block into the published JSON. ----
     import sys as _sys, os as _os
     _gcap=0; _fmp_try=_fmp_ok=_fmp_err=0; _eod_try=_eod_ok=_eod_err=0; _errs=[]
+    _earn_ok=_dcf_ok=_ptgt_ok=0; _fmp_lim=None
+    try:
+        from ratelimit import Limiter as _Lim; _fmp_lim=_Lim("fmp")   # shared budget across valuation + premium pulls
+    except Exception: _fmp_lim=None
     _VALFIELDS=("pe","fpe","peg","evb","epsg","revg")
     # FAIL-FAST: one classified probe call instead of hammering 150+ tickers with a dead key.
     _fmp_probe={"ok":bool(_fmp),"reason":"ok","message":""}
@@ -1146,6 +1150,14 @@ def real_universe():
             except Exception as e:
                 _fmp_err+=1
                 if len(_errs)<4: _errs.append("FMP %s: %s"%(n["t"], str(e)[:80]))
+            # FMP Ultimate PREMIUM (equities only): earnings calendar + DCF intrinsic value + analyst price target
+            if "FACTOR" not in n.get("idx",[]) and n.get("mcap") and hasattr(_fmp,"fetch_premium"):
+                try:
+                    _px=_fmp.fetch_premium(n["t"], lim=_fmp_lim)
+                    if _px.get("earn"): n["earn"]=_px["earn"]; _earn_ok+=1
+                    if _px.get("dcf") is not None: n["dcf"]=_px["dcf"]; _dcf_ok+=1
+                    if _px.get("ptgt"): n["ptgt"]=_px["ptgt"]; _ptgt_ok+=1
+                except Exception: pass
         sp=(n.get("_cl") or [None])[-1]
         if _eod and sp and _gcap<140:
             _eod_try+=1
@@ -1160,6 +1172,7 @@ def real_universe():
             _gcap+=1
     _kf=bool(_os.environ.get("FMP_API_KEY","").strip()); _ke=bool(_os.environ.get("EODHD_API_KEY","").strip())
     _sys.stderr.write("ENRICH: FMP key=%s tried=%d ok=%d err=%d | EODHD key=%s tried=%d gex=%d err=%d\n"%(_kf,_fmp_try,_fmp_ok,_fmp_err,_ke,_eod_try,_eod_ok,_eod_err))
+    _sys.stderr.write("FMP PREMIUM: earnings=%d dcf=%d priceTarget=%d (Ultimate)\n"%(_earn_ok,_dcf_ok,_ptgt_ok))
     for _e in _errs: _sys.stderr.write("  - %s\n"%_e)
     if _kf and not _fmp_live:
         _r=_fmp_probe.get("reason"); _m=_fmp_probe.get("message") or ""
@@ -1194,7 +1207,8 @@ def real_universe():
           "shortOk":_cnt(lambda n:bool(n.get("short"))),        # SEC short/FTD
           "ivolOk":_cnt(lambda n:n.get("ivol") is not None),    # TwelveData intraday implied vol
           "beatOk":_cnt(lambda n:n.get("_beat") is not None),   # Finnhub earnings-beat probability
-          "valOk":_cnt(lambda n:bool(n.get("_val")) and any(n["_val"].get(k) is not None for k in ("pe","fpe","peg","evb")))}  # TRUE valuation coverage (yfinance + FMP)
+          "valOk":_cnt(lambda n:bool(n.get("_val")) and any(n["_val"].get(k) is not None for k in ("pe","fpe","peg","evb"))),  # TRUE valuation coverage (yfinance + FMP)
+          "earnOk":_earn_ok, "dcfOk":_dcf_ok, "ptgtOk":_ptgt_ok}  # FMP Ultimate premium: earnings calendar, DCF, price target
     for _k,_lbl in (("priceOk","yfinance daily closes"),("mcapOk","yfinance market caps"),
                     ("instOk","SEC 13F institutional"),("insiderOk","SEC insider"),("shortOk","SEC short/FTD")):
         if _cov[_k]==0:

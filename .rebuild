@@ -7,4 +7,4 @@ HOW TO REBUILD ON DEMAND (no GitHub Desktop, no commit-message tricks):
 That push pulls fresh live data, recomputes coverage + valuations, and self-publishes.
 (The nightly cron at 06:20 UTC already rebuilds automatically — this is only for an immediate refresh.)
 
-rebuild-counter: 1
+rebuild-counter: 2

@@ -1,75 +1,115 @@
-name: Deploy MrktPrice site
+name: Build + publish MrktPrice
 
-# Publishes mrktprice.com to GitHub Pages on every push to main.
-# Rebuilds the Opportunity News index, emits per-ticker static cards (Render-free universe),
-# and on a nightly cron refreshes the Market Map from live data + emits static price history.
+# SINGLE self-publishing pipeline for mrktprice.com.
+#
+# Why this exists: the site used to be published from a SEPARATE private repo via a
+# Personal Access Token (SITE_DEPLOY_TOKEN). That PAT was the fragile link - it expires,
+# can be deleted, depends on an exact secret name, and when missing the build went green
+# but silently stopped publishing. This workflow removes that entire failure class: it
+# builds the data AND commits it to THIS repo using the built-in GITHUB_TOKEN (which
+# GitHub injects on every run, auto-rotates, and cannot be deleted or misnamed), then
+# deploys to Pages. No cross-repo PAT anywhere.
+#
+# Triggers:
+#   push              -> redeploy the committed site (content edits like terminal.html)
+#   schedule          -> nightly: rebuild live Market Map + xsection + history, commit, deploy
+#   workflow_dispatch -> same as nightly, on demand
+#
+# Integrity philosophy: CORE-data failures (SAMPLE fallback, thin universe, stale/truncated
+# JSON) BLOCK the publish; ENRICHMENT degradation (FMP/EODHD down) is surfaced loudly but
+# still publishes prices/charts/macro. See tools/market_map/publish_guards.py.
 
 on:
   push:
     branches: [main]
   schedule:
-    - cron: "20 6 * * 1-6"   # nightly Mon-Sat 06:20 UTC
+    - cron: "20 6 * * 1-6"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
 concurrency:
-  group: pages
+  group: site
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build-and-deploy:
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
 
-      - name: Rebuild Opportunity News index from reports/
-        run: python build_reports.py
-
-      - name: Stage site (dashboard + reports + root files)
+      - name: Refresh Market Map (live) + xsection + static history
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY || secrets.FMP_ULTIMATE_API_KEY || secrets.FMP_UTIMATE_API_KEY }}
+          EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
+          MRKT_FETCH_CURVE: "1"
+          RUSSELL_LIMIT: "120"
         run: |
+          python -m pip install --quiet --upgrade pip
+          pip install --quiet yfinance requests pandas
+          mkdir -p /tmp/mmbuild
+          cd tools/market_map
+          if python build_market_map.py --real --out /tmp/mmbuild/marketmap.json; then
+            python publish_guards.py /tmp/mmbuild/marketmap.json
+            cp /tmp/mmbuild/marketmap.json "$GITHUB_WORKSPACE/marketmap.json"
+            cp /tmp/mmbuild/xsection.json  "$GITHUB_WORKSPACE/xsection.json" 2>/dev/null || echo "::warning::xsection.json not produced this run"
+            cd "$GITHUB_WORKSPACE"
+            python tools/market_map/emit_static.py --universe marketmap.json --out . --hist --cap 250 || echo "::warning::history emit partial"
+          else
+            echo "::error::Real Market Map build FAILED - refusing to publish synthetic data"; exit 1
+          fi
+
+      - name: Commit refreshed data (self-publish, no PAT)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name  "mrktprice-bot"
+          git config user.email "bot@mrktprice.com"
+          git add -A marketmap.json xsection.json hist/ 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "::notice::no data changes to commit"
+          else
+            git commit -m "Market Map nightly: refresh marketmap.json + xsection.json + hist/ ($(date -u +%FT%TZ))"
+            git push
+            echo "published $(git rev-parse --short HEAD)"
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - name: Rebuild reports index + stage site
+        run: |
+          python build_reports.py || echo "::warning::reports index rebuild skipped"
           mkdir -p _site/reports
-          for f in *.html robots.txt marketmap.json; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
+          for f in *.html robots.txt sitemap.xml marketmap.json xsection.json; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
           cp -r reports/*.html _site/reports/ 2>/dev/null || true
           rm -f _site/reports/report-template.html
+          cp -r hist _site/hist 2>/dev/null || true
           cp -r splash _site/splash 2>/dev/null || true
           [ -f CNAME ] && cp CNAME _site/CNAME || echo "mrktprice.com" > _site/CNAME
           touch _site/.nojekyll
 
-      - name: Emit static per-ticker cards (every deploy; no network)
+      - name: Emit static per-ticker cards (no network)
         run: python tools/market_map/emit_static.py --universe _site/marketmap.json --out _site || echo "::warning::card emit skipped"
 
-      - name: Refresh Market Map (live data) + static price history
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        env:                       # optional FREE/paid connectors — unset secrets pass through empty and are skipped
-          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
-          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
-          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
-          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
-          EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
+      - name: Integrity gate - inline scripts + JSON not truncated
         run: |
-          python -m pip install --quiet --upgrade pip
-          pip install --quiet yfinance requests || { echo "::warning::deps install failed - keeping sample"; exit 0; }
-          if python tools/market_map/build_market_map.py --real --out /tmp/mm_live.json; then
-            python tools/market_map/validate_publish.py /tmp/mm_live.json _site/marketmap.json
-            python tools/market_map/emit_static.py --universe _site/marketmap.json --out _site --hist --cap 250 || echo "::warning::history emit partial"
-          else
-            echo "::warning::live build failed - keeping committed sample marketmap.json"
-          fi
+          node tools/check-scripts.mjs
+          python tools/market_map/check_json.py _site/marketmap.json _site/xsection.json
 
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
-        with:
-          path: '_site'
+        with: { path: '_site' }
 
       - id: deployment
         uses: actions/deploy-pages@v4

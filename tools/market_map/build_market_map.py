@@ -358,6 +358,30 @@ RUSSELL_SEED=[("RMBS","Rambus","Technology"),("FORM","FormFactor","Technology"),
 ("STAG","Stag Industrial","Real Estate"),("CUZ","Cousins Properties","Real Estate"),("EPR","EPR Properties","Real Estate"),
 ("CENT","Central Garden","Consumer Staples"),("JJSF","J&J Snack Foods","Consumer Staples"),("FRPT","Freshpet","Consumer Staples")]
 
+# ---- FACTOR PANEL: commodity / rate / sector / style / global proxies (ETF & index) for cross-asset
+#      conditioning. Tagged idx=["FACTOR"] so the cross-section + cone can correlate every name against
+#      the full macro complex (all commodities, the rate curve, every sector, styles) without polluting
+#      the equity recommendation set. Robust yfinance symbols. ----
+FACTOR_PANEL=[
+  ("USO","WTI Crude","Commodity"),("BNO","Brent Crude","Commodity"),("UNG","Natural Gas","Commodity"),
+  ("GLD","Gold","Commodity"),("SLV","Silver","Commodity"),("CPER","Copper","Commodity"),("PPLT","Platinum","Commodity"),
+  ("PALL","Palladium","Commodity"),("DBB","Base Metals","Commodity"),("DBA","Agriculture","Commodity"),
+  ("CORN","Corn","Commodity"),("WEAT","Wheat","Commodity"),("SOYB","Soybeans","Commodity"),("CANE","Sugar","Commodity"),
+  ("JO","Coffee","Commodity"),("URA","Uranium","Commodity"),("LIT","Lithium","Commodity"),("REMX","Rare Earths","Commodity"),
+  ("DBC","Broad Commodities","Commodity"),("GSG","Commodity Index","Commodity"),
+  ("SHY","1-3y Treasury","Rate"),("IEF","7-10y Treasury","Rate"),("TLT","20y+ Treasury","Rate"),
+  ("TIP","TIPS / breakevens","Rate"),("HYG","High Yield","Rate"),("LQD","Inv-Grade Credit","Rate"),("EMB","EM Bonds","Rate"),
+  ("UUP","US Dollar (broad)","FX"),("UDN","US Dollar (bear)","FX"),("FXE","Euro","FX"),("FXY","Yen","FX"),
+  ("FXB","British Pound","FX"),("FXF","Swiss Franc","FX"),("FXC","Canadian Dollar","FX"),("FXA","Aussie Dollar","FX"),("CEW","EM Currencies","FX"),
+  ("XLK","Technology","Sector"),("XLF","Financials","Sector"),("XLV","Health Care","Sector"),("XLY","Consumer Disc.","Sector"),
+  ("XLP","Consumer Staples","Sector"),("XLE","Energy","Sector"),("XLI","Industrials","Sector"),("XLB","Materials","Sector"),
+  ("XLU","Utilities","Sector"),("XLRE","Real Estate","Sector"),("XLC","Communications","Sector"),
+  ("SPY","S&P 500","Broad"),("QQQ","Nasdaq 100","Broad"),("IWM","Russell 2000","Broad"),("DIA","Dow","Broad"),("RSP","Equal-Weight S&P","Broad"),
+  ("MTUM","Momentum","Style"),("QUAL","Quality","Style"),("VLUE","Value","Style"),("SIZE","Size","Style"),("USMV","Low Vol","Style"),
+  ("IWF","Growth","Style"),("IWD","Value (R1000)","Style"),
+  ("EFA","Developed ex-US","Global"),("EEM","Emerging Mkts","Global"),("FXI","China","Global"),("EWJ","Japan","Global"),("EWZ","Brazil","Global"),
+]
+
 def membership(code):
     p=code.split(); idx=[]
     if "ND" in p: idx.append("NDX")
@@ -599,7 +623,7 @@ def build(names,mkt,ff,macro=None):
         else:
             n["ema21d"]=0.0; n["ema21sig"]=0.0; n["ema21sl"]=0.0; n["touch"]=None; n["odds"]=None; n["ev"]=0.0
     val=[ -n["ret"]["12m"]/(n["vol"] or 1) for n in names]; mom=[n["ret"]["6m"] for n in names]
-    risk=[n["beta"] for n in names]; size=[math.log(n["mcap"]) for n in names]
+    risk=[n["beta"] for n in names]; size=[math.log(n["mcap"] or 1) for n in names]   # factor ETFs carry mcap=0 -> log(1)=0 (smallest bubble), avoids math domain error
     fcy=[n["fcfY"] for n in names]; flw=[n["flow"]["net1m"] for n in names]
     dis=[n.get("_disloc",0.0) for n in names]; mfv=[n.get("mfi",50.0) for n in names]; emv=[n.get("ema21sig",0.0) for n in names]
     Z=lambda a:zscores(winsorize(a))
@@ -937,6 +961,8 @@ def real_universe():
     # Robust fallback: SEED membership defines the universe if holdings fetch is unavailable.
     names=[]
     import yfinance as yf
+    from free_financial_data.sec_client import SecClient  # reuse EDGAR client
+    sec=SecClient()
     for sym,nm,sec_name,code in SEED:        # phase-1 universe (extend to full big-3 once holdings parse is wired)
         try:
             h=yf.Ticker(sym).history(period="1y",interval="1d",auto_adjust=True)
@@ -962,6 +988,24 @@ def real_universe():
             except Exception: names[-1]["insider"]=None
         except Exception as e:
             sys.stderr.write(f"skip {sym}: {e}\n")
+    # ---- factor panel: lightweight closes for cross-asset conditioning (tagged idx=["FACTOR"]) ----
+    _fok=0
+    for fsym,fnm,fbucket in FACTOR_PANEL:
+        try:
+            fh=yf.Ticker(fsym).history(period="1y",interval="1d",auto_adjust=True)
+            fcl=[];fvo=[]
+            for c,v in zip(fh["Close"].tolist(), fh["Volume"].tolist()):
+                c=float(c)
+                if c==c and c>0: fcl.append(c); fvo.append(float(v) if v==v else 0.0)
+            if len(fcl)<40: continue
+            fwk=fcl[::5]; fwr=[(fwk[i]/fwk[i-1]-1) for i in range(1,len(fwk)) if fwk[i-1]]
+            names.append({"t":fsym,"n":fnm,"sec":fbucket,"idx":["FACTOR"],"mcap":0,
+                          "wr":[round(x,5) for x in fwr],"_cl":fcl,"_hi":list(fcl),"_lo":list(fcl),"_vol":fvo,
+                          "_fcf":None,"_val":{"pe":None,"fpe":None,"peg":None,"evb":None,"epsg":None,"revg":None},"insider":None,"factor":True})
+            _fok+=1
+        except Exception as fe:
+            sys.stderr.write("factor skip %s: %s\n"%(fsym,fe))
+    sys.stderr.write("factor panel: %d/%d proxies loaded\n"%(_fok,len(FACTOR_PANEL)))
     # ---- Russell 2000 (phase 2): iShares IWM holdings, batch-downloaded (env RUSSELL_LIMIT caps size; 0 = all) ----
     try:
         lim=int(os.environ.get("RUSSELL_LIMIT","2000")); lim=lim or None
@@ -1041,25 +1085,110 @@ def real_universe():
             for n in names:
                 if _sq.get(n["t"]): n["short"]=_sq[n["t"]]
     except Exception: pass
-    _gcap=0
+    # ---- enrichment with PER-SOURCE OBSERVABILITY (no silent swallow): a dead/wrong-tier key
+    #      must look DIFFERENT from a working one. We count usable results per source, emit loud
+    #      CI ::warning:: lines, and stash a dataHealth block into the published JSON. ----
+    import sys as _sys, os as _os
+    _gcap=0; _fmp_try=_fmp_ok=_fmp_err=0; _eod_try=_eod_ok=_eod_err=0; _errs=[]
+    _VALFIELDS=("pe","fpe","peg","evb","epsg","revg")
+    # FAIL-FAST: one classified probe call instead of hammering 150+ tickers with a dead key.
+    _fmp_probe={"ok":bool(_fmp),"reason":"ok","message":""}
+    if _fmp and hasattr(_fmp,"probe_key"):
+        try: _fmp_probe=_fmp.probe_key()
+        except Exception as _pe: _fmp_probe={"ok":False,"reason":"probe_error","message":str(_pe)[:120]}
+    _fmp_live=bool(_fmp) and bool(_fmp_probe.get("ok"))
+    if _fmp and not _fmp_live:
+        _sys.stderr.write("FMP probe: key NOT usable (%s) - %s - skipping per-ticker valuation enrichment\n"%(_fmp_probe.get("reason"),_fmp_probe.get("message")))
     for n in names:
-        try:
-            if _fmp:
+        if _fmp_live:
+            _fmp_try+=1
+            try:
                 fv=_fmp.fetch(n["t"])
-                if fv and fv.get("val"): n["_val"]=fv["val"]
-            sp=(n.get("_cl") or [None])[-1]
-            if _eod and sp and _gcap<140:
-                gx=_eod.fetch_gex(n["t"], sp)
-                if gx: n["gex"]=gx
-                _gcap+=1
-        except Exception: pass
+                vv=fv.get("val") if fv else None
+                # "val present" != "val populated": require >=1 real numeric field, else it's an empty shell
+                if vv and any(vv.get(k) is not None for k in _VALFIELDS):
+                    n["_val"]=vv; _fmp_ok+=1
+            except Exception as e:
+                _fmp_err+=1
+                if len(_errs)<4: _errs.append("FMP %s: %s"%(n["t"], str(e)[:80]))
+        sp=(n.get("_cl") or [None])[-1]
+        if _eod and sp and _gcap<140:
+            _eod_try+=1
+            try:
+                ox=_eod.enrich_options(n["t"], sp, n.get("_cl"))   # GEX + Black-Scholes fair value/greeks/richness
+                if ox:
+                    if ox.get("gex"): n["gex"]=ox["gex"]; _eod_ok+=1
+                    if ox.get("bs"):  n["bs"]=ox["bs"]             # BS option valuation vs same-ticker spot/RV
+            except Exception as e:
+                _eod_err+=1
+                if len(_errs)<8: _errs.append("EODHD %s: %s"%(n["t"], str(e)[:80]))
+            _gcap+=1
+    _kf=bool(_os.environ.get("FMP_API_KEY","").strip()); _ke=bool(_os.environ.get("EODHD_API_KEY","").strip())
+    _sys.stderr.write("ENRICH: FMP key=%s tried=%d ok=%d err=%d | EODHD key=%s tried=%d gex=%d err=%d\n"%(_kf,_fmp_try,_fmp_ok,_fmp_err,_ke,_eod_try,_eod_ok,_eod_err))
+    for _e in _errs: _sys.stderr.write("  - %s\n"%_e)
+    if _kf and not _fmp_live:
+        _r=_fmp_probe.get("reason"); _m=_fmp_probe.get("message") or ""
+        if _r=="invalid_key":
+            _sys.stderr.write("::warning::FMP_API_KEY is INVALID - FMP says: %s | FIX: replace the FMP_API_KEY secret with a key that passes /stable/quote?symbol=AAPL\n"%_m)
+        elif _r=="rate_limited":
+            _sys.stderr.write("::warning::FMP rate/bandwidth limit: %s | valuations skipped this run, auto-retries next run\n"%_m)
+        elif _r=="plan_or_endpoint":
+            _sys.stderr.write("::warning::FMP plan/endpoint issue: %s | /stable quote+ratios-ttm+analyst-estimates may not be in your tier\n"%_m)
+        elif _r=="missing":
+            _sys.stderr.write("::notice::FMP_API_KEY not set - valuation layer disabled\n")
+        else:
+            _sys.stderr.write("::warning::FMP key probe failed (%s): %s\n"%(_r,_m))
+    elif _kf and _fmp_try and _fmp_ok==0:
+        _sys.stderr.write("::warning::FMP key validated but parsed 0 usable valuations across %d tickers - likely a /stable field/endpoint change in parse_val\n"%_fmp_try)
+    if _ke and _eod_try and _eod_ok==0:
+        _sys.stderr.write("::warning::EODHD_API_KEY is SET but returned 0 option chains across %d tickers - the UnicornBay options add-on is likely not subscribed (402/403)\n"%_eod_try)
+    globals()["_DATA_HEALTH"]={"asof":dt.date.today().isoformat(),
+        "fmpKey":_kf,"fmpKeyValid":bool(_fmp_live),"fmpKeyReason":_fmp_probe.get("reason"),"fmpKeyMessage":(_fmp_probe.get("message") or "")[:160],
+        "fmpTried":_fmp_try,"fmpOk":_fmp_ok,"fmpErr":_fmp_err,
+        "eodKey":_ke,"eodTried":_eod_try,"eodOk":_eod_ok,"eodErr":_eod_err,
+        "valCoveragePct":round(100.0*_fmp_ok/max(_fmp_try,1),1),
+        "gexCoveragePct":round(100.0*_eod_ok/max(_eod_try,1),1),"errs":_errs[:4]}
     return names,mkt,ff,macro
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--demo",action="store_true"); ap.add_argument("--real",action="store_true")
     ap.add_argument("--out",default="../../marketmap.json"); a=ap.parse_args()
     if a.real:
-        names,mkt,ff,macro=real_universe(); snap=build(names,mkt,ff,macro); snap["source"]="Live (yfinance + macro factors + options OI) — research only"
+        names,mkt,ff,macro=real_universe()
+        _PRECM={n["t"]: list(n["_cl"]) for n in names if n.get("_cl")}   # capture closes BEFORE build() pops _cl off each name (line ~542)
+        snap=build(names,mkt,ff,macro); snap["source"]="Live (yfinance + macro factors + options OI) — research only"
+        snap["dataHealth"]=globals().get("_DATA_HEALTH")
+        # GRACEFUL DEGRADATION: if FMP returned nothing this run (dead/expired/limited key), keep the
+        # last-good valuations from the live site instead of blanking the layer. Tagged stale=True.
+        try:
+            _dh=snap.get("dataHealth") or {}
+            if _dh.get("fmpKey") and _dh.get("fmpOk",0)==0:
+                import urllib.request as _ur, json as _cj, sys as _csys
+                _prior={}
+                with _ur.urlopen("https://mrktprice.com/marketmap.json", timeout=20) as _resp:
+                    _pj=_cj.loads(_resp.read().decode("utf-8","ignore"))
+                for _pn in (_pj.get("names") or []):
+                    _pv=_pn.get("val")
+                    if _pn.get("t") and isinstance(_pv,dict) and any(_pv.get(k) is not None for k in ("pe","fpe","peg","evb")):
+                        _prior[_pn["t"]]=_pv
+                _carried=0
+                for _n in (snap.get("names") or []):
+                    _pv=_prior.get(_n.get("t")); _cur=_n.get("val") or {}
+                    if _pv and not any(_cur.get(k) is not None for k in ("pe","fpe","peg","evb")):
+                        _pv=dict(_pv); _pv["stale"]=True; _n["val"]=_pv; _carried+=1
+                snap["dataHealth"]["valCarriedForward"]=_carried
+                _csys.stderr.write("FMP graceful: carried forward %d prior valuations (key not usable this run)\n"%_carried)
+        except Exception as _ce:
+            import sys as _csys2; _csys2.stderr.write("::notice::valuation carry-forward skipped: %s\n"%str(_ce)[:120])
+        try:
+            import xsection as _xsec, json as _json2, sys as _sys2
+            _cm=_PRECM
+            _mkt=_cm.get("SPY"); _rate=_cm.get("^TNX") or _cm.get("TLT") or _cm.get("IEF")
+            _xj=_xsec.build_from_closes(_cm, market_closes=_mkt, rate_closes=_rate)
+            _json2.dump(_xj, open(a.out.replace("marketmap.json","xsection.json"),"w"), separators=(",",":"), allow_nan=False)
+            _sys2.stderr.write("XSECTION: %d tickers, %d days -> xsection.json\n"%(_xj.get("tickers",0),_xj.get("n",0)))
+        except Exception as _xe:
+            import sys as _sys3; _sys3.stderr.write("::warning::xsection build failed: %s\n"%str(_xe)[:120])
     else:
         names,mkt,ff,macro=synth(); snap=build(names,mkt,ff,macro)
     def _finite(o):

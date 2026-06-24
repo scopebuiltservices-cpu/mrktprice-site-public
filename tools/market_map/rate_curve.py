@@ -2,7 +2,7 @@
 log-linear interpolates by maturity in years. Falls back to a static recent curve so
 the pipeline never breaks offline. rate_for(T) returns a continuously-compounded rate."""
 import math
-_FRED={"DGS1MO":1/12,"DGS3MO":0.25,"DGS6MO":0.5,"DGS1":1,"DGS2":2,"DGS3":3,"DGS5":5,"DGS7":7,"DGS10":10}
+_FRED={"DGS1MO":1/12,"DGS3MO":0.25,"DGS6MO":0.5,"DGS1":1,"DGS2":2,"DGS3":3,"DGS5":5,"DGS7":7,"DGS10":10,"DGS20":20,"DGS30":30}
 _FALLBACK=[(1/12,0.0445),(0.25,0.0440),(0.5,0.0430),(1,0.0410),(2,0.0395),(3,0.0390),(5,0.0395),(7,0.0405),(10,0.0420)]
 
 def fetch_curve(sess=None):

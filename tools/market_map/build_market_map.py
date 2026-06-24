@@ -1217,7 +1217,8 @@ def real_universe():
         "fmpKey":_kf,"fmpKeyValid":bool(_fmp_live),"fmpKeyReason":_fmp_probe.get("reason"),"fmpKeyMessage":(_fmp_probe.get("message") or "")[:160],
         "fmpTried":_fmp_try,"fmpOk":_fmp_ok,"fmpErr":_fmp_err,
         "eodKey":_ke,"eodTried":_eod_try,"eodOk":_eod_ok,"eodErr":_eod_err,
-        "valCoveragePct":round(100.0*_cov.get("valOk",0)/max(len(names),1),1),   # REAL valuation coverage, any source (was FMP-only, hence the misleading 0%)
+        "equities":sum(1 for n in names if "FACTOR" not in (n.get("idx") or [])),
+        "valCoveragePct":round(100.0*_cov.get("valOk",0)/max(sum(1 for n in names if "FACTOR" not in (n.get("idx") or [])),1),1),   # EQUITY-ONLY valuation coverage (ETFs have no P/E; counting them diluted it to ~62%)
         "fmpCoveragePct":round(100.0*_fmp_ok/max(_fmp_try,1),1),                  # FMP cross-check coverage specifically
         "gexCoveragePct":round(100.0*_eod_ok/max(_eod_try,1),1),
         "coverage":_cov,"errs":_errs[:4]}

@@ -990,8 +990,11 @@ def real_universe():
     # Robust fallback: SEED membership defines the universe if holdings fetch is unavailable.
     names=[]
     import yfinance as yf
-    from free_financial_data.sec_client import SecClient  # reuse EDGAR client
-    sec=SecClient()
+    try:
+        from free_financial_data.sec_client import SecClient  # optional EDGAR client (vendored in private repo only)
+        sec=SecClient()
+    except Exception:
+        sec=None   # not vendored in the public repo; SEC pulls below use the inline requests+UA path. 'sec' is unused.
     for sym,nm,sec_name,code in SEED:        # phase-1 universe (extend to full big-3 once holdings parse is wired)
         try:
             h=yf.Ticker(sym).history(period="1y",interval="1d",auto_adjust=True)

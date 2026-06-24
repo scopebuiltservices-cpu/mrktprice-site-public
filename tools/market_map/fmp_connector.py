@@ -133,16 +133,33 @@ def _pull(base, ticker, key, sess):
     est=_opt("analyst-estimates")
     return quote, ratios, est
 
+_DBG={"done": False}   # one-shot raw-response diagnostic (set MRKT_FMP_DEBUG=1)
+
 def fetch(ticker, sess=None):
     key=os.environ.get("FMP_API_KEY","").strip()
     if not key: return None
+    import sys as _s
+    dbg=bool(os.environ.get("MRKT_FMP_DEBUG","").strip()) and not _DBG["done"]
     for base in (STABLE, V3):
         try:
             quote, ratios, est=_pull(base, ticker, key, sess)
+            if dbg:
+                _DBG["done"]=True
+                q0=(quote or [{}])[0] if isinstance(quote, list) else (quote or {})
+                r0=(ratios or [{}])[0] if isinstance(ratios, list) else (ratios or {})
+                e0=(est or [{}])[0] if isinstance(est, list) else (est or {})
+                _s.stderr.write("::warning::FMP DEBUG base=%s ticker=%s\n"%(base.rsplit('/',1)[-1], ticker))
+                _s.stderr.write("  quote keys: %s\n"%sorted((q0 or {}).keys()))
+                _s.stderr.write("  quote price=%r pe=%r eps=%r\n"%((q0 or {}).get("price"),(q0 or {}).get("pe"),(q0 or {}).get("eps")))
+                _s.stderr.write("  ratios keys: %s\n"%sorted((r0 or {}).keys())[:60])
+                _s.stderr.write("  est keys: %s\n"%sorted((e0 or {}).keys()))
             out=parse_val(quote, ratios, est)
             if out and out.get("price") is not None:
                 return out
-        except Exception:
+            if dbg:
+                _s.stderr.write("::warning::FMP DEBUG parse_val produced price=%r val=%r (base=%s) — this is why fmpOk stays 0\n"%((out or {}).get("price"),(out or {}).get("val"),base.rsplit('/',1)[-1]))
+        except Exception as e:
+            if dbg: _s.stderr.write("::warning::FMP DEBUG _pull failed base=%s: %s\n"%(base.rsplit('/',1)[-1], str(e)[:160]))
             continue
     return None
 

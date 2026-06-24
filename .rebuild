@@ -1,0 +1,10 @@
+Force a fresh Market Map data rebuild.
+
+HOW TO REBUILD ON DEMAND (no GitHub Desktop, no commit-message tricks):
+  1. Open this file on GitHub:  https://github.com/scopebuiltservices-cpu/mrktprice-site-public/edit/main/.rebuild
+  2. Change the number below (e.g. bump it by 1), or edit anything.
+  3. Click "Commit changes".
+That push pulls fresh live data, recomputes coverage + valuations, and self-publishes.
+(The nightly cron at 06:20 UTC already rebuilds automatically — this is only for an immediate refresh.)
+
+rebuild-counter: 1

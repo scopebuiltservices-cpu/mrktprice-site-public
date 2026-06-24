@@ -47,7 +47,7 @@ jobs:
         with: { python-version: "3.11" }
 
       - name: Refresh Market Map (live) + xsection + static history
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[rebuild]'))
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (contains(github.event.head_commit.modified, '.rebuild') || contains(github.event.head_commit.added, '.rebuild') || contains(github.event.head_commit.message, '[rebuild]')))
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
@@ -75,7 +75,7 @@ jobs:
           fi
 
       - name: Commit refreshed data (self-publish, no PAT)
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[rebuild]'))
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (contains(github.event.head_commit.modified, '.rebuild') || contains(github.event.head_commit.added, '.rebuild') || contains(github.event.head_commit.message, '[rebuild]')))
         run: |
           git config user.name  "mrktprice-bot"
           git config user.email "bot@mrktprice.com"

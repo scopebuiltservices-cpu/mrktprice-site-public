@@ -1823,6 +1823,19 @@ function intradayFetch(t){
   if(!(MRKT_TOKEN||MRKT_CODE))return Promise.resolve(null);
   return fetchJSON(MRKT_API+'/intraday/metrics?ticker='+encodeURIComponent(t)).then(function(j){return (j&&j.metrics)?j:null;}).catch(function(){return null;});
 }
+function intradayProjection(buf,o){o=o||{};var tauV=o.tauV||2.0,tauS=(o.tauS!=null?o.tauS:0.0010),K=o.K||3,h=o.h||8,z=o.z||1.0;
+  if(!buf||buf.length<2)return{triggered:false,consecutive:0,K:K,h:h};
+  var w=buf.slice(-Math.max(K,8)),rr=w.map(function(b){return b.r;});
+  var mu=rr.reduce(function(s,x){return s+x;},0)/rr.length;
+  var sig=Math.sqrt(rr.reduce(function(s,x){return s+(x-mu)*(x-mu);},0)/Math.max(1,rr.length-1));
+  var last=buf[buf.length-1],trend=Math.sign(last.r)||1,k=0;
+  for(var i=buf.length-1;i>=0;i--){var b=buf[i];var ok=(b.rvol>=tauV)&&(sig>=tauS)&&(Math.sign(b.r)===trend)&&((b.conf==null)||(b.conf>=0.5));if(ok)k++;else break;}
+  var out={triggered:k>=K,consecutive:k,sigma:sig,trend:trend,Pnow:last.price,K:K,h:h};
+  if(out.triggered&&last.price!=null){var cf=buf.slice(buf.length-k),cr=cf.map(function(b){return b.r;});
+    var vbar=cr.reduce(function(s,x){return s+x;},0)/cr.length,disp=vbar*h,sd=sig*Math.sqrt(h),P=last.price;
+    out.vbar=vbar;out.disp=disp;out.Pproj=P*Math.exp(disp);out.lo=P*Math.exp(disp-z*sd);out.hi=P*Math.exp(disp+z*sd);out.lo90=P*Math.exp(disp-1.645*sd);out.hi90=P*Math.exp(disp+1.645*sd);}
+  return out;}
+
 function renderIntraday(sym,j){
   var host=document.getElementById('intradayStrip');if(!host)return;
   var card='background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:7px 9px;margin-top:7px';
@@ -1849,7 +1862,17 @@ function renderIntraday(sym,j){
     +'VWAP is session-anchored (true intraday, not the daily-bar approximation). slot-RVOL = this 15-min slot vs its same-time-of-day average over prior sessions. '
     +'confidence = how often the 15-min momentum sign predicted the next bar (last '+(m.confN||0)+' cycles · '+(m.sessions||0)+' sessions · '+(m.bars||0)+' bars today). '
     +(j.asof?('updated '+String(j.metrics.ts||'').slice(11,16)+' · '):'')+'15-min cadence, market hours only. Research only; not advice.</div>';
-  host.innerHTML='<div style="'+card+'">'+head+strip+note+'</div>';
+  var projHTML='';
+  try{var _dk='mrkt.intra.'+sym+'.'+(new Date().toISOString().slice(0,10));var _b=[];try{_b=JSON.parse(localStorage.getItem(_dk)||'[]');}catch(_e){}
+    var _ts=m.ts||(''+Date.now());if(!_b.length||_b[_b.length-1].ts!==_ts){_b.push({ts:_ts,r:(m.momentumPctPerBar!=null?m.momentumPctPerBar/100:0),rvol:(m.slotRvol!=null?m.slotRvol:0),conf:(m.confidence!=null?m.confidence:null),price:(m.price!=null?m.price:null)});if(_b.length>40)_b=_b.slice(-40);try{localStorage.setItem(_dk,JSON.stringify(_b));}catch(_e){}}
+    var _p=intradayProjection(_b,{tauV:2.0,tauS:0.0010,K:3,h:8,z:1});var _trig=_p.triggered;
+    projHTML='<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line,#2a2f3a)"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint,#646e7c)">Consecutive confirms</span><span style="font-size:15px;font-weight:700;color:'+(_trig?'#2ecc8f':'var(--ink,#eef3f8)')+'">'+_p.consecutive+' / '+_p.K+'</span>'+(_trig?'<span style="font-size:9px;font-weight:700;color:#0a0d12;background:#2ecc8f;padding:1px 7px;border-radius:5px">PROJECTION TRIGGERED</span>':'<span style="font-size:9px;color:var(--faint,#646e7c)">accumulating &middot; need '+_p.K+'</span>')+'</div>';
+    if(_trig){projHTML+='<div style="display:flex;gap:14px;align-items:flex-end;margin-top:5px">'+chip('proj price',_p.Pproj.toFixed(2),(_p.trend>=0?'#2ecc8f':'#ef5f4e'))+chip('drift/bar',((_p.vbar*100>=0?'+':'')+(_p.vbar*100).toFixed(2)+'%'))+chip('68% range',_p.lo.toFixed(2)+'-'+_p.hi.toFixed(2))+chip('90% range',_p.lo90.toFixed(2)+'-'+_p.hi90.toFixed(2))+'</div>';
+      var _lo=_p.lo90,_hi=_p.hi90,_rng=(_hi-_lo)||1;var _xx=function(v){return Math.max(0,Math.min(100,(v-_lo)/_rng*100));};
+      projHTML+='<div style="position:relative;height:10px;margin-top:6px;background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:5px">'+'<div style="position:absolute;top:0;bottom:0;left:'+_xx(_p.lo)+'%;width:'+(_xx(_p.hi)-_xx(_p.lo))+'%;background:rgba(46,204,143,.25)"></div>'+'<div style="position:absolute;top:-2px;bottom:-2px;width:2px;left:'+_xx(_p.Pnow)+'%;background:#8a93a0"></div>'+'<div style="position:absolute;top:-2px;bottom:-2px;width:2px;left:'+_xx(_p.Pproj)+'%;background:#2ecc8f"></div></div>';}
+    projHTML+='<div style="margin-top:3px;font-size:8px;color:var(--faint,#646e7c)">After volume (slot-RVOL&ge;2.0) &amp; volatility (&sigma;&ge;0.10%/bar) thresholds trip, counts consecutive 15-min windows with a consistent drift sign; at '+_p.K+' confirms it integrates per-bar velocity (&int;v&middot;dt over '+_p.h+' bars) to project P with a Brownian &plusmn;range.</div></div>';
+  }catch(_pe){projHTML='';}
+  host.innerHTML='<div style="'+card+'">'+head+strip+note+projHTML+'</div>';
 }
 var _intraTimer=null,_intraSym=null;
 function intradayTick(){

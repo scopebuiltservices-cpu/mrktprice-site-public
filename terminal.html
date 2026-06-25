@@ -1019,6 +1019,38 @@ function _qNextReportFull(d,sym){var iso=_qNextReportISO(d,sym);if(!iso)return n
   var last=(d&&d.length)?d[d.length-1]:null;
   var bd=0,bdLo=0,bdHi=0;if(last){try{bd=_forwardTradingDays(last,iso);bdLo=_forwardTradingDays(last,win[0]);bdHi=_forwardTradingDays(last,win[1]);}catch(_e3){}}
   return {iso:iso,est:est,bd:bd,bdLo:bdLo,bdHi:bdHi,label:lab,status:status,window:win,conf:false};}
+/* ===== CLIENT-SIDE SEC EDGAR (free, no API key, no nightly build) =====
+   Pulls CONFIRMED quarterly report dates straight from SEC EDGAR in the browser: the 10-Q/10-K
+   filing dates ARE the authoritative report dates. Resolves CIK from a tiny static cik.json, fetches
+   data.sec.gov submissions, derives the true fiscal quarter from the period-end vs the fiscal-year
+   end, caches in localStorage (7d), and redraws so estimate lines harden into confirmed lines.
+   Fails soft: any error (CORS/offline/no-CIK) leaves the cadence estimate in place. */
+function _ensureCikMap(cb){
+  if(window.CIKMAP){cb();return;}
+  if(window._cikLoading){window._cikCBs.push(cb);return;}
+  window._cikLoading=1;window._cikCBs=[cb];
+  fetch('cik.json').then(function(r){return r.ok?r.json():{};}).catch(function(){return {};})
+    .then(function(m){window.CIKMAP=m||{};window._cikCBs.forEach(function(f){try{f();}catch(_e){}});window._cikCBs=[];});}
+function _secParseSubmissions(j){
+  var rec=(j&&j.filings&&j.filings.recent)||{},form=rec.form||[],fd=rec.filingDate||[],rd=rec.reportDate||[],rows=[];
+  for(var i=0;i<form.length;i++){if((form[i]==='10-Q'||form[i]==='10-K')&&fd[i]&&rd[i])rows.push({d:String(fd[i]).slice(0,10),end:String(rd[i]).slice(0,10),form:form[i]});}
+  if(!rows.length)return null;
+  rows.sort(function(a,b){return a.end<b.end?-1:1;});
+  var fye=null;for(var k=rows.length-1;k>=0;k--){if(rows[k].form==='10-K'){fye=parseInt(rows[k].end.slice(5,7),10);break;}}
+  rows.forEach(function(r){var m=parseInt(r.end.slice(5,7),10),py=parseInt(r.end.slice(0,4),10);
+    if(fye){var fyStart=(fye%12)+1;r.q=Math.floor(((m-fyStart+12)%12)/3)+1;r.y=py+((m>fye)?1:0);}
+    else{r.q=Math.floor((m-1)/3)+1;r.y=py;}
+    if(r.form==='10-K')r.q=4;});
+  return rows;}
+function _secFetchEarnings(sym){sym=(sym||'').toUpperCase();if(!sym)return;
+  window.SECEARN=window.SECEARN||{};if(window.SECEARN[sym]||window.MRKT_NOCALL)return;
+  try{var c=JSON.parse(localStorage.getItem('mrkt.secearn.'+sym)||'null');if(c&&c.rows&&(Date.now()-c.ts)<7*864e5){window.SECEARN[sym]=c.rows;return;}}catch(_e){}
+  _ensureCikMap(function(){var cik=(window.CIKMAP||{})[sym];if(!cik)return;
+    fetch('https://data.sec.gov/submissions/CIK'+cik+'.json',{headers:{'Accept':'application/json'}})
+      .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;})
+      .then(function(j){var rows=j?_secParseSubmissions(j):null;if(rows&&rows.length){window.SECEARN[sym]=rows;
+        try{localStorage.setItem('mrkt.secearn.'+sym,JSON.stringify({ts:Date.now(),rows:rows.slice(-12)}));}catch(_e){}
+        try{if(typeof CUR==='object'&&CUR&&(CUR.sym||'').toUpperCase()===sym&&typeof draw==='function')draw();}catch(_e2){}}});});}
 function _cadencePastDates(d,sym,k){
   // FALLBACK: estimated past report dates from the company's fiscal cadence (qMonths if known, else
   // the generic Feb/May/Aug/Nov calendar). Flagged conf:false/est:true so they are never shown as
@@ -1036,6 +1068,8 @@ function _cadencePastDates(d,sym,k){
     out.push({iso:iso,label:'Q'+q+" '"+String(yl).slice(2),eps:null,surpr:null,src:'cal',conf:false,labelSrc:'cal',est:true});}
   return out;}
 function _qReportDates(d,sym){var out=[],seen={},n=_mmName(sym);
+  // 0) AUTHORITATIVE (client-side SEC EDGAR) — confirmed 10-Q/10-K filing dates, no key/build needed
+  try{var _se=(window.SECEARN||{})[(sym||'').toUpperCase()];if(_se&&_se.length){_se.forEach(function(r){if(!r.d||seen[r.d])return;seen[r.d]=1;out.push({iso:r.d,label:'Q'+(r.q||'?')+" '"+String(r.y||'').slice(2),eps:null,surpr:null,src:'sec',conf:true,labelSrc:'sec'});});}}catch(_e0){}
   if(n&&n.earn&&n.earn.q){n.earn.q.forEach(function(e){if(!e.d||seen[e.d])return;seen[e.d]=1;out.push({iso:e.d,label:'Q'+(e.q||'?')+" '"+String(e.y||'').slice(2),eps:e.a,surpr:e.s,src:'cal',conf:(e.conf!==false),labelSrc:(e.labelSrc||'cal')});});}
   try{var C=(typeof FUND==='object'&&FUND)?FUND[sym]:null;if(C&&C.quarters){C.quarters.forEach(function(q){var fd=q.filedDate||q.endDate;if(!fd||seen[fd])return;seen[fd]=1;out.push({iso:fd,label:(q.label||'Q'),eps:(q.eps!=null?q.eps:null),surpr:null,src:'sec',conf:true,labelSrc:'sec'});});}}catch(_e){}
   // CADENCE FILL — ensure up to 4 past lines even when no authoritative feed is present (estimated).
@@ -1834,7 +1868,7 @@ function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementByI
  const rk={pass:0,caution:1,fail:2,'weak-id':1};let w=0;S.forEach(s=>w=Math.max(w,rk[s]??1));const gs=['pass','caution','fail'][w];
  setPill('gate',gs,gs==='pass'?'PASS':gs==='caution'?'PASS · CAUTION':'REJECT');
  document.getElementById('gatewhy').textContent=gs==='pass'?'volatility, RV-ratio, tail, skew within tolerance (timing daily-proxy; dependence degraded).':gs==='caution'?'a risk component elevated/weak-id; size conservatively.':'a hard risk band breached — release withheld.';
- buildAlerts();try{renderConeInstrument(CUR.sym);}catch(_e){}try{renderConeContext(CUR.sym);}catch(_e){}draw();buildInsightTiles(CUR.sym);renderDecision(CUR.sym);renderReaction(CUR.sym);renderMacro(CUR.sym);try{buildForecastCard(CUR.sym);}catch(_eFCw){}}
+ buildAlerts();try{renderConeInstrument(CUR.sym);}catch(_e){}try{renderConeContext(CUR.sym);}catch(_e){}draw();buildInsightTiles(CUR.sym);renderDecision(CUR.sym);renderReaction(CUR.sym);renderMacro(CUR.sym);try{buildForecastCard(CUR.sym);}catch(_eFCw){}try{_secFetchEarnings(CUR.sym);}catch(_eSEf){}}
 /* ===== CONSOLIDATED FORECAST CARD — What / Why / Risk / Trust / Action =====
    One coordinated read of the engine: the projection (What), the reasons behind it (Why), the
    downside envelope (Risk), the calibration/governance grade (Trust), and the conservative,

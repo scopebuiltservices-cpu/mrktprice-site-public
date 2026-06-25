@@ -82,5 +82,24 @@ ok("calibrate target .9", cal3.target === 0.9);
 ok("calibrate coverage in CI", cal3.wilsonLo <= 0.90 && 0.90 <= cal3.wilsonHi);
 ok("calibrate crps>0", cal3.crps > 0 && cal3.intervalScore > 0);
 
+// ---- Phase 4 volume & impact ----
+ok("fp reflection", approx(L.firstPassageUp(0.05,0,0.05), 2*L.normCdf(-1), 1e-9));
+ok("fp monotone", L.firstPassageUp(0.02,0,0.05) > L.firstPassageUp(0.10,0,0.05));
+ok("fp through", L.firstPassageUp(0,0,0.05) === 1);
+ok("fp down mirror", approx(L.firstPassageDown(-0.05,0,0.05), L.firstPassageUp(0.05,0,0.05)));
+ok("fp drift", L.firstPassageUp(0.05,0.02,0.05) > L.firstPassageUp(0.05,-0.02,0.05));
+// volume-ahead conditioning
+let px=100, rows4=[];
+for (let d=0; d<400; d++){ let r=0.02*randn(); px*=Math.exp(r); let vol=Math.round(1e6*(1+6*Math.abs(r)/0.02)); rows4.push(["2020-01-01", Math.round(px*1e4)/1e4, vol]); }
+const va = L.volumeAhead(rows4);
+ok("volAhead outer>center", va.sigvol["1d"]["2..3"].meanCumVol > va.sigvol["1d"]["0..1"].meanCumVol);
+ok("volAhead base", va.base.avgVol20>0 && va.base.dailySigma>0 && va.base.volAcf1!=null);
+// touch odds
+let px2=100, rows5=[];
+for (let d=0; d<120; d++){ px2*=Math.exp(0.015*randn()); rows5.push(["2020-01-01", Math.round(px2*1e4)/1e4, 1000]); }
+const to = L.touchOdds(rows5);
+ok("touch has 20d", "20d" in to && to["20d"].pUp>=0 && to["20d"].pUp<=1);
+ok("touch horizon mono", to["20d"].pUp >= to["1d"].pUp - 1e-9);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

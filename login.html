@@ -131,17 +131,19 @@ label.cl{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(
     var fr=dh.fmpKeyReason;
     function fmpStat(){ var s=S(dh.fmpOk,dh.fmpTried); if(s)return s; if(!dh.fmpKey)return['na','Off',null]; if(fr==='invalid_key')return['down','Key invalid',null]; if(fr==='rate_limited')return['warn','Rate-limited',null]; return['warn','No data',null]; }
     function eodStat(){ var s=S(dh.eodOk,dh.eodTried); if(s)return s; return dh.eodKey?['warn','Add-on off',null]:['na','Off',null]; }
+    var hasMS=!!(d.macroSeries&&(d.macroSeries.treasury||d.macroSeries.commodities));
     var SRC=[
-      ['Prices & charts','yfinance → charts · EMA · cone · β · RS', S(C.priceOk,U)||(live?['ok','Live',null]:['down','Down',null])],
+      ['Prices & charts','FMP Ultimate → charts · EMA · cone · β · RS · yfinance fallback', S(C.priceOk,U)||(live?['ok','Live',null]:['down','Down',null])],
       ['Market caps','yfinance → size factor · treemap · FCF yield', S(C.mcapOk,U)||(live?['ok','Live',null]:['na','—',null])],
       ['Valuations','FMP Ultimate → P/E · PEG · EV/EBITDA · fwd EPS', fmpStat()],
+      ['Rates & commodities','FMP Ultimate → real 2s10s curve · 30 commodities → drivers', hasMS?['ok','FMP Ultimate',null]:['na','—',null]],
       ['Options & gamma','EODHD → dealer GEX · option fair value', eodStat()],
       ['Intraday vol','TwelveData → intraday σ → cone width', S(C.ivolOk,U)||['na','—',null]],
       ['Earnings beat','Finnhub → beat-prob → odds ladder', S(C.beatOk,U)||['na','Off',null]],
       ['Institutional 13F','SEC EDGAR → ownership flow', S(C.instOk,U)||['na','—',null]],
       ['Insider','SEC EDGAR → insider buy/sell signal', S(C.insiderOk,U)||['na','—',null]],
       ['Short / FTD','SEC EDGAR → squeeze signal', S(C.shortOk,U)||['na','—',null]],
-      ['Treasury curve','FRED keyless → risk-free · cone drift · rate regime', live?['ok','Live',null]:['na','—',null]]
+      ['Treasury curve', hasMS?'FMP Ultimate curve → risk-free · cone drift · rate regime (FRED fallback)':'FRED keyless → risk-free · cone drift · rate regime', hasMS?['ok','FMP Ultimate',null]:(live?['ok','Live',null]:['na','—',null])]
     ];
     var sa=document.getElementById('srcAsof'); if(sa) sa.textContent=(stale?'STALE · ':'updated ')+asof;
     var rr=document.getElementById('srcRows'); if(rr) rr.innerHTML=SRC.map(function(r){

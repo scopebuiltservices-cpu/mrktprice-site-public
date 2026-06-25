@@ -1045,7 +1045,7 @@ function renderDecision(sym){
   +cell('price vs EMA21','<b style="color:'+stateCol+'">'+state+'</b> &middot; '+_fmtSign(dPct,1)+'% &middot; '+_fmtSign(dZ,2)+'\u03c3 &middot; slope5 '+_fmtSign(slope5,1)+'%')
   +cell('next upside',lvl(ab[0]))+cell('resistance',lvl(ab[1]))+cell('downside invalidate',lvl(bl[0]))
   +cell('next event',ev)+cell('confidence','<b style="color:'+confCol+'">'+conf+'/100</b>')+cell('momentum (validated)',(CUR.mcs&&CUR.mcs.validated&&CUR.mcs.score!=null)?('<b style="color:'+(CUR.mcs.score>=58?'var(--up)':CUR.mcs.score<=42?'var(--down)':'var(--muted)')+'">'+CUR.mcs.score+'/100 '+CUR.mcs.state+'</b> <span style="color:var(--faint)">AUC '+CUR.mcs.auc.toFixed(2)+'&middot;p'+(CUR.mcs.pval<0.001?'&lt;.001':('='+CUR.mcs.pval.toFixed(3)))+'</span>'):'<span style="color:var(--faint)">none &middot; no validated edge</span>')
-  +cell('freshness','<span style="color:'+fcol+'">&#9679;</span> '+asof+' &middot; '+(live?'live':'EOD')+' &middot; '+flbl)
+  +cell('freshness','<span style="color:'+fcol+'">&#9679;</span> '+asof+' &middot; '+(live?'live':'EOD')+' &middot; '+flbl+((typeof window!=='undefined'&&window.HISTSRC)?(' &middot; '+window.HISTSRC):''))
   +'</div>';
  if(conflict>=0.5){html+='<div style="padding:4px 10px;margin:-2px 0 6px;background:rgba(230,180,80,.12);border:1px solid rgba(230,180,80,.4);border-radius:8px;font-size:11px;color:var(--caution)">&#9888; <b>Signals disagree</b> (conflict '+(conflict*100).toFixed(0)+'%): price '+(above?'above':'below')+' EMA21, trend '+(emaSl>=0?'up':'down')+', forecast '+((TR&&TR.directional)?(TR.consensus>=0?'up':'down'):'indeterminate')+' &mdash; treat as range / low-conviction, not a clean '+direction+'.</div>';}
  el.innerHTML=html;
@@ -2787,8 +2787,10 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
   }
   function curSym(){var b=document.getElementById('sym');return b?(b.textContent||'').trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,''):'';}
   function boot(){
+    // history-source provenance label (real per-source breakdown from the static card index)
+    fetch('cards_index.json',{cache:'no-cache'}).then(function(r){return r.json();}).then(function(j){try{var hs=j.histSources||{},best='',bn=-1;for(var k in hs){if(hs[k]>bn){bn=hs[k];best=k;}}if(best)window.HISTSRC=best;}catch(_e){}}).catch(function(){});
     fetch('marketmap.json',{cache:'no-cache'}).then(function(r){return r.json();}).then(function(d){
-      MMAP={}; (d.names||[]).forEach(function(n){if(n&&n.t)MMAP[n.t]=n;});try{window.MMAP=MMAP;}catch(_e){}
+      MMAP={}; (d.names||[]).forEach(function(n){if(n&&n.t)MMAP[n.t]=n;});try{window.MMAP=MMAP;window.DSRC=d.source||'';}catch(_e){}
       render(curSym());
       var bg=document.getElementById('sym');
       if(bg&&window.MutationObserver){new MutationObserver(function(){render(curSym());}).observe(bg,{childList:true,subtree:true,characterData:true});}

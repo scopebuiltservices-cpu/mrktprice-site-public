@@ -973,6 +973,62 @@ def twelvedata_ivol(key, names, cap=40):
 _INS_UA={"User-Agent":"MrktPrice marketmap/1.0 (research; contact scopebuiltservices@gmail.com)"}
 _INS_PLAN=re.compile(r"10b5[\-\u2010\u2011\u2012\u2013\u2014]?\s*1|rule\s*10b5", re.I)
 _INS_CIK=None
+_INS_CIK_FAILS=[0]                 # bounded retry on the bulk CIK map (avoid re-pulling 8MB forever)
+_SEC_MIN_INTERVAL=0.16            # ~6 req/s \u2014 under SEC's 10 req/s fair-access ceiling
+_sec_last=[0.0]
+def _sec_get(s, url, tries=4):
+    """Throttled SEC GET: one global pacer for EVERY edgar/data.sec call (bulk CIK, submissions,
+    Form 4 docs), with exponential backoff + Retry-After on 403/429/5xx. Returns Response or None.
+    A clean 0/N insider coverage was a rate-limit cascade: bursts >10/s tripped 403 on every call."""
+    import time as _t
+    for k in range(tries):
+        gap=_t.time()-_sec_last[0]
+        if gap<_SEC_MIN_INTERVAL: _t.sleep(_SEC_MIN_INTERVAL-gap)
+        _sec_last[0]=_t.time()
+        try:
+            r=s.get(url, headers=_INS_UA, timeout=25)
+        except Exception:
+            _t.sleep(0.5*(k+1)); continue
+        if r.status_code==200: return r
+        if r.status_code in (403,429,500,502,503,504):
+            ra=str(r.headers.get("Retry-After",""))
+            wait=float(ra) if ra[:6].isdigit() and ra.strip() else 0.8*(2**k)
+            _t.sleep(min(wait,8.0)); continue
+        return r                  # 404 / other \u2014 hand back so caller can skip cleanly
+    return None
+def _load_cik(s):
+    """Load (once) the SEC ticker->CIK map. Resilient: bounded retries, and one failure no longer
+    cascades the whole universe to None."""
+    global _INS_CIK
+    if _INS_CIK is not None: return _INS_CIK
+    if _INS_CIK_FAILS[0]>=6: return None
+    r=_sec_get(s,"https://www.sec.gov/files/company_tickers.json")
+    if r is None or r.status_code!=200:
+        _INS_CIK_FAILS[0]+=1; return None
+    try:
+        j=r.json(); _INS_CIK={v["ticker"].upper():str(v["cik_str"]).zfill(10) for v in j.values()}
+        return _INS_CIK
+    except Exception:
+        _INS_CIK_FAILS[0]+=1; return None
+def _form4_xml_url(s, cik_int, acc_nodash, primary):
+    """Resolve the RAW Form 4 ownership XML. primaryDocument is often the XSL-rendered path
+    (e.g. 'xslF345X05/wk-form4_..xml') which returns HTML, not parseable XML \u2014 strip the xsl
+    dir. If primaryDocument isn't .xml at all (older .txt filings), read the accession's
+    index.json directory and pick the real ownership .xml."""
+    base="https://www.sec.gov/Archives/edgar/data/%s/%s/"%(cik_int,acc_nodash)
+    if primary and primary.lower().endswith(".xml"):
+        return base+re.sub(r"^xsl[^/]*/","",primary)
+    r=_sec_get(s, base+"index.json")
+    if r is not None and r.status_code==200:
+        try:
+            items=r.json().get("directory",{}).get("item",[])
+            xmls=[it.get("name","") for it in items if it.get("name","").lower().endswith(".xml")]
+            cand=[x for x in xmls if not x.lower().startswith("xsl")] or xmls
+            for x in cand:
+                if re.search(r"form4|ownership|f345|doc4|wf-?form4|wk-?form4", x, re.I): return base+x
+            if cand: return base+cand[0]
+        except Exception: pass
+    return None
 def _ins_g(node,path):
     el=node.find(path); return (el.text or "").strip() if (el is not None and el.text) else ""
 def _ins_num(x):
@@ -1017,24 +1073,28 @@ def insider_signal(txns, days=120, asof=None):
 def fetch_insider(ticker, max_filings=15, sess=None):
     try:
         import requests
-        global _INS_CIK; s=sess or requests.Session()
-        if _INS_CIK is None:
-            j=s.get("https://www.sec.gov/files/company_tickers.json",headers=_INS_UA,timeout=20).json()
-            _INS_CIK={v["ticker"].upper():str(v["cik_str"]).zfill(10) for v in j.values()}
-        cik=_INS_CIK.get(ticker.upper())
+        s=sess or requests.Session()
+        cikmap=_load_cik(s)
+        if not cikmap: return None
+        cik=cikmap.get(ticker.upper())
         if not cik: return None
-        sub=s.get("https://data.sec.gov/submissions/CIK%s.json"%cik,headers=_INS_UA,timeout=20).json()
+        rsub=_sec_get(s,"https://data.sec.gov/submissions/CIK%s.json"%cik)
+        if rsub is None or rsub.status_code!=200: return None
+        sub=rsub.json()
         r=sub.get("filings",{}).get("recent",{}); forms=r.get("form",[]); acc=r.get("accessionNumber",[]); pdoc=r.get("primaryDocument",[])
         txns=[]; got=0; ci=str(int(cik))
         for i in range(len(forms)):
             if forms[i]!="4": continue
             doc=pdoc[i] if i<len(pdoc) else ""
-            if not doc.endswith(".xml"): continue
-            try:
-                body=s.get("https://www.sec.gov/Archives/edgar/data/%s/%s/%s"%(ci,acc[i].replace("-",""),doc),headers=_INS_UA,timeout=20).content
-                time.sleep(0.12)
+            url=_form4_xml_url(s, ci, acc[i].replace("-",""), doc)
+            if not url:
+                got+=1
+                if got>=max_filings: break
+                continue
+            rb=_sec_get(s, url)
+            if rb is not None and rb.status_code==200:
+                body=rb.content
                 if b"ownershipDocument" in body: txns+=parse_form4(body)
-            except Exception: pass
             got+=1
             if got>=max_filings: break
         return insider_signal(txns) if txns else None
@@ -1154,6 +1214,29 @@ def real_universe():
                 macro[k]=(v if len(v)==len(mkt) else (v[-len(mkt):] if len(v)>len(mkt) else v+[0.0]*(len(mkt)-len(v))))
             sys.stderr.write(f"FRED macro: {len(fm)} official series\n")
         except Exception as e: sys.stderr.write(f"FRED skip: {e}\n")
+    # ---- FMP Ultimate: REAL Treasury curve + commodity history (paid; PRIMARY over free proxies) ----
+    #      Replaces the ETF/yfinance proxies for RATE / 2s10s SLOPE / OIL / GOLD / COPPER / NATGAS /
+    #      SILVER etc. with genuine FMP histories, and stashes the raw curve+commodity series (labeled)
+    #      for the macroSeries output block. yfinance/FRED remain as the labeled fallback for any gap.
+    try:
+        import fmp_history as _fmph
+        if _fmph.have_key():
+            _mm=_fmph.macro_from_fmp()
+            if _mm and _mm.get("macro"):
+                _al=lambda v:(v if len(v)==len(mkt) else (v[-len(mkt):] if len(v)>len(mkt) else v+[0.0]*(len(mkt)-len(v))))
+                _src=globals().setdefault("_MACRO_SRC",{})
+                for k,v in _mm["macro"].items():
+                    if v: macro[k]=_al(v); _src[k]="FMP Ultimate"
+                _cur=(_mm.get("series") or {}).get("treasury") or {}
+                if _cur.get("series"):                      # trim to recent points so marketmap.json stays lean
+                    _cur=dict(_cur); _cur["series"]={lab:ser[-130:] for lab,ser in _cur["series"].items()}
+                    _cur["slope2s10s"]=(_cur.get("slope2s10s") or [])[-130:]
+                globals()["_MACRO_SERIES"]={"source":"FMP Ultimate","asof":_cur.get("asof"),
+                                            "treasury":_cur,"commodities":(_mm.get("series") or {}).get("commodities"),
+                                            "drivers":sorted(_mm["macro"].keys())}
+                sys.stderr.write("FMP Ultimate macro: %d real driver series (%s)\n"%(len(_mm["macro"]),", ".join(sorted(_mm["macro"].keys()))))
+    except Exception as _e:
+        sys.stderr.write("FMP history skip: %s\n"%str(_e)[:140])
     ek=os.environ.get("FINNHUB_API_KEY","").strip()
     if ek:
         try: finnhub_beat(ek, names); sys.stderr.write("Finnhub estimates: beat-prob set\n")
@@ -1319,6 +1402,12 @@ def main():
         _PRECM={n["t"]: list(n["_cl"]) for n in names if n.get("_cl")}   # capture closes BEFORE build() pops _cl off each name (line ~542)
         snap=build(names,mkt,ff,macro); snap["source"]="Live (yfinance + macro factors + options OI) — research only"
         snap["dataHealth"]=globals().get("_DATA_HEALTH")
+        # FMP Ultimate macro series (real Treasury curve + commodities) + per-driver provenance.
+        _ms=globals().get("_MACRO_SERIES"); _msrc=globals().get("_MACRO_SRC")
+        if _ms:
+            snap["macroSeries"]=_ms
+            snap["source"]="Live (yfinance prices + FMP Ultimate rates/commodities + options OI) — research only"
+        if _msrc: snap["macroSources"]=_msrc
         # GRACEFUL DEGRADATION: if FMP returned nothing this run (dead/expired/limited key), keep the
         # last-good valuations from the live site instead of blanking the layer. Tagged stale=True.
         try:

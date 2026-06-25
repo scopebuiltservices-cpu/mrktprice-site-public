@@ -36,6 +36,16 @@ def _stooq(t):
     return []
 
 def history(t):
+    """FMP Ultimate first (authoritative, split/div-adjusted), then yfinance, then Stooq.
+    Returns (rows, source_label) so per-ticker provenance can be stored + shown in the UI."""
+    try:
+        import fmp_history as _fh
+        if _fh.have_key():
+            rows = _fh.eod_history(t)
+            if rows:
+                return rows, _fh.SOURCE_LABEL
+    except Exception:
+        pass
     try:
         import yfinance as yf
         h = yf.Ticker(t).history(period="max", interval="1d", auto_adjust=True)
@@ -45,29 +55,39 @@ def history(t):
             if c == c and c > 0:
                 rows.append([str(idx.date()), round(float(c), 4), int(r.get("Volume") or 0)])
         if len(rows) >= 40:
-            return rows
+            return rows, "yfinance"
     except Exception:
         pass
-    return _stooq(t)
+    sr = _stooq(t)
+    return (sr, "Stooq") if sr else (None, None)
 
 def _load_hist(hist_dir, t):
-    """Read committed daily rows [[date,close,vol],..] from <hist_dir>/<T>.json (no network)."""
+    """Read committed daily rows [[date,close,vol],..] + source from <hist_dir>/<T>.json (no network)."""
     try:
         with open(os.path.join(hist_dir, t + ".json")) as f:
-            return (json.load(f) or {}).get("rows") or None
+            j = json.load(f) or {}
+            return (j.get("rows") or None), j.get("source")
     except Exception:
-        return None
+        return None, None
 
 def emit(universe_path, out_dir, do_hist=False, cap=0, hist_dir=None):
     d = json.load(open(universe_path)); names = d.get("names", [])
     cdir = os.path.join(out_dir, "cards"); hdir = os.path.join(out_dir, "hist")
     os.makedirs(cdir, exist_ok=True); os.makedirs(hdir, exist_ok=True)
-    nc = nh = 0
+    nc = nh = 0; srccount = {}
     for n in names:
         t = n.get("t")
         if not t: continue
-        fetched = history(t) if (do_hist and (not cap or nh < cap)) else None
-        rows = fetched if fetched else (_load_hist(hist_dir, t) if hist_dir else None)
+        fetched, fsrc = history(t) if (do_hist and (not cap or nh < cap)) else (None, None)
+        if fetched:
+            rows, rsrc = fetched, fsrc
+        elif hist_dir:
+            rows, rsrc = _load_hist(hist_dir, t)
+        else:
+            rows, rsrc = None, None
+        if rsrc:
+            n["histSource"] = rsrc                       # per-ticker provenance for the UI
+            srccount[rsrc] = srccount.get(rsrc, 0) + 1
         # Phase 4: augment the card with volume-ahead (sigma-volume matrix) + touch odds,
         # computed from daily history (the only place with per-name daily volume).
         if rows and _lineage is not None and "FACTOR" not in (n.get("idx") or []):
@@ -104,10 +124,10 @@ def emit(universe_path, out_dir, do_hist=False, cap=0, hist_dir=None):
         nc += 1
         if fetched:
             with open(os.path.join(hdir, t + ".json"), "w") as f:
-                json.dump({"ticker": t, "asof": fetched[-1][0], "count": len(fetched), "rows": fetched}, f, allow_nan=False)
+                json.dump({"ticker": t, "asof": fetched[-1][0], "count": len(fetched), "rows": fetched, "source": fsrc}, f, allow_nan=False)
             nh += 1
     with open(os.path.join(out_dir, "cards_index.json"), "w") as f:
-        json.dump({"asof": d.get("asof"), "source": d.get("source"),
+        json.dump({"asof": d.get("asof"), "source": d.get("source"), "histSources": srccount,
                    "cards": [n["t"] for n in names if n.get("t")], "count": nc, "hist": nh}, f)
     return nc, nh
 

@@ -54,9 +54,9 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
   <label>Index</label>
   <select id="idx"><option value="BIG3">Big-3 (Dow+Nasdaq-100+S&amp;P 500)</option><option value="DOW">Dow 30</option><option value="NDX">Nasdaq-100</option><option value="SPX">S&amp;P 500</option><option value="RUT">Russell 2000</option><option value="ALL">Entire universe</option></select> <label style="margin-left:4px;cursor:pointer"><input type="checkbox" id="wlonly" style="vertical-align:middle"> My watchlist</label>
   <span id="scatterCtl"><label>Plot</label>
-    <select id="mode"><option value="rr">Risk vs Return</option><option value="vm">Value vs Momentum</option><option value="fy">FCF yield vs Momentum</option><option value="mf">Money flow vs Return</option><option value="tr">EMA21 distance vs 5d slope</option><option value="od">Upside vs downside odds (21d)</option><option value="ev">Expected-value edge vs Return</option><option value="co">Contradiction vs Return</option><option value="dl">Macro dislocation vs Return</option><option value="mi">Money Flow Index vs Return</option><option value="ff">Factor map (Size vs Value)</option></select></span>
+    <select id="mode"><option value="rr">Risk vs Return</option><option value="vm">Value vs Momentum</option><option value="fy">FCF yield vs Momentum</option><option value="mf">Money flow vs Return</option><option value="tr">EMA21 distance vs 5d slope</option><option value="od">Upside vs downside odds (21d)</option><option value="ev">Expected-value edge vs Return</option><option value="co">Contradiction vs Return</option><option value="dl">Macro dislocation vs Return</option><option value="mi">Money Flow Index vs Return</option><option value="ff">Factor map (Size vs Value)</option><option value="dt">Cheap-to-DCF vs Analyst upside (FMP)</option><option value="dm">Cheap-to-DCF vs Momentum (FMP)</option><option value="pt">Analyst upside vs Value (FMP)</option></select></span>
   <span id="periodCtl" class="hidden"><label>Colour</label>
-    <select id="period"><option value="ret1m" selected>1-month return</option><option value="ret1w">1-week return</option><option value="ret3m">3-month return</option><option value="ret12m">12-month return</option><option value="flow">Money flow (1m)</option></select></span>
+    <select id="period"><option value="ret1m" selected>1-month return</option><option value="ret1w">1-week return</option><option value="ret3m">3-month return</option><option value="ret12m">12-month return</option><option value="flow">Money flow (1m)</option><option value="dcfgap">Discount to DCF (FMP)</option><option value="tgtup">Upside to target (FMP)</option></select></span>
   <div class="spacer"></div><span class="note" id="count"></span>
 </div>
 <div class="wrap"><canvas id="cv" class="cv"></canvas><div id="opp" class="hidden" style="overflow:auto"></div><div class="legend" id="legend"></div><div class="note" id="src"></div></div>
@@ -97,6 +97,9 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
     else if(mode==='ev'){xs=ns.map(function(n){return n.ev==null?0:n.ev;});ys=ns.map(function(n){return n.ret['12m'];});xl='Expected-value edge % (P·upside − P·downside)';yl='12-month return %';x0=0;y0=0;}
     else if(mode==='dl'){xs=ns.map(function(n){return (n.z&&n.z.disloc!=null)?n.z.disloc:(n.disloc||0);});ys=ns.map(function(n){return n.ret['12m'];});xl='Macro dislocation z (decoupled →)';yl='12-month return %';x0=0;y0=0;}
     else if(mode==='mi'){xs=ns.map(function(n){return n.mfi==null?50:n.mfi;});ys=ns.map(function(n){return n.ret['12m'];});xl='Money Flow Index (0–100)';yl='12-month return %';x0=50;y0=0;}
+    else if(mode==='dt'){xs=ns.map(function(n){return n.dcfGap==null?0:n.dcfGap*100;});ys=ns.map(function(n){return n.tgtUpside==null?0:n.tgtUpside*100;});xl='Price vs DCF % (neg = below intrinsic / cheap)';yl='Upside to analyst target %';x0=0;y0=0;}
+    else if(mode==='dm'){xs=ns.map(function(n){return n.dcfGap==null?0:n.dcfGap*100;});ys=ns.map(function(n){return n.z?n.z.mom:0;});xl='Price vs DCF % (neg = cheap)';yl='Momentum z';x0=0;y0=0;}
+    else if(mode==='pt'){xs=ns.map(function(n){return n.tgtUpside==null?0:n.tgtUpside*100;});ys=ns.map(function(n){return n.z?n.z.val:0;});xl='Upside to analyst target %';yl='Value z (cheap →)';x0=0;y0=0;}
     else {xs=ns.map(function(n){return n.z.size;});ys=ns.map(function(n){return n.ff.HML;});xl='Size z (large →)';yl='Value loading (HML)';x0=0;y0=0;}
     var xr=ext(xs),yr=ext(ys);axes(W,H,pad,xr,yr,xl,yl,x0,y0);pts=[];var mc=ns.map(function(n){return Math.log(n.mcap);}),mcr=ext(mc);
     ns.forEach(function(n,i){var px=pad+(xs[i]-xr[0])/(xr[1]-xr[0]||1)*(W-pad-12),py=8+(yr[1]-ys[i])/(yr[1]-yr[0]||1)*(H-pad-8),r=3+7*(mc[i]-mcr[0])/((mcr[1]-mcr[0])||1);
@@ -106,12 +109,12 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
     var ns=filtered().filter(function(n){return n.mcap;}),metric=$('period').value,d=size(Math.max(440,Math.min(680,cv.clientWidth*0.66))),W=d[0],H=d[1];g.clearRect(0,0,W,H);
     var bySec={};ns.forEach(function(n){(bySec[n.sec]=bySec[n.sec]||[]).push(n);});function sum(a){return a.reduce(function(s,n){return s+n.mcap;},0);}
     var secs=Object.keys(bySec).sort(function(a,b){return sum(bySec[b])-sum(bySec[a]);}),tot=sum(ns),cx=2;pts=[];
-    function mval(n){return metric==='flow'?netflow(n)*10:(n.ret[metric.replace('ret','')]||0);}
+    function mval(n){if(metric==='dcfgap')return n.dcfGap==null?0:-n.dcfGap*100;if(metric==='tgtup')return n.tgtUpside==null?0:n.tgtUpside*100;return metric==='flow'?netflow(n)*10:(n.ret[metric.replace('ret','')]||0);}
     secs.forEach(function(s){var arr=bySec[s].slice().sort(function(a,b){return b.mcap-a.mcap;}),cw=Math.max(60,(sum(arr)/tot)*(W-4));
       g.fillStyle='#0d121b';g.fillRect(cx,2,cw-2,16);g.fillStyle=SECCOL[s]||'#9aa';g.font='10px sans-serif';g.fillText(s.slice(0,Math.floor(cw/6)),cx+4,14);
       var yy=20,ah=H-22,asum=sum(arr);arr.forEach(function(n){var hh=Math.max(8,(n.mcap/asum)*ah);g.fillStyle=col(mval(n));g.fillRect(cx+1,yy,cw-3,hh-1);
         if(hh>16&&cw>44){g.fillStyle='#0a0d12';g.font='bold 10px sans-serif';g.fillText(n.t,cx+4,yy+12);}pts.push({x:cx+1,y:yy,w:cw-3,h:hh-1,n:n,rect:1});yy+=hh;});cx+=cw;});
-    legend(false);$('count').textContent=ns.length+' names · tile colour = '+(metric==='flow'?'money flow':metric.replace('ret','')+' return');}
+    legend(false);$('count').textContent=ns.length+' names · tile colour = '+(metric==='flow'?'money flow':metric==='dcfgap'?'discount to DCF (green=cheap)':metric==='tgtup'?'upside to analyst target':metric.replace('ret','')+' return');}
   function col(v){var t=Math.max(-1,Math.min(1,v/8));return t>=0?'rgba(22,199,154,'+(0.25+0.6*t)+')':'rgba(239,106,106,'+(0.25+0.6*-t)+')';}
   function corr(){var o=D.sectorCorr.order,M=D.sectorCorr.m,n=o.length,d=size(Math.max(380,Math.min(560,cv.clientWidth*0.6))),W=d[0],H=d[1];g.clearRect(0,0,W,H);g.fillStyle='#0d121b';g.fillRect(0,0,W,H);
     var pad=96,cell=Math.min((W-pad-10)/n,(H-pad-10)/n);

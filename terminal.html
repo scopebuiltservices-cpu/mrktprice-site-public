@@ -466,11 +466,21 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
       +'<span style="font-size:12px;font-weight:800;color:var(--ink,#eef3f8)">Data Sources — choose what feeds your analysis</span>'
       +'<span style="font-size:9px;color:var(--faint,#646e7c)">green = live · amber = key set, no data · grey = off · dates from the last build</span></div>'
       +rows
+      +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;padding-top:7px;border-top:1px solid var(--line,#222)">'
+        +'<span style="font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--faint,#646e7c)">Direct pulls</span>'
+        +'<label style="font-size:11px;color:var(--ink,#eef3f8)">Primary price source <select id="srcPrimary" style="font-size:11px;padding:2px 4px"><option value="fmp">FMP Ultimate</option><option value="yf">yfinance</option><option value="auto">Auto (FMP&rarr;yf&rarr;Stooq)</option></select></label>'
+        +'<button type="button" id="srcPull" class="ghost" style="font-size:11px;padding:4px 8px">&#8635; Pull fresh now</button>'
+      +'</div>'
       +'<div style="font-size:9px;color:var(--faint,#646e7c);margin-top:6px">Default: <b>FMP Ultimate + EODHD</b> (paid) and free fallbacks. CSV upload is <b>opt-in</b> — your file replaces the chart for that symbol only.</div>';
     Array.prototype.forEach.call(p.querySelectorAll('input[data-src]'),function(cb){
       cb.addEventListener('change',function(){var id=cb.getAttribute('data-src');setEnabled(id,cb.checked);applyEffect(id,cb.checked);
         var dot=cb.parentNode.children[1];if(dot){var st=status(id,dh,cov,idx,live);dot.style.background=st[0];}});
     });
+    var prim=document.getElementById('srcPrimary');
+    if(prim){try{prim.value=localStorage.getItem('mrkt.primarySource')||'fmp';}catch(e){}
+      prim.addEventListener('change',function(){try{localStorage.setItem('mrkt.primarySource',prim.value);window.MRKT_PRIMARY=prim.value;}catch(e){}});}
+    var pull=document.getElementById('srcPull');
+    if(pull)pull.addEventListener('click',function(){pull.textContent='&#8635; pulling…';try{location.reload();}catch(e){}});
   }
   function init(){
     var btn=document.getElementById('srcBtn');

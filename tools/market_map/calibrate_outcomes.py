@@ -40,8 +40,31 @@ def _realized_fwd_return(ticker, start_dt, spot, days):
     except Exception:
         return None, None
 
-def main():
-    path = os.environ.get("BS_HISTORY", rec.DEFAULT)
+def _gh_summary(summ):
+    """Write a compact markdown table to the GitHub Actions step summary, if running in CI."""
+    p = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not p:
+        return
+    try:
+        with open(p, "a") as f:
+            f.write("### Black-Scholes calibration feedback loop\n\n")
+            f.write("| metric | value |\n|---|---|\n")
+            for k in ("samples", "maturedAttachedThisRun", "pendingNotYetMatured",
+                      "skippedDemo", "hitRate", "meanFwdRet", "generatedUtc"):
+                if k in summ:
+                    f.write("| %s | %s |\n" % (k, summ[k]))
+    except Exception:
+        pass
+
+
+def main(argv=None):
+    import argparse
+    ap = argparse.ArgumentParser(description="Attach realized outcomes to matured BS snapshots and summarize calibration.")
+    ap.add_argument("--history", default=os.environ.get("BS_HISTORY", rec.DEFAULT), help="path to bs_history.jsonl")
+    ap.add_argument("--out", default=None, help="calibration summary json (default: alongside history)")
+    ap.add_argument("--dry-run", action="store_true", help="compute + print, but do not attach outcomes or write files")
+    a = ap.parse_args(argv)
+    path = a.history
     rows = rec.load(path)
     snaps = [r for r in rows if r.get("kind") == "snapshot" and r.get("summary")]
     done = {o.get("refTs") for o in rows if o.get("kind") == "outcome"}
@@ -60,8 +83,9 @@ def main():
         fwd, rv = _realized_fwd_return(tk, st, spot, days)
         if fwd is None:
             pending += 1; continue
-        rec.attach_outcome(tk, ts, {"fwdRet": fwd, "realizedVolPct": (rv*100 if rv else None),
-                                    "horizonDays": int(days)}, path=path)
+        if not a.dry_run:
+            rec.attach_outcome(tk, ts, {"fwdRet": fwd, "realizedVolPct": (rv*100 if rv else None),
+                                        "horizonDays": int(days)}, path=path)
         attached += 1
 
     summ = rec.calibration_summary(path)
@@ -69,11 +93,16 @@ def main():
     summ["pendingNotYetMatured"] = pending
     summ["skippedDemo"] = skipped_demo
     summ["generatedUtc"] = now.isoformat() + "Z"
-    out = os.path.join(os.path.dirname(path), "calibration_summary.json")
-    try:
-        with open(out, "w") as f: json.dump(summ, f, indent=2)
-    except Exception: pass
+    out = a.out or os.path.join(os.path.dirname(path) or ".", "calibration_summary.json")
+    if not a.dry_run:
+        try:
+            with open(out, "w") as f: json.dump(summ, f, indent=2)
+        except Exception as e:
+            print("::warning::could not write %s: %s" % (out, e))
+    _gh_summary(summ)
     print(json.dumps(summ, indent=2))
+    print("::notice title=calibration::attached %d, pending %d, skipped %d"
+          % (attached, pending, skipped_demo))
     return 0
 
 if __name__ == "__main__":

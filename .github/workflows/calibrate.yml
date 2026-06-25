@@ -1,0 +1,55 @@
+name: BS calibration feedback loop
+
+# Closes the Black-Scholes feedback loop: each week it scans the recorded valuation
+# snapshots (bs_history.jsonl), attaches the REALIZED forward return to any snapshot that
+# has matured past its option horizon, and republishes calibration_summary.json — the
+# accuracy ledger the engine learns from. Idempotent; safe to re-run.
+#
+# History persistence: bs_history.jsonl is committed in the repo (tools/market_map/data/).
+# If you keep it elsewhere, set BS_HISTORY or restore it from cache before the run.
+
+on:
+  schedule:
+    - cron: "30 7 * * 1"     # Mondays 07:30 UTC, after the week's nightly snapshots
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: calibrate
+  cancel-in-progress: false
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+
+      - name: Install deps
+        run: pip install --quiet -r tools/market_map/requirements.txt
+
+      - name: Attach realized outcomes + summarize calibration
+        env:
+          BS_HISTORY: ${{ github.workspace }}/tools/market_map/data/bs_history.jsonl
+        run: |
+          cd tools/market_map
+          if [ ! -f data/bs_history.jsonl ]; then
+            echo "::notice title=calibration::no bs_history.jsonl yet — nothing to calibrate (snapshots accumulate over time)"
+            exit 0
+          fi
+          python calibrate_outcomes.py --history data/bs_history.jsonl --out data/calibration_summary.json
+
+      - name: Commit refreshed calibration (if changed)
+        run: |
+          git config user.name  "mrktprice-bot"
+          git config user.email "bot@mrktprice.com"
+          git add -A tools/market_map/data/ 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "::notice::no calibration changes to commit"
+          else
+            git commit -m "BS calibration: attach matured outcomes ($(date -u +%FT%TZ))"
+            git push
+          fi

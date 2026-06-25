@@ -1845,6 +1845,35 @@ function overnightProjection(closes,vols,name,o){o=o||{};var f=(o.ovFrac!=null?o
   var v=vols?vols.slice(-20).filter(function(x){return x>0;}):[];
   var vAvg=v.length?v.reduce(function(s,x){return s+x;},0)/v.length:null;
   return {Pnow:P,openProj:P*Math.exp(driftON),lo:P*Math.exp(driftON-z*sdON),hi:P*Math.exp(driftON+z*sdON),lo90:P*Math.exp(driftON-1.645*sdON),hi90:P*Math.exp(driftON+1.645*sdON),sdON:sdON,sdDaily:sd,driftON:driftON,volProj:vAvg,ovFrac:f,deps:(name&&name.deps)||[]};}
+function rateImpactBlock(p,sym,chip){
+  if(!p||!p.deps||!p.deps.length)return '';
+  /* isolate the interest-rate driver from this name's learned macro sensitivities */
+  var rd=null;
+  for(var i=0;i<p.deps.length;i++){var f=(p.deps[i].f||'').toLowerCase();
+    if(f.indexOf('yield')>=0||f.indexOf('rate')>=0||f.indexOf('slope')>=0||f.indexOf('2s10s')>=0){rd=p.deps[i];break;}}
+  if(!rd||rd.sens==null)
+    return '<div style="margin-top:7px;padding:6px 9px;border:1px dashed var(--line,#2a2f3a);border-radius:6px;font-size:9px;color:var(--faint,#646e7c)">Interest-rate impact &middot; no statistically-significant 10-yr-yield sensitivity learned for '+sym+' over its history.</div>';
+  var s=+rd.sens;                       // % move per +1sigma rise in the rate factor (learned)
+  var amp=s*100;                        // the rate factor amplified 100x
+  var P=p.openProj;                     // projected next-session open
+  var d1=P*s/100, dAmp=P*amp/100;       // concurrent $ shift it imposes on the projected open
+  var up=s>=0, accent='#e0c14a';
+  function sgn(x){return (x>=0?'+':'')+x;}
+  var dirNote=up?(sym+' has risen WITH the 10-yr yield'):(sym+' has fallen as the 10-yr yield rises');
+  return '<div style="margin-top:7px;padding:7px 9px;border:1px solid '+accent+'55;border-left:3px solid '+accent+';border-radius:6px;background:rgba(224,193,74,.06)">'
+    +'<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:'+accent+';margin-bottom:4px">Interest-rate impact &middot; '+rd.f+(rd.stab&&rd.stab!=='stable'?' ('+rd.stab+')':'')+'</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">'
+      +chip('rate &beta; (per 1&sigma;)',sgn(s.toFixed(2))+'%/&sigma;',up?'#2ecc8f':'#ef5f4e')
+      +chip('&times;100 factor',sgn(amp.toFixed(0))+'%',up?'#2ecc8f':'#ef5f4e')
+      +chip('proj open','$'+P.toFixed(2),'#39b6ff')
+    +'</div>'
+    +'<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">'
+      +chip('rates +1&sigma; &rarr;','$'+(P+d1).toFixed(2)+' ('+sgn(d1.toFixed(2))+')',d1>=0?'#2ecc8f':'#ef5f4e')
+      +chip('&times;100 scenario &rarr;','$'+Math.max(0,P+dAmp).toFixed(2)+' ('+sgn(dAmp.toFixed(2))+')',dAmp>=0?'#2ecc8f':'#ef5f4e')
+    +'</div>'
+    +'<div style="margin-top:4px;font-size:8px;color:var(--faint,#646e7c)">&beta; = % move in '+sym+' per +1&sigma; rise in the '+rd.f+', learned over the company history (partial corr '+(rd.pcorr!=null?rd.pcorr:rd.corr)+', '+(rd.sig?'significant':'weak')+'). &times;100 amplifies the rate factor 100&times; to make the channel visible and shows the concurrent shift it would impose on the projected open &mdash; '+dirNote+'. Hypothetical stress scaling, not a forecast.</div>'
+  +'</div>';
+}
 function renderOvernight(sym,host,card,head){
   function chip(k,v,c){return '<div style="display:flex;flex-direction:column;gap:1px;min-width:80px"><span style="font-size:8.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--faint,#646e7c)">'+k+'</span><span style="font-size:13px;font-weight:700;color:'+(c||'var(--ink,#eef3f8)')+'">'+v+'</span></div>';}
   function nm(t){var m=window.MMAP&&window.MMAP.names;if(!m)return null;for(var i=0;i<m.length;i++){if((m[i].t||'').toUpperCase()===t.toUpperCase())return m[i];}return null;}
@@ -1858,10 +1887,11 @@ function renderOvernight(sym,host,card,head){
     var strip='<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">'+chip('proj open','$'+p.openProj.toFixed(2),'#39b6ff')+chip('68% range',p.lo.toFixed(2)+'-'+p.hi.toFixed(2))+chip('90% range',p.lo90.toFixed(2)+'-'+p.hi90.toFixed(2))+chip('overnight σ',(p.sdON*100).toFixed(2)+'%')+chip('proj volume',fmtV(p.volProj))+'</div>';
     var lo=p.lo90,hi=p.hi90,rng=(hi-lo)||1,xx=function(v){return Math.max(0,Math.min(100,(v-lo)/rng*100));};
     var bar='<div style="position:relative;height:10px;margin-top:6px;background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:5px"><div style="position:absolute;top:0;bottom:0;left:'+xx(p.lo)+'%;width:'+(xx(p.hi)-xx(p.lo))+'%;background:rgba(57,182,255,.22)"></div><div style="position:absolute;top:-2px;bottom:-2px;width:2px;left:'+xx(p.Pnow)+'%;background:#8a93a0"></div><div style="position:absolute;top:-2px;bottom:-2px;width:2px;left:'+xx(p.openProj)+'%;background:#39b6ff"></div></div>';
+    var rateblk=rateImpactBlock(p,sym,chip);
     var deps=(p.deps||[]).slice(0,3).map(function(d){return (d.f||'?')+' '+((d.sens||0)>=0?'+':'')+(d.sens!=null?d.sens:0)+'%/σ';}).join(' · ');
     var macro=deps?('<div style="margin-top:5px;font-size:9px;color:var(--muted,#8a93a0)">Gap drivers (learned over history): '+deps+'</div>'):'';
     var note='<div style="margin-top:3px;font-size:8px;color:var(--faint,#646e7c)">Open projected from '+closes.length+' days of history: damped momentum drift + overnight σ = daily σ×√'+p.ovFrac+' (overnight variance share); volume = 20-day average. Macro sensitivities estimated across the company lifespan (rates/commodities/sector). Research only.</div>';
-    host.innerHTML='<div style="'+card+'">'+hd+strip+bar+macro+note+'</div>';
+    host.innerHTML='<div style="'+card+'">'+hd+strip+bar+rateblk+macro+note+'</div>';
   }).catch(function(){host.innerHTML='<div style="'+card+'">'+head+'<div style="font-size:10px;color:var(--faint,#646e7c)">Market closed — open projection unavailable.</div></div>';});
 }
 
@@ -2924,31 +2954,4 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
     box.style.display='';
     document.getElementById('etlHdr').textContent='Earnings & valuation — '+t;
     if(t!==lastT){lastT=t;
-      fetch('hist/'+t+'.json',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){
-        var rows=j&&j.rows?j.rows:null; box._rows=rows; draw(rows,n);
-      }).catch(function(){draw(null,n);});
-    } else { draw(box._rows||null,n); }
-  }
-  // build the panel container + toggle (once)
-  function ensure(){
-    if(document.getElementById('earntl')) return;
-    var host=document.getElementById('premcard')||document.getElementById('decision'); if(!host) return;
-    var d=document.createElement('div'); d.id='earntl'; d.style.cssText='display:none;margin:8px 0 0;padding:9px 12px;background:rgba(13,18,27,.6);border:1px solid '+LINE+';border-radius:10px';
-    d.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
-      +'<span id="etlHdr" style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:'+MINT+'">Earnings &amp; valuation</span>'
-      +'<span><button class="etlTf" data-tf="252" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1px solid '+LINE+';background:'+'#16202e'+';color:'+INK+';cursor:pointer">1Y</button>'
-      +'<button class="etlTf" data-tf="126" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1px solid '+LINE+';background:transparent;color:'+MUT+';cursor:pointer;margin-left:4px">6M</button></span></div>'
-      +'<canvas id="etlCv"></canvas>'
-      +'<div style="font-size:10px;color:'+MUT+';margin-top:4px">Vertical lines = earnings dates (EPS actual/est, P/E at report). <span style="color:'+MINT+'">DCF</span> &amp; <span style="color:'+ACC+'">analyst target</span> levels. Green=beat, red=miss.</div>';
-    host.parentNode.insertBefore(d, host.nextSibling);
-    Array.prototype.forEach.call(d.querySelectorAll('.etlTf'),function(b){b.addEventListener('click',function(){TF=+b.getAttribute('data-tf');Array.prototype.forEach.call(d.querySelectorAll('.etlTf'),function(x){x.style.background='transparent';x.style.color=MUT;});b.style.background='#16202e';b.style.color=INK;var n=rec(sym());if(n)draw(d._rows||null,n);});});
-  }
-  ensure();
-  var s=document.getElementById('sym'); if(s){s.addEventListener('change',function(){ensure();render();});s.addEventListener('input',function(){setTimeout(function(){ensure();render();},60);});}
-  var dec=document.getElementById('decision'); if(dec){try{new MutationObserver(function(){setTimeout(function(){ensure();render();},50);}).observe(dec,{childList:true,subtree:true});}catch(e){}}
-  var tries=0,iv=setInterval(function(){if(window.MMAP&&window.MMAP.names){ensure();render();if(++tries>2)clearInterval(iv);}else if(++tries>80)clearInterval(iv);},400);
-  window.addEventListener('resize',function(){var n=rec(sym());if(n&&document.getElementById('earntl'))draw((document.getElementById('earntl')._rows)||null,n);});
-})();
-</script>
-
-</body></html>
+      fetch('hist/'+t+'.json',{cache:'no-store'}).then(fu

@@ -191,6 +191,30 @@ def coverage(hits):
     h = [1 if x else 0 for x in hits]
     return (sum(h) / len(h)) if h else None
 
+def audit_coverage(events, alpha=0.90):
+    """Realized-coverage audit (the 'is the band honest?' loop). events: resolved triggers, each
+    {lo,hi,center,realized,pT,gatePass,rwLo,rwHi} in consistent (log-)price units. Coverage near the
+    target with NARROW bands is good; coverage only because the band is huge is not, so band width
+    and a random-walk baseline are reported alongside. Mirrors auditCoverage() in intraday_engine.js."""
+    if not events:
+        return None
+    def cov(evs):
+        if not evs:
+            return None
+        return sum(1 for e in evs if e["lo"] <= e["realized"] <= e["hi"]) / len(evs)
+    n = len(events)
+    gated = [e for e in events if e.get("gatePass")]
+    rw = [e for e in events if e.get("rwLo") is not None]
+    bias = sum(e["realized"] - e["center"] for e in events) / n
+    width = sum(e["hi"] - e["lo"] for e in events) / n
+    da = sum(1 for e in events if (e["center"] >= e["pT"]) == (e["realized"] >= e["pT"])) / n
+    rwcov = (sum(1 for e in rw if e["rwLo"] <= e["realized"] <= e["rwHi"]) / len(rw)) if rw else None
+    return {"n": n, "target": alpha, "coverage": round(cov(events), 3),
+            "condCoverageGated": round(cov(gated), 3) if gated else None,
+            "bias": round(bias, 6), "avgBandWidth": round(width, 6),
+            "directionalAccuracy": round(da, 3),
+            "rwBaselineCoverage": round(rwcov, 3) if rwcov is not None else None}
+
 
 # --------------------------------------------------------------------------- orchestration
 def evaluate(bars, hist_bars, params=None):

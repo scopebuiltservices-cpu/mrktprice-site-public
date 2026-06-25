@@ -64,7 +64,7 @@ if (out.triggered) {
 // coverage audit: 9/10 inside band -> 0.9 ; bias/sharpness/directional/baseline
 const evs = [];
 for (let i = 0; i < 10; i++) {
-  const real = (i === 0) ? 1.30 : 1.0 + 0.01 * (i - 5);        // one miss (i=0), nine inside [0.95,1.05]
+  const real = (i === 0) ? 1.15 : 1.0 + 0.01 * (i - 5);        // i=0 misses tight [0.95,1.05] but is inside RW [0.80,1.20]
   evs.push({ lo: 0.95, hi: 1.05, center: 1.0, realized: real, pT: 0.98, gatePass: i % 2 === 0,
              rwLo: 0.80, rwHi: 1.20 });
 }

@@ -1,0 +1,7 @@
+# Build dependencies for the nightly Market Map build (build_market_map.py + emit_static.py).
+# Upper bounds prevent a silent upstream MAJOR bump from breaking the unattended nightly —
+# yfinance (an unofficial scraper) is the audit's #1 fragility, so it is capped explicitly.
+# Floors keep the APIs the code relies on; the build itself is otherwise pure stdlib.
+yfinance>=0.2,<0.3
+pandas>=2.0,<3.0
+requests>=2.31,<3.0

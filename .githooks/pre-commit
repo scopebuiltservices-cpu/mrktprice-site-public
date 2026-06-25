@@ -1,14 +1,30 @@
 #!/bin/sh
-# Block a commit if any inline <script> block fails to parse.
+# Block a commit that would break the build. Catches the three failure classes that have
+# actually bitten this repo: a broken inline <script>, a Python syntax error in the engine,
+# and a truncated/invalid published JSON.
 #
 # Enable once per clone:
 #     git config core.hooksPath .githooks
-#
-# (chmod +x .githooks/pre-commit on macOS/Linux; not required on Windows.)
+# Bypass once (not recommended):  git commit --no-verify
 
-node tools/check-scripts.mjs || {
-  echo ""
-  echo "x commit blocked: an inline <script> block has a syntax error (see above)."
-  echo "  Fix it, or bypass once with: git commit --no-verify"
+fail=0
+
+# 1) inline <script> blocks parse
+node tools/check-scripts.mjs || { echo "x commit blocked: an inline <script> block has a syntax error."; fail=1; }
+
+# 2) every STAGED Python file compiles
+for f in $(git diff --cached --name-only --diff-filter=ACM | grep '\.py$'); do
+  python3 -m py_compile "$f" 2>/dev/null || { echo "x commit blocked: Python syntax error in $f"; fail=1; }
+done
+
+# 3) if a published JSON is staged, it must be valid + non-truncated
+for j in marketmap.json xsection.json cards_index.json; do
+  if git diff --cached --name-only | grep -qx "$j"; then
+    python3 -c "import json; json.load(open('$j'))" 2>/dev/null || { echo "x commit blocked: $j is invalid/truncated JSON"; fail=1; }
+  fi
+done
+
+if [ "$fail" -ne 0 ]; then
+  echo "  Fix the above, or bypass once with: git commit --no-verify"
   exit 1
-}
+fi

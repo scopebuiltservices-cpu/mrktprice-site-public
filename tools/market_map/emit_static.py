@@ -79,6 +79,14 @@ def emit(universe_path, out_dir, do_hist=False, cap=0, hist_dir=None):
                     if va.get("sigvol"): lin["sigvol"] = va["sigvol"]
                     if va.get("base"):   lin["volBase"] = va["base"]
                     if to:               lin["touch"] = to
+                    # Second/Third Build: EVT POT/GPD tail on the DAILY returns (250+ pts, robust)
+                    _cl=[float(r[1]) for r in rows if r[1] is not None]
+                    _dret=[]
+                    for _i in range(1,len(_cl)):
+                        if _cl[_i-1]>0 and _cl[_i]>0:
+                            import math as _m; _dret.append(_m.log(_cl[_i]/_cl[_i-1]))
+                    _ev=_lineage.evt_gpd_tail(_dret)
+                    if _ev: lin["evt"]=_ev
             except Exception:
                 pass
         with open(os.path.join(cdir, t + ".json"), "w") as f:

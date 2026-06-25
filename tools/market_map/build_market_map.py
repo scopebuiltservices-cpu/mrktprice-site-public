@@ -757,6 +757,20 @@ def build(names,mkt,ff,macro=None):
                 if _lin: n["lineage"]=_lin
             except Exception:
                 pass
+            # ---- Second/Third Build: causal macro-support (DML) + EVT/t-copula tail ----
+            try:
+                _facs={lab:ser for fk,ser,lab in FACS if ser and len(ser)==len(wr)}
+                if len(_facs)>=2:
+                    _cs=_lineage.causal_support(wr,_facs)
+                    if _cs: n["causal"]=_cs
+                if isinstance(n.get("lineage"),dict):
+                    _ev=_lineage.evt_gpd_tail(wr)
+                    if _ev: n["lineage"]["evt"]=_ev
+                    if mkt and len(mkt)==len(wr):
+                        _td=_lineage.tail_dependence(wr,mkt)
+                        if _td: n["lineage"]["tailDep"]=_td
+            except Exception:
+                pass
         cols=[mkt]+[macro[f] for f in ("RATE","DXY","OIL","VIX") if macro.get(f)]
         _,res=macro_fit(wr,cols); vy=_var(wr)
         n["macroR2"]=int(round(max(0.0,1.0-_var(res)/vy)*100)) if vy>0 else 0
@@ -1322,6 +1336,50 @@ def main():
                 _lin["pq"]=_lineage.pq_layer(_lin["horizons"], _iv, int(_gx.get("days") or 30), _eda)
             except Exception:
                 pass
+    # ---- Phase 5.5 + 6: options-implied P/Q layer + governance (ES, challenger gate, scan-risk,
+    #      SIMM, provenance). Runs after enrichment so gex.atmIV / val / deps are populated. ----
+    if _lineage is not None:
+        _gov_counts={"deployable":0,"research-only":0,"blocked":0}
+        _builtAt=dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        try:
+            _asof=dt.date.fromisoformat(str(snap.get("asof")))
+        except Exception:
+            _asof=None
+        for _n in snap.get("names",[]):
+            _lin=_n.get("lineage"); _gx=_n.get("gex") or {}
+            if not isinstance(_lin,dict) or not _lin.get("horizons"): continue
+            _ivp=_gx.get("atmIV")
+            _iv=(_ivp/100.0) if isinstance(_ivp,(int,float)) and _ivp>0 else None
+            _eda=None
+            try:
+                _nx=((_n.get("earn") or {}).get("next") or {}).get("d")
+                if _nx and _asof: _eda=(dt.date.fromisoformat(str(_nx))-_asof).days
+            except Exception:
+                _eda=None
+            try:
+                _lin["pq"]=_lineage.pq_layer(_lin["horizons"], _iv, int(_gx.get("days") or 30), _eda)
+            except Exception:
+                pass
+            try:
+                _wr=_n.get("wr") or []
+                _gov=_lineage.governance_block(_wr, _lin, _iv)
+                _hh=_gov.get("horizon") or "20d"
+                _pqh=((_lin.get("pq") or {}).get("horizons") or {}).get(_hh, {})
+                _deps=(_n.get("macro3") or {}).get("top") or (_n.get("deps") or [])
+                _gov["simm"]=_lineage.simm_decomp(_deps, _pqh.get("sigP"), _pqh.get("sigQ"))
+                _srcs=["yfinance"]
+                if _n.get("deps"): _srcs.append("FRED (macro)")
+                if _gx: _srcs.append("EODHD (options)")
+                if _n.get("val"): _srcs.append("FMP (valuation)")
+                if _n.get("inst") or _n.get("insider"): _srcs.append("SEC EDGAR")
+                _gov["provenance"]={"asof":snap.get("asof"),"modelVersion":"lineage-1.0","builtAt":_builtAt,
+                    "sources":_srcs,"ivSource":("EODHD" if _gx else None),"histWeeks":len(_wr)}
+                _lin["gov"]=_gov
+                _g=_gov.get("releaseGate","blocked"); _g="blocked" if str(_g).startswith("blocked") else _g
+                if _g in _gov_counts: _gov_counts[_g]+=1
+            except Exception:
+                pass
+        snap["governance"]={"counts":_gov_counts,"modelVersion":"lineage-1.0","builtAt":_builtAt,"asof":snap.get("asof")}
     # ---- Phase 5.5 + 6: options-implied P/Q layer + governance (ES, challenger gate, scan-risk,
     #      SIMM, provenance). Runs after enrichment so gex.atmIV / val / deps are populated. ----
     if _lineage is not None:

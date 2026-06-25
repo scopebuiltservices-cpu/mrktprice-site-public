@@ -142,11 +142,20 @@
     function px(r) { return S ? "$" + (S * Math.exp(r)).toFixed(2) : pct(r); }
     var evt = node.eventLinked;
     var dlabel = evt ? "event-linked" : "associated";
-    var drivers = (name && name.macro3 && name.macro3.top) ? name.macro3.top.slice(0, 3) : [];
-    var driverHTML = drivers.length ? drivers.map(function (d) {
-      var c = (d.sens >= 0 ? UP : DN);
-      return '<span style="color:' + INK + '">' + esc(d.f) + '</span> <span style="color:' + c + '">' + (d.sens >= 0 ? "+" : "") + d.sens + '%/σ</span> <span style="color:' + FAINT + '">(' + dlabel + (d.weak ? ", weak" : "") + ')</span>';
-    }).join(" · ") : '<span style="color:' + FAINT + '">no significant rate/commodity drivers learned</span>';
+    var causal = (name && name.causal) ? name.causal.slice(0, 3) : null;
+    var driverHTML;
+    if (causal && causal.length) {
+      driverHTML = causal.map(function (d) {
+        var lc = { "plausibly-causal": UP, "predictive": BLUE, "merely-correlative": ACC, "weak": FAINT }[d.label] || FAINT;
+        return '<span style="color:' + INK + '">' + esc(d.f) + '</span> <span style="color:' + lc + '">' + d.label + '</span> <span style="color:' + FAINT + '">(β ' + d.partial + ', ' + (d.stable ? "stable" : "unstable") + ')</span>';
+      }).join(" · ");
+    } else {
+      var drivers = (name && name.macro3 && name.macro3.top) ? name.macro3.top.slice(0, 3) : [];
+      driverHTML = drivers.length ? drivers.map(function (d) {
+        var c = (d.sens >= 0 ? UP : DN);
+        return '<span style="color:' + INK + '">' + esc(d.f) + '</span> <span style="color:' + c + '">' + (d.sens >= 0 ? "+" : "") + d.sens + '%/σ</span> <span style="color:' + FAINT + '">(' + dlabel + (d.weak ? ", weak" : "") + ')</span>';
+      }).join(" · ") : '<span style="color:' + FAINT + '">no significant rate/commodity drivers learned</span>';
+    }
     var v = node.valid;
     var validHTML = v ? ('coverage ' + (v.coverage * 100).toFixed(0) + '% (target ' + (v.target * 100).toFixed(0) + '%, Wilson ' + (v.wilsonLo * 100).toFixed(0) + '–' + (v.wilsonHi * 100).toFixed(0) + '%) · CRPS ' + v.crps + ' · PIT p ' + (v.pitUniformP != null ? v.pitUniformP : "—") + ' · ' + (v.calibrated ? '<span style="color:' + UP + '">calibrated</span>' : '<span style="color:' + DN + '">miscalibrated</span>'))
       : '<span style="color:' + FAINT + '">validation populates after the next build</span>';
@@ -179,7 +188,7 @@
       + chip("exp. volume", node.evol != null ? fmtVol(node.evol) : "—", BLUE)
       + '</div>'
       + '<div style="margin-top:6px;font-size:9px;color:' + MUTED + '">Confidence — branch <b style="color:' + INK + '">' + (node.branching != null ? (node.branching * 100).toFixed(0) + "%" : "—") + '</b> · diffusion <b style="color:' + INK + '">' + (node.diffusive != null ? (node.diffusive * 100).toFixed(0) + "%" : "—") + '</b> · calibration <b style="color:' + INK + '">' + (node.calib != null ? (node.calib * 100).toFixed(0) + "%" : "—") + '</b> &nbsp;·&nbsp; regime posterior ' + post + '</div>'
-      + '<div style="margin-top:4px;font-size:9px;color:' + MUTED + '">Drivers (ranked) — ' + driverHTML + '</div>'
+      + '<div style="margin-top:4px;font-size:9px;color:' + MUTED + '">Drivers (causal) — ' + driverHTML + '</div>'
       + '<div style="margin-top:4px;font-size:9px;color:' + MUTED + '">Validation — ' + validHTML + '</div>'
       + pqHTML
       + '<div style="margin-top:5px;font-size:8.5px;color:' + FAINT + '">' + esc(reason) + ' Research only; not advice.</div>'
@@ -229,6 +238,11 @@
       + '</div>'
       + (chHTML ? '<div style="margin-top:6px"><div style="font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:' + MUTED + '">Challenger scorecard · CRPS (lower = better) · winner ★ ' + (ch.calibrated ? '<span style="color:' + UP + '">calibrated</span>' : '<span style="color:' + DN + '">miscalibrated</span>') + '</div>' + chHTML + '</div>' : '')
       + '<div style="margin-top:5px;font-size:8.5px;color:' + MUTED + '">Verdict — <b style="color:' + gol(gcol) + '">' + gate + '</b>: ' + esc(g.gateReason || "") + '. Curvature ' + (sm && sm.curvature == null ? 'n/a (needs option gamma)' : (sm ? p2(sm.curvature) : '—')) + '.</div>'
+      + (function(){ var ev=lin.evt, td=lin.tailDep; if(!ev&&!td) return ""; 
+          return '<div style="margin-top:5px;font-size:8.5px;color:'+MUTED+'">Joint tail (EVT + copula) — '
+            + (ev ? 'ξ <b style="color:'+INK+'">'+ev.xi+'</b> · POT thr '+p2(ev.threshold)+' ('+ev.exceedances+' exc) · GPD-ES '+p2(ev.gpdES)+' · EVT add-on '+p2(ev.evtAddOn) : 'EVT populates after the next build')
+            + (td ? ' · λ_lower <b style="color:'+DN+'">'+td.lambdaLower+'</b> / λ_upper '+td.lambdaUpper+' (indep ~'+td.gaussianRef+')' : '')
+            + ' · copula <b>'+((ev&&ev.copula)||'t')+'</b> (Gaussian under-states tails)</div>'; })()
       + '<div style="margin-top:4px;font-size:8px;color:' + FAINT + '">Frameworks — ' + badges + '</div>'
       + '<div style="margin-top:3px;font-size:8px;color:' + FAINT + '">Provenance — sources: ' + srcHTML + ' · model ' + (pr ? esc(pr.modelVersion) : "—") + ' · built ' + (pr && pr.builtAt ? esc(pr.builtAt.slice(0, 16).replace("T", " ")) + " UTC" : "—") + ' · ' + (pr ? pr.histWeeks : "—") + 'w history. Research only; not advice.</div>'
       + '</div>';

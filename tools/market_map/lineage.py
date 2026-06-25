@@ -865,3 +865,155 @@ def governance_block(returns: Sequence[float], lin: Dict, iv_annual: Optional[fl
     gate_reason = ch["reason"] if ch else "insufficient history for outcomes analysis"
     return {"horizon": gov_horizon, "es975": es, "stressedES": ses, "challenger": ch,
             "scanRisk": sr, "releaseGate": gate, "gateReason": gate_reason}
+
+
+# ============================================================================
+# Second/Third Build — causal macro-support (DML) + EVT/t-copula tail layer
+# ============================================================================
+def _corr(a, b):
+    n = min(len(a), len(b))
+    if n < 3:
+        return 0.0
+    a, b = a[:n], b[:n]
+    ma, mb = _mean(a), _mean(b)
+    num = sum((a[i] - ma) * (b[i] - mb) for i in range(n))
+    da = math.sqrt(sum((x - ma) ** 2 for x in a)); db = math.sqrt(sum((x - mb) ** 2 for x in b))
+    return num / (da * db) if da > 0 and db > 0 else 0.0
+
+
+def _ols_resid(y, cols):
+    """Residuals of y regressed on [1] + cols (normal equations, small K). cols: list of series."""
+    n = len(y)
+    X = [[1.0] + [cols[j][i] for j in range(len(cols))] for i in range(n)]
+    k = len(X[0])
+    # XtX and Xty
+    XtX = [[sum(X[i][a] * X[i][b] for i in range(n)) for b in range(k)] for a in range(k)]
+    Xty = [sum(X[i][a] * y[i] for i in range(n)) for a in range(k)]
+    # Gaussian elimination with partial pivot + ridge for stability
+    for d in range(k):
+        XtX[d][d] += 1e-8
+    A = [row[:] + [Xty[r]] for r, row in enumerate(XtX)]
+    for c in range(k):
+        p = max(range(c, k), key=lambda r: abs(A[r][c]))
+        if abs(A[p][c]) < 1e-12:
+            continue
+        A[c], A[p] = A[p], A[c]
+        piv = A[c][c]
+        A[c] = [v / piv for v in A[c]]
+        for r in range(k):
+            if r != c and abs(A[r][c]) > 0:
+                f = A[r][c]; A[r] = [A[r][j] - f * A[c][j] for j in range(k + 1)]
+    beta = [A[r][k] for r in range(k)]
+    resid = [y[i] - sum(beta[a] * X[i][a] for a in range(k)) for i in range(n)]
+    return resid
+
+
+def _slope(y, x):
+    n = min(len(y), len(x)); y, x = y[:n], x[:n]
+    mx = _mean(x); sx = sum((v - mx) ** 2 for v in x)
+    if sx <= 0:
+        return 0.0, 0.0
+    my = _mean(y)
+    b = sum((x[i] - mx) * (y[i] - my) for i in range(n)) / sx
+    resid = [y[i] - (my + b * (x[i] - mx)) for i in range(n)]
+    s2 = sum(r * r for r in resid) / max(1, n - 2)
+    se = math.sqrt(s2 / sx)
+    return b, se
+
+
+def causal_support(y, factors, min_n=30):
+    """Per-factor causal-support label via partial regression (DML with linear nuisance = FWL,
+    appropriate for a small macro-factor set). Three honest labels:
+      merely-correlative — marginal correlation present, but the partialled-out effect CI straddles 0
+                           (explained away by the other factors);
+      predictive         — the factor LEADS forward returns (lag-1) even if not contemporaneously causal;
+      plausibly-causal   — partialled-out effect is significant AND sign-stable across halves.
+    Returns ranked list {f, marginal, partial, ciLo, ciHi, predLag, stable, label}."""
+    labels = list(factors.keys())
+    n = len(y)
+    if n < min_n or len(labels) < 2:
+        return []
+    out = []
+    for lab in labels:
+        Tj = factors[lab]
+        others = [factors[l] for l in labels if l != lab and factors[l]]
+        marg = _corr(y, Tj)
+        ry = _ols_resid(y, others); rt = _ols_resid(Tj, others)
+        theta, se = _slope(ry, rt)
+        lo, hi = theta - 1.96 * se, theta + 1.96 * se
+        sig = (lo > 0 or hi < 0)
+        h = n // 2
+        oth_a = [o[:h] for o in others]; oth_b = [o[h:] for o in others]
+        t1, _ = _slope(_ols_resid(y[:h], oth_a), _ols_resid(Tj[:h], oth_a))
+        t2, _ = _slope(_ols_resid(y[h:], oth_b), _ols_resid(Tj[h:], oth_b))
+        stable = (t1 * t2 > 0) and sig
+        predlag = _corr(y[1:], Tj[:-1]) if n > 4 else 0.0
+        thr = 1.96 / math.sqrt(n)
+        if stable:
+            label = "plausibly-causal"
+        elif abs(predlag) > thr:
+            label = "predictive"
+        elif abs(marg) > thr:
+            label = "merely-correlative"
+        else:
+            label = "weak"
+        out.append({"f": lab, "marginal": round(marg, 3), "partial": round(theta, 4),
+                    "ciLo": round(lo, 4), "ciHi": round(hi, 4), "predLag": round(predlag, 3),
+                    "stable": bool(stable), "label": label})
+    out.sort(key=lambda d: -abs(d["partial"]))
+    return out
+
+
+def evt_gpd_tail(returns, q=0.10):
+    """Peaks-over-threshold EVT (Pickands-Balkema-de Haan): fit a GPD to the lower-tail exceedances,
+    return tail index xi, threshold u, exceedance count, GPD-based ES, and the EVT add-on (GPD-ES
+    minus empirical-ES). Method-of-moments GPD."""
+    r = sorted(v for v in returns if v == v)
+    n = len(r)
+    if n < 50:
+        return None
+    ui = max(1, int(math.floor(q * n)))
+    u = r[ui - 1]                       # lower-tail threshold (a loss, negative)
+    exc = [u - r[i] for i in range(ui)]  # positive exceedance magnitudes below u
+    Nu = len(exc)
+    if Nu < 10:
+        return None
+    m = _mean(exc); v = _var(exc)
+    if v <= 0:
+        return None
+    xi = 0.5 * (1.0 - m * m / v)         # GPD MoM shape
+    sigma = m * (1.0 - xi)               # GPD MoM scale
+    sigma = max(sigma, 1e-9)
+    p = 0.025                            # 97.5% tail
+    # POT VaR/ES on the loss side (losses = -returns); u_loss = -u
+    u_loss = -u
+    try:
+        var_p = u_loss + (sigma / xi) * (((n / Nu) * (p)) ** (-xi) - 1) if abs(xi) > 1e-6 \
+                else u_loss + sigma * math.log((Nu / n) / p)
+        es_p = (var_p + sigma - xi * u_loss) / (1 - xi) if xi < 1 else var_p
+    except Exception:
+        return None
+    emp = expected_shortfall(returns, 1, alpha=p)
+    emp_es = -emp["es"] if emp else var_p
+    return {"xi": round(xi, 4), "threshold": round(u, 6), "exceedances": Nu,
+            "gpdES": round(-es_p, 6), "evtAddOn": round(-(es_p - emp_es), 6),
+            "copula": "t", "note": "POT/GPD lower-tail; t-copula recommended over Gaussian"}
+
+
+def tail_dependence(a, b, q=0.10):
+    """Empirical lower/upper tail-dependence coefficients between two return series (a=name, b=market):
+    lambda_L = P(b in lower q | a in lower q), lambda_U = P(b in upper q | a in upper q)."""
+    nA = min(len(a), len(b))
+    if nA < 50:
+        return None
+    a, b = a[:nA], b[:nA]
+    sa = sorted(a); sb = sorted(b)
+    k = max(1, int(math.floor(q * nA)))
+    aL, aU = sa[k - 1], sa[nA - k]
+    bL, bU = sb[k - 1], sb[nA - k]
+    inAL = [i for i in range(nA) if a[i] <= aL]
+    inAU = [i for i in range(nA) if a[i] >= aU]
+    lamL = (sum(1 for i in inAL if b[i] <= bL) / len(inAL)) if inAL else 0.0
+    lamU = (sum(1 for i in inAU if b[i] >= bU) / len(inAU)) if inAU else 0.0
+    return {"lambdaLower": round(lamL, 3), "lambdaUpper": round(lamU, 3), "q": q,
+            "gaussianRef": round(q, 3)}   # independent baseline ~ q

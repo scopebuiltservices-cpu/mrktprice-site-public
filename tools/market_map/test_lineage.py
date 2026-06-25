@@ -420,6 +420,54 @@ def test_governance_block_assembles():
     assert "q" in gov["challenger"]["crps"]   # options-implied challenger present (iv given)
 
 
+def test_causal_support_labels():
+    import random
+    random.seed(51)
+    n = 400
+    f1 = [random.gauss(0, 1) for _ in range(n)]
+    # f2 is a confounder: correlated with f1 but NOT a driver of y
+    f2 = [0.8 * f1[i] + random.gauss(0, 0.6) for i in range(n)]
+    # y is driven ONLY by f1 (causal), plus noise
+    y = [2.0 * f1[i] + random.gauss(0, 1.0) for i in range(n)]
+    res = L.causal_support(y, {"F1": f1, "F2": f2})
+    by = {d["f"]: d for d in res}
+    # F1: partialled-out effect ~2, significant + stable -> plausibly-causal
+    assert by["F1"]["label"] == "plausibly-causal", by["F1"]
+    assert 1.5 < by["F1"]["partial"] < 2.5
+    assert by["F1"]["ciLo"] > 0
+    # F2: has marginal correlation (via f1) but partial ~0 -> merely-correlative (NOT causal)
+    assert by["F2"]["label"] == "merely-correlative", by["F2"]
+    assert abs(by["F2"]["partial"]) < 0.5
+    assert abs(by["F2"]["marginal"]) > 0.3   # it IS marginally correlated
+
+
+def test_evt_gpd_heavy_vs_thin_tail():
+    import random
+    random.seed(52)
+    # heavy-tailed (Student-t df=3) -> xi > 0
+    def t3():
+        # crude t_3 via ratio
+        z = random.gauss(0, 1); c = sum(random.gauss(0, 1) ** 2 for _ in range(3))
+        return z / math.sqrt(c / 3)
+    heavy = [0.01 * t3() for _ in range(2000)]
+    thin = [random.uniform(-0.02, 0.02) for _ in range(2000)]
+    eh = L.evt_gpd_tail(heavy); et = L.evt_gpd_tail(thin)
+    assert eh is not None and et is not None
+    assert eh["xi"] > et["xi"]                 # heavy tail has larger shape index
+    assert eh["exceedances"] >= 10 and eh["gpdES"] < 0   # ES is a loss (negative)
+
+
+def test_tail_dependence_comonotone_vs_independent():
+    import random
+    random.seed(53)
+    a = [random.gauss(0, 1) for _ in range(1000)]
+    como = a[:]                                  # b == a -> perfect tail dependence
+    indep = [random.gauss(0, 1) for _ in range(1000)]
+    tc = L.tail_dependence(a, como); ti = L.tail_dependence(a, indep)
+    assert approx(tc["lambdaLower"], 1.0, 1e-9) and approx(tc["lambdaUpper"], 1.0, 1e-9)
+    assert ti["lambdaLower"] < 0.4 and ti["lambdaUpper"] < 0.4   # ~ q under independence
+
+
 if __name__ == "__main__":
     _fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for _f in _fns:

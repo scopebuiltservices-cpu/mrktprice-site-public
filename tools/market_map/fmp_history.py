@@ -196,22 +196,37 @@ def commodities_history(symbols=None, sess=None, days=420, cap=40):
     return out or None
 
 
-def earnings_calendar(symbol, sess=None, limit=24):
-    """FMP Ultimate EARNINGS REPORT for one symbol -> the same compact shape the terminal expects:
-       {'q':[{d,a,e,q,y,s} ... last ~8 reported quarters], 'next':{d,a,e,q,y,s}|absent,
-        'beat':<Bayesian-shrunk beat prob>, 'source':'FMP Ultimate'}  — or None.
+def _num(x):
+    try:
+        return float(x)
+    except Exception:
+        return None
 
-    Endpoint: /stable/earnings?symbol=SYM  (past + upcoming; epsActual is null for the upcoming ones).
-    Fields handled defensively (epsActual|eps, epsEstimated|epsEstimate). Fiscal q/y are NOT in this
-    feed, so they are derived from the *reported period* (~45d before the announce date) and clearly
-    treated as a calendar-quarter label; the authoritative datum on the chart is the report DATE.
-    """
+
+def _fp_num(p):
+    """'Q1'..'Q4'/'FY'/'Q4' -> 1..4 (annual treated as Q4). None if unparseable."""
+    if not p:
+        return None
+    p = str(p).upper().strip()
+    if p in ("FY", "ANNUAL"):
+        return 4
+    for n in ("1", "2", "3", "4"):
+        if n in p:
+            return int(n)
+    return None
+
+
+def quarterly_income(symbol, sess=None, limit=13):
+    """AUTHORITATIVE fiscal periods from the FMP quarterly income statement -> ascending
+       [{filed, periodEnd, fp(1..4), fy(int), eps, rev} ...] — or None.
+       This is the ground truth that removes the calendar heuristic: each record carries the real
+       fiscal quarter + fiscal year AND the actual SEC filing date (the report date)."""
     key = _key()
     if not key:
         return None
-    import requests, datetime as dt
+    import requests
     s = sess or requests.Session()
-    url = "%s/earnings?symbol=%s&limit=%d&apikey=%s" % (STABLE, symbol, int(limit), key)
+    url = "%s/income-statement?symbol=%s&period=quarter&limit=%d&apikey=%s" % (STABLE, symbol, int(limit), key)
     r = _get(s, url)
     if r is None or r.status_code != 200:
         return None
@@ -221,48 +236,159 @@ def earnings_calendar(symbol, sess=None, limit=24):
         return None
     if not isinstance(j, list) or not j:
         return None
-    rows = [d for d in j if isinstance(d, dict) and d.get("date")]
-    rows.sort(key=lambda d: str(d["date"])[:10])
+    out = []
+    for d in j:
+        if not isinstance(d, dict):
+            continue
+        pe = d.get("date")
+        filed = d.get("filingDate") or d.get("fillingDate") or d.get("acceptedDate") or pe
+        if not (pe and filed):
+            continue
+        try:
+            fy = int(d.get("fiscalYear") or d.get("calendarYear") or str(pe)[:4]) or None
+        except Exception:
+            fy = None
+        eps = d.get("epsDiluted")
+        if eps is None:
+            eps = d.get("eps")
+        out.append({"filed": str(filed)[:10], "periodEnd": str(pe)[:10],
+                    "fp": _fp_num(d.get("period")), "fy": fy, "eps": _num(eps), "rev": d.get("revenue")})
+    out.sort(key=lambda x: x["periodEnd"])
+    return out or None
+
+
+def earnings_calendar(symbol, sess=None, limit=24):
+    """FMP Ultimate earnings with an AUTHORITATIVE fiscal mapping (no calendar guessing).
+
+    Past quarters come from the quarterly income statement (true fiscal Q/Y + the real SEC filing
+    date + actual EPS), joined to the analyst estimate from the earnings calendar (matched by date
+    proximity) to compute the surprise. The upcoming quarter's date + estimate come from the earnings
+    calendar; its fiscal label is rolled forward from the last reported quarter. Company fiscal
+    cadence (fiscal-year-end month + report months) is emitted so the client's fallback for a missing
+    'next' is company-correct (Apple FYE Sep, Nvidia Jan, ...). Calendar-heuristic is used ONLY if the
+    income statement is unavailable, and is tagged src='cal'.
+
+    -> {'q':[{d,a,e,q,y,s,src} ...<=8], 'next':{d,a,e,q,y,s,src}|absent, 'beat', 'fyEnd', 'qMonths',
+        'source':'FMP Ultimate'}  — or None."""
+    key = _key()
+    if not key:
+        return None
+    import requests, datetime as dt
+    s = sess or requests.Session()
     today = dt.date.today().isoformat()
 
-    def _num(x):
+    # 1) analyst estimates + announce dates (+ actuals) from the earnings calendar
+    cal = []
+    r = _get(s, "%s/earnings?symbol=%s&limit=%d&apikey=%s" % (STABLE, symbol, int(limit), key))
+    if r is not None and r.status_code == 200:
         try:
-            return float(x)
-        except Exception:
-            return None
-
-    def rec(d):
-        a = _num(d.get("epsActual") if d.get("epsActual") is not None else d.get("eps"))
-        e = _num(d.get("epsEstimated") if d.get("epsEstimated") is not None else d.get("epsEstimate"))
-        ds = str(d.get("date"))[:10]
-        s_ = None
-        if a is not None and e not in (None, 0):
-            try:
-                s_ = round(100.0 * (a - e) / abs(e), 1)
-            except Exception:
-                s_ = None
-        q = y = None
-        try:
-            yy, mm, dd = (int(p) for p in ds.split("-"))
-            pe = dt.date(yy, mm, min(max(dd, 1), 28)) - dt.timedelta(days=45)  # reported period end
-            q = (pe.month - 1) // 3 + 1
-            y = pe.year
+            jj = r.json()
+            if isinstance(jj, list):
+                for d in jj:
+                    if isinstance(d, dict) and d.get("date"):
+                        cal.append({"d": str(d["date"])[:10],
+                                    "a": _num(d.get("epsActual") if d.get("epsActual") is not None else d.get("eps")),
+                                    "e": _num(d.get("epsEstimated") if d.get("epsEstimated") is not None else d.get("epsEstimate"))})
         except Exception:
             pass
-        return {"d": ds, "a": a, "e": e, "q": q, "y": y, "s": s_}
+    cal.sort(key=lambda x: x["d"])
 
-    def _reported(d):
-        return (d.get("epsActual") is not None or d.get("eps") is not None) and str(d.get("date"))[:10] <= today
+    # 2) authoritative fiscal periods from the income statement
+    inc = quarterly_income(symbol, sess=s) or []
 
-    past = [rec(d) for d in rows if _reported(d)]
-    fut = [d for d in rows if not _reported(d) and str(d.get("date"))[:10] > today]
-    out = {"q": past[-8:], "source": SOURCE_LABEL}
+    def _match_est(filed, pe):
+        best, bd = None, 99
+        for c in cal:
+            for ref in (filed, pe):
+                try:
+                    dd = abs((dt.date.fromisoformat(c["d"]) - dt.date.fromisoformat(ref)).days)
+                except Exception:
+                    dd = 99
+                if dd < bd:
+                    bd, best = dd, c
+        return best if bd <= 15 else None
+
+    qrec = []
+    for it in inc:
+        est = _match_est(it["filed"], it["periodEnd"])
+        a = it["eps"] if it["eps"] is not None else (est["a"] if est else None)
+        e = est["e"] if est else None
+        sp = None
+        if a is not None and e not in (None, 0):
+            try:
+                sp = round(100.0 * (a - e) / abs(e), 1)
+            except Exception:
+                sp = None
+        if it["filed"] <= today:
+            # CONFIRMED report (real SEC filing date) with an AUTHORITATIVE fiscal label.
+            qrec.append({"d": it["filed"], "a": a, "e": e, "q": it["fp"], "y": it["fy"], "s": sp,
+                         "src": "is", "conf": True, "labelSrc": "is"})
+
+    # 2b) heuristic fallback ONLY if the income statement gave nothing
+    if not qrec and cal:
+        for c in cal:
+            if c["a"] is None or c["d"] > today:
+                continue
+            sp = None
+            if c["e"] not in (None, 0):
+                try:
+                    sp = round(100.0 * (c["a"] - c["e"]) / abs(c["e"]), 1)
+                except Exception:
+                    sp = None
+            q = y = None
+            try:
+                yy, mm, dd = (int(p) for p in c["d"].split("-"))
+                pe = dt.date(yy, mm, min(max(dd, 1), 28)) - dt.timedelta(days=45)
+                q, y = (pe.month - 1) // 3 + 1, pe.year
+            except Exception:
+                pass
+            # date is a real announce date (confirmed) but the fiscal LABEL is calendar-derived (est).
+            qrec.append({"d": c["d"], "a": c["a"], "e": c["e"], "q": q, "y": y, "s": sp,
+                         "src": "cal", "conf": True, "labelSrc": "cal"})
+
+    qrec.sort(key=lambda x: x["d"])
+    out = {"q": qrec[-8:], "source": SOURCE_LABEL}
+
+    # 3) NEXT quarter — an ESTIMATE, never a confirmed report. The date is FMP-listed (scheduled, not
+    #    yet filed) and the fiscal label is rolled forward, so it is flagged conf=False / est=True and
+    #    carries a WINDOW (it must never harden into a single confirmed point downstream).
+    fut = [c for c in cal if c["a"] is None and c["d"] > today]
     if fut:
-        out["next"] = rec(fut[0])
-    tot = [r for r in out["q"] if r["a"] is not None and r["e"] not in (None, 0)]
+        nq = ny = None
+        if out["q"] and out["q"][-1].get("q") and out["q"][-1].get("y"):
+            nq, ny = out["q"][-1]["q"] + 1, out["q"][-1]["y"]
+            if nq > 4:
+                nq, ny = 1, ny + 1
+        nd = fut[0]["d"]
+        try:
+            b = dt.date.fromisoformat(nd)
+            win = [(b - dt.timedelta(days=3)).isoformat(), (b + dt.timedelta(days=3)).isoformat()]
+        except Exception:
+            win = [nd, nd]
+        out["next"] = {"d": nd, "a": None, "e": fut[0]["e"], "q": nq, "y": ny, "s": None,
+                       "src": "cal", "conf": False, "est": True, "status": "scheduled",
+                       "labelEst": True, "window": win}
+
+    # 4) Bayesian-shrunk beat rate
+    tot = [r2 for r2 in out["q"] if r2["a"] is not None and r2["e"] not in (None, 0)]
     if tot:
-        beats = [r for r in tot if (r["a"] or 0) >= (r["e"] or 0)]
-        out["beat"] = round((len(beats) + 1.0) / (len(tot) + 2.0), 2)   # shrink toward 0.5
+        beats = [r2 for r2 in tot if (r2["a"] or 0) >= (r2["e"] or 0)]
+        out["beat"] = round((len(beats) + 1.0) / (len(tot) + 2.0), 2)
+
+    # 5) company fiscal cadence so the client's next-date fallback is company-correct
+    if inc:
+        try:
+            fye = None
+            for it in reversed(inc):
+                if it.get("fp") == 4:
+                    fye = int(it["periodEnd"][5:7]); break
+            out["fyEnd"] = fye if fye is not None else int(inc[-1]["periodEnd"][5:7])
+            mons = sorted({int(it["filed"][5:7]) for it in inc if it.get("filed")})
+            if mons:
+                out["qMonths"] = mons[:6]
+        except Exception:
+            pass
+
     if not out["q"] and not out.get("next"):
         return None
     return out

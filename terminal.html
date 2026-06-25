@@ -999,7 +999,9 @@ function drawScatter(X,Y,R,xn,yn){const cv=document.getElementById('slCanvas');c
  g.fillStyle='rgba(91,157,255,.55)';for(let i=0;i<X.length;i++){g.beginPath();g.arc(PX(X[i]),PY(Y[i]),1.7,0,7);g.fill();}
  g.strokeStyle='#e0a13c';g.lineWidth=2;g.beginPath();g.moveTo(PX(xlo),PY(R.a+R.b*xlo));g.lineTo(PX(xhi),PY(R.a+R.b*xhi));g.stroke();
  g.fillStyle='#69727f';g.font='10px sans-serif';g.fillText(xn==='zsig'?'signal-z (price vs SMA20, σ)':xn==='rvol'?'RVOL':xn==='flow'?'signed $flow':xn==='emamom'?'EMA momentum':'log return',W/2-30,H-8);}
-function nextEarnings(lastDateStr,sym){var todayISO=new Date().toISOString().slice(0,10);try{if(!sym&&typeof CUR==='object'&&CUR)sym=CUR.sym;}catch(_e){}try{var C=(typeof FUND==='object'&&FUND)?FUND[sym]:null;if(C&&C.estimates&&C.estimates.length){var fut=C.estimates.map(function(e){return e&&e.date;}).filter(function(dt){return dt&&dt>todayISO;}).sort();if(fut.length)return new Date(fut[0]+'T00:00:00Z');}}catch(_e2){}var refMs=Math.max(Date.now(),Date.parse((lastDateStr||'')+'T00:00:00Z')||0);var d=new Date(refMs);var qMon=[2,5,8,11];var best=null;for(var yy=d.getUTCFullYear();yy<=d.getUTCFullYear()+1&&!best;yy++){for(var i=0;i<qMon.length;i++){var qe=new Date(Date.UTC(yy,qMon[i]+1,0));var rep=new Date(qe.getTime()+40*86400000);if(rep>d){best=rep;break;}}}return best;}
+function nextEarnings(lastDateStr,sym){var todayISO=new Date().toISOString().slice(0,10);try{if(!sym&&typeof CUR==='object'&&CUR)sym=CUR.sym;}catch(_e){}try{var C=(typeof FUND==='object'&&FUND)?FUND[sym]:null;if(C&&C.estimates&&C.estimates.length){var fut=C.estimates.map(function(e){return e&&e.date;}).filter(function(dt){return dt&&dt>todayISO;}).sort();if(fut.length)return new Date(fut[0]+'T00:00:00Z');}}catch(_e2){}
+  try{var _n=_mmName(sym);if(_n&&_n.earn){if(_n.earn.next&&_n.earn.next.d&&_n.earn.next.d>todayISO)return new Date(_n.earn.next.d+'T00:00:00Z');var qm=_n.earn.qMonths;if(qm&&qm.length){var _now=new Date(),_ty=_now.getUTCFullYear(),_tm=_now.getUTCMonth()+1,_qs=qm.slice().sort(function(a,b){return a-b;});for(var _yy=_ty;_yy<=_ty+1;_yy++){for(var _i=0;_i<_qs.length;_i++){if(_yy>_ty||_qs[_i]>_tm)return new Date(Date.UTC(_yy,_qs[_i]-1,15));}}}}}catch(_e3){}
+  var refMs=Math.max(Date.now(),Date.parse((lastDateStr||'')+'T00:00:00Z')||0);var d=new Date(refMs);var qMon=[2,5,8,11];var best=null;for(var yy=d.getUTCFullYear();yy<=d.getUTCFullYear()+1&&!best;yy++){for(var i=0;i<qMon.length;i++){var qe=new Date(Date.UTC(yy,qMon[i]+1,0));var rep=new Date(qe.getTime()+40*86400000);if(rep>d){best=rep;break;}}}return best;}
 /* ===== QUARTERLY REPORT-DATE helpers (5 calendar-aligned lines: 4 past + 1 future) =====
    Past report dates come from the earnings calendar (announce dates + EPS + surprise) when present,
    else from SEC 10-Q filing dates (always available). The future date comes from the calendar's
@@ -1008,13 +1010,18 @@ function nextEarnings(lastDateStr,sym){var todayISO=new Date().toISOString().sli
 function _mmName(sym){try{if(window.MMAP&&window.MMAP.names){var t=(sym||'').toUpperCase();for(var i=0;i<window.MMAP.names.length;i++){if((window.MMAP.names[i].t||'').toUpperCase()===t)return window.MMAP.names[i];}}}catch(_e){}return null;}
 function _qNextReportISO(d,sym){var n=_mmName(sym);if(n&&n.earn&&n.earn.next&&n.earn.next.d)return n.earn.next.d;
   try{var last=(d&&d.length)?d[d.length-1]:null;var ne=nextEarnings(last,sym);if(ne)return ne.toISOString().slice(0,10);}catch(_e){}return null;}
-function _qNextReportFull(d,sym){var iso=_qNextReportISO(d,sym);if(!iso)return null;var est=null,lab='NEXT',n=_mmName(sym);
-  if(n&&n.earn&&n.earn.next){est=n.earn.next.e;if(n.earn.next.q)lab='Q'+n.earn.next.q+" '"+String(n.earn.next.y||'').slice(2);}
-  var bd=0,last=(d&&d.length)?d[d.length-1]:null;if(last){try{bd=_forwardTradingDays(last,iso);}catch(_e3){bd=0;}}
-  return {iso:iso,est:est,bd:bd,label:lab};}
+function _qNextReportFull(d,sym){var iso=_qNextReportISO(d,sym);if(!iso)return null;
+  // The next report is ALWAYS an estimate (conf:false) — a 'scheduled' FMP date or a cadence guess.
+  // It carries a WINDOW and is never treated as a confirmed point.
+  var est=null,lab='NEXT',status='estimated',win=null,n=_mmName(sym);
+  if(n&&n.earn&&n.earn.next){var nx=n.earn.next;if(nx.d===iso){est=nx.e;if(nx.q)lab='Q'+nx.q+" '"+String(nx.y||'').slice(2);status=nx.status||'scheduled';win=nx.window||null;}}
+  if(!win){try{var b=Date.parse(iso+'T00:00:00Z');win=[new Date(b-10*86400000).toISOString().slice(0,10),new Date(b+10*86400000).toISOString().slice(0,10)];}catch(_w){win=[iso,iso];}}
+  var last=(d&&d.length)?d[d.length-1]:null;
+  var bd=0,bdLo=0,bdHi=0;if(last){try{bd=_forwardTradingDays(last,iso);bdLo=_forwardTradingDays(last,win[0]);bdHi=_forwardTradingDays(last,win[1]);}catch(_e3){}}
+  return {iso:iso,est:est,bd:bd,bdLo:bdLo,bdHi:bdHi,label:lab,status:status,window:win,conf:false};}
 function _qReportDates(d,sym){var out=[],seen={},n=_mmName(sym);
-  if(n&&n.earn&&n.earn.q){n.earn.q.forEach(function(e){if(!e.d||seen[e.d])return;seen[e.d]=1;out.push({iso:e.d,label:'Q'+(e.q||'?')+" '"+String(e.y||'').slice(2),eps:e.a,surpr:e.s,src:'cal'});});}
-  try{var C=(typeof FUND==='object'&&FUND)?FUND[sym]:null;if(C&&C.quarters){C.quarters.forEach(function(q){var fd=q.filedDate||q.endDate;if(!fd||seen[fd])return;seen[fd]=1;out.push({iso:fd,label:(q.label||'Q'),eps:(q.eps!=null?q.eps:null),surpr:null,src:'sec'});});}}catch(_e){}
+  if(n&&n.earn&&n.earn.q){n.earn.q.forEach(function(e){if(!e.d||seen[e.d])return;seen[e.d]=1;out.push({iso:e.d,label:'Q'+(e.q||'?')+" '"+String(e.y||'').slice(2),eps:e.a,surpr:e.s,src:'cal',conf:(e.conf!==false),labelSrc:(e.labelSrc||'cal')});});}
+  try{var C=(typeof FUND==='object'&&FUND)?FUND[sym]:null;if(C&&C.quarters){C.quarters.forEach(function(q){var fd=q.filedDate||q.endDate;if(!fd||seen[fd])return;seen[fd]=1;out.push({iso:fd,label:(q.label||'Q'),eps:(q.eps!=null?q.eps:null),surpr:null,src:'sec',conf:true,labelSrc:'sec'});});}}catch(_e){}
   out.forEach(function(o){o.idx=-1;for(var k=0;k<d.length;k++){if(d[k]>=o.iso){o.idx=k;break;}}});
   out=out.filter(function(o){return o.idx>=0;});
   out.sort(function(a,b){return a.iso<b.iso?1:-1;});out=out.slice(0,4);out.sort(function(a,b){return a.iso<b.iso?-1:1;});return out;}
@@ -1027,6 +1034,7 @@ function _qBuildExpTile(sym,fut,past){var el=document.getElementById('qExpTile')
   el.innerHTML='<div style="border:1px solid rgba(57,182,255,.4);border-radius:6px;padding:6px 8px;background:rgba(57,182,255,.06)">'
     +'<div style="font-size:10px;color:#39b6ff;font-weight:700">▼ NEXT QUARTERLY REPORT · '+fut.label+'</div>'
     +'<div style="font-size:13px;color:var(--ink);font-weight:700;margin:1px 0">'+fut.iso+' <span style="font-size:10px;color:var(--muted);font-weight:400">('+(days>=0?'in '+days+'d':Math.abs(days)+'d ago')+')</span></div>'
+    +'<div style="font-size:9px;color:var(--caution);font-weight:700;margin:1px 0">⚠ '+((fut.status==="scheduled")?"SCHEDULED estimate":"CADENCE estimate")+' — NOT a confirmed report date'+(fut.window?' · window '+fut.window[0]+' → '+fut.window[1]:'')+'</div>'
     +'<div style="font-size:10px;color:var(--muted)">'+(fut.est!=null?'consensus EPS est <b style="color:#cfe0f0">'+fut.est+'</b>':'no consensus EPS embedded')+(beat?' · hist '+beat:'')+'</div>'
     +(trend?'<div style="font-size:9px;color:var(--muted);margin-top:1px">mechanical FY-trend (not consensus): '+trend+'</div>':'')
     +'</div>';}
@@ -2718,15 +2726,21 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
   var _qPast=_qReportDates(d,CUR.sym),_qFut=_qNextReportFull(d,CUR.sym);
   _qPast.forEach(function(q){var xi=q.idx-h0;if(xi<0||xi>=show)return;var xx=X(xi);
     _qLine(xx,'rgba(245,196,81,.7)',1,[5,4],q.iso.slice(5),'#f5c451');     // bold dated flag at top
-    var yy=yP0+20;g.textAlign='left';g.font='bold 8px sans-serif';g.fillStyle='#f5c451';g.fillText(q.label,xx+2,yy);yy+=9;
+    var yy=yP0+20;g.textAlign='left';g.font='bold 8px sans-serif';g.fillStyle='#f5c451';g.fillText((q.labelSrc==='cal'?'~':'')+q.label+(q.labelSrc==='sec'?' ✓':''),xx+2,yy);yy+=9;
     if(q.eps!=null){g.font='8px sans-serif';g.fillStyle='#cfe0f0';g.fillText('EPS '+(typeof q.eps==='number'?q.eps.toFixed(2):q.eps),xx+2,yy);yy+=9;}
     if(q.surpr!=null){g.fillStyle=q.surpr>=0?'#2ecc8f':'#ef5f4e';g.fillText((q.surpr>=0?'beat +':'miss ')+q.surpr+'%',xx+2,yy);}
     var cP=c[q.idx];if(cP!=null){var yC=Yp(cP);g.fillStyle='#f5c451';g.beginPath();g.arc(xx,yC,3.2,0,7);g.fill();g.strokeStyle='rgba(11,14,19,.95)';g.lineWidth=1;g.beginPath();g.arc(xx,yC,3.2,0,7);g.stroke();g.fillStyle='#f5d489';g.font='bold 8px sans-serif';g.fillText('$'+cP.toFixed(2),xx+4,yC-4);}
   });
   if(_qFut&&_qFut.bd>0){var xf=X(jx+_qFut.bd);if(xf>X(jx)){
-    _qLine(xf,'rgba(57,182,255,.95)',1,[5,4],'▼ '+_qFut.iso.slice(5),'#39b6ff');   // bold future flag
+    // ESTIMATE — drawn as a shaded WINDOW + dashed centerline, never a solid confirmed-style flag.
+    var xlo=X(jx+Math.max(_qFut.bdLo||1,1)),xhi=X(jx+Math.max(_qFut.bdHi||_qFut.bd,_qFut.bd));
+    g.fillStyle='rgba(57,182,255,.10)';g.fillRect(Math.min(xlo,xhi),yP0,Math.max(Math.abs(xhi-xlo),2),_qBot-yP0);
+    _qLine(xf,'rgba(57,182,255,.85)',1,[2,4]);
+    g.font='bold 8px sans-serif';var _tg='≈EST '+_qFut.iso.slice(5),_fw=g.measureText(_tg).width+6;
+    g.fillStyle='rgba(57,182,255,.85)';g.fillRect(xf,yP0-0.5,_fw,11);g.fillStyle='#0b0e13';g.fillText(_tg,xf+3,yP0+8);
     var yu=yP0+20;g.textAlign='left';g.font='bold 8px sans-serif';g.fillStyle='#39b6ff';g.fillText('NEXT '+_qFut.label,xf+2,yu);yu+=9;
-    if(_qFut.est!=null){g.font='8px sans-serif';g.fillStyle='#cfe0f0';g.fillText('est '+_qFut.est,xf+2,yu);}
+    g.font='8px sans-serif';g.fillStyle='#e0a13c';g.fillText('⚠ '+(_qFut.status==='scheduled'?'scheduled':'estimated')+' · not confirmed',xf+2,yu);yu+=9;
+    if(_qFut.est!=null){g.fillStyle='#cfe0f0';g.fillText('est EPS '+_qFut.est,xf+2,yu);}
   }}
   _qBuildExpTile(CUR.sym,_qFut,_qPast);
  }catch(_qe){}

@@ -20,6 +20,9 @@ fi
 if [ -f tools/market_map/test_payload.py ]; then
   ( cd tools/market_map && python3 test_payload.py ) || fail=1
 fi
+if [ -f tools/market_map/test_earnings.py ]; then
+  ( cd tools/market_map && python3 test_earnings.py ) || fail=1
+fi
 
 echo "==> 3/5  Node unit tests (lineage parity)"
 if [ -f tools/test_lineage.mjs ]; then

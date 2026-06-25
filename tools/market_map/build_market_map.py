@@ -1060,6 +1060,40 @@ def _load_cik(s):
         return _INS_CIK
     except Exception:
         _INS_CIK_FAILS[0]+=1; return None
+_SEC_FISCAL_CACHE={}
+def _sec_fiscal_map(ticker, s):
+    """AUTHORITATIVE fiscal-period focus from SEC EDGAR companyfacts -> {periodEndISO:{fp(1-4),fy,filed}}.
+    The XBRL facts carry fy / fp / end / filed per 10-Q (Q1-Q3) and 10-K (FY->Q4). Used to cross-check
+    and, when FMP is sparse, supply the correct fiscal label. Returns {} on any failure (fail-soft)."""
+    if ticker in _SEC_FISCAL_CACHE: return _SEC_FISCAL_CACHE[ticker]
+    out={}
+    try:
+        cikmap=_load_cik(s); cik=cikmap.get(ticker.upper()) if cikmap else None
+        if not cik:
+            _SEC_FISCAL_CACHE[ticker]={}; return {}
+        r=_sec_get(s,"https://data.sec.gov/api/xbrl/companyfacts/CIK%s.json"%cik)
+        if r is None or r.status_code!=200:
+            _SEC_FISCAL_CACHE[ticker]={}; return {}
+        facts=(r.json().get("facts") or {}).get("us-gaap") or {}
+        concept=None
+        for c in ("EarningsPerShareDiluted","EarningsPerShareBasic","Revenues",
+                  "RevenueFromContractWithCustomerExcludingAssessedTax","NetIncomeLoss"):
+            if c in facts: concept=c; break
+        if not concept:
+            _SEC_FISCAL_CACHE[ticker]={}; return {}
+        for _u,arr in (facts[concept].get("units") or {}).items():
+            for d in arr:
+                if d.get("form") not in ("10-Q","10-K"): continue
+                fp=d.get("fp"); end=d.get("end"); fy=d.get("fy"); filed=d.get("filed")
+                if not (fp and end and fy and filed): continue
+                q=4 if fp in ("FY","Q4") else (int(fp[1]) if fp[:1]=="Q" and fp[1:2].isdigit() else None)
+                if q is None: continue
+                key=str(end)[:10]; rec=out.get(key)
+                if (not rec) or str(filed)>rec["filed"]:          # keep latest filing per period (amendments)
+                    out[key]={"fp":q,"fy":int(fy),"filed":str(filed)[:10]}
+    except Exception:
+        out={}
+    _SEC_FISCAL_CACHE[ticker]=out; return out
 def _form4_xml_url(s, cik_int, acc_nodash, primary):
     """Resolve the RAW Form 4 ownership XML. primaryDocument is often the XSL-rendered path
     (e.g. 'xslF345X05/wk-form4_..xml') which returns HTML, not parseable XML \u2014 strip the xsl
@@ -1296,16 +1330,35 @@ def real_universe():
         import fmp_history as _fmpe
         if _fmpe.have_key():
             import requests as _rq
-            _esess=_rq.Session(); _ne=0; _nq=0
+            _esess=_rq.Session(); _ne=0; _nq=0; _SEC_BUDGET=[200]; _secfix=0
             for n in [x for x in names if "RUT" not in x.get("idx",[])]:
                 try: ec=_fmpe.earnings_calendar(n["t"], sess=_esess)
                 except Exception: ec=None
                 if not ec: continue
                 earn={"q":ec.get("q") or []}
                 if ec.get("next"): earn["next"]=ec["next"]
+                if ec.get("fyEnd") is not None: earn["fyEnd"]=ec["fyEnd"]        # fiscal-year-end month
+                if ec.get("qMonths"): earn["qMonths"]=ec["qMonths"]             # company report-month cadence
+                # SEC EDGAR companyfacts cross-check/fallback for fiscal LABELS (authoritative fp/fy).
+                # Targeted at quarters whose label is NOT from the income statement (sparse/calendar),
+                # bounded by a per-run companyfacts budget so bandwidth stays sane.
+                try:
+                    _needsec=bool(earn["q"]) and any((qq.get("labelSrc")!="is" or qq.get("y") is None) for qq in earn["q"])
+                    if _needsec and _SEC_BUDGET[0]>0:
+                        _SEC_BUDGET[0]-=1; sf=_sec_fiscal_map(n["t"], _esess)
+                        for qq in earn["q"]:
+                            best=None; bd=9
+                            for _pe,_rec in sf.items():
+                                try: ddx=abs((dt.date.fromisoformat(qq["d"])-dt.date.fromisoformat(_rec["filed"])).days)
+                                except Exception: ddx=9
+                                if ddx<bd: bd=ddx; best=_rec
+                            if best and bd<=5:
+                                qq["q"]=best["fp"]; qq["y"]=best["fy"]; qq["labelSrc"]="sec"; qq["conf"]=True; _secfix+=1
+                except Exception: pass
                 if earn["q"] or earn.get("next"):
                     n["earn"]=earn; n["_earnSrc"]="FMP Ultimate"; _ne+=1; _nq+=len(earn["q"])
                 if ec.get("beat") is not None: n["_beat"]=ec["beat"]
+            sys.stderr.write("SEC fiscal cross-check: %d labels corrected (budget left %d)\n"%(_secfix,_SEC_BUDGET[0]))
             sys.stderr.write("FMP Ultimate earnings: %d names, %d quarters (primary)\n"%(_ne,_nq))
     except Exception as _e:
         sys.stderr.write("FMP earnings skip: %s\n"%str(_e)[:140])

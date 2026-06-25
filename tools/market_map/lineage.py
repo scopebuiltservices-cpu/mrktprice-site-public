@@ -406,6 +406,9 @@ def lineage_object(returns: Sequence[float], horizons=PRIMARY_HORIZONS,
             "mapDrift": round(hmeans[mapk], 6),
             "mapVol": round(math.sqrt(max(hvars[mapk], 0)), 6),
             "totVol": round(math.sqrt(max(dec["total"], 0)), 6),
+            # per-regime drift/vol so the UI can draw the next-best branches as ribbons too
+            "rd": [round(m, 6) for m in hmeans],
+            "rv": [round(math.sqrt(max(v, 0)), 6) for v in hvars],
         }
     return {
         "K": K, "regimeNow": regime_now,

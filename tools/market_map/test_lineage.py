@@ -297,6 +297,24 @@ def test_touch_odds_structure():
     assert to["20d"]["pUp"] >= to["1d"]["pUp"] - 1e-9
 
 
+def test_lineage_per_regime_drift_vol():
+    import random
+    random.seed(31)
+    z, x = 0, []
+    for _ in range(400):
+        z = z if random.random() < 0.9 else 1 - z
+        x.append(random.gauss(-0.02 if z == 0 else 0.02, 0.02))
+    lo = L.lineage_object(x)
+    for label, _d, _p in L.PRIMARY_HORIZONS:
+        h = lo["horizons"][label]
+        assert "rd" in h and "rv" in h and len(h["rd"]) == lo["K"] and len(h["rv"]) == lo["K"]
+        # the MAP regime's per-regime drift/vol must equal the published mapDrift/mapVol
+        mapk = lo["branches"][0]["regime"]
+        assert abs(h["rd"][mapk] - h["mapDrift"]) < 1e-9
+        assert abs(h["rv"][mapk] - h["mapVol"]) < 1e-9
+        assert all(v >= 0 for v in h["rv"])
+
+
 if __name__ == "__main__":
     _fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for _f in _fns:

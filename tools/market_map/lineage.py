@@ -294,3 +294,126 @@ def reasoning_from_fields(node: LineageNode) -> str:
         d = node.drivers_ranked[0]
         parts.append(f"Top driver {d['name']} ({d['label']}, {d['contrib']:.0%}).")
     return " ".join(parts)
+
+
+# ============================================================================
+# Phase 2 — Forecast core: Gaussian HMM regime inference + lineage object
+# ============================================================================
+def _logsumexp(xs: Sequence[float]) -> float:
+    m = max(xs)
+    if m == NEG_INF:
+        return NEG_INF
+    return m + math.log(sum(math.exp(x - m) for x in xs))
+
+
+def _norm_logpdf(x: float, mu: float, var: float) -> float:
+    var = max(var, 1e-12)
+    return -0.5 * (math.log(2 * math.pi * var) + (x - mu) ** 2 / var)
+
+
+def gaussian_hmm_fit(returns: Sequence[float], K: int = 2, iters: int = 60,
+                     seed: int = 0) -> Dict:
+    """Baum-Welch EM for a K-state Gaussian HMM (scalar emissions). Returns regimes
+    ordered by ascending mean (state 0 = most bearish). Stable log-space FB."""
+    x = [r for r in returns if r == r]            # drop NaN
+    T = len(x)
+    if T < 3 * K:
+        return {"K": K, "ok": False}
+    lo, hi = min(x), max(x)
+    gvar = (sum((v - sum(x) / T) ** 2 for v in x) / T) or 1e-6
+    means = [lo + (hi - lo) * (k + 0.5) / K for k in range(K)]
+    vars = [gvar] * K
+    pi = [1.0 / K] * K
+    trans = [[(0.90 if i == j else 0.10 / (K - 1)) for j in range(K)] for i in range(K)]
+
+    gamma = [[1.0 / K] * K for _ in range(T)]
+    for _ in range(iters):
+        ll = [[_norm_logpdf(x[t], means[k], vars[k]) for k in range(K)] for t in range(T)]
+        # forward
+        la = [[NEG_INF] * K for _ in range(T)]
+        for k in range(K):
+            la[0][k] = math.log(max(pi[k], 1e-300)) + ll[0][k]
+        ltr = [[math.log(max(trans[i][j], 1e-300)) for j in range(K)] for i in range(K)]
+        for t in range(1, T):
+            for k in range(K):
+                la[t][k] = _logsumexp([la[t - 1][j] + ltr[j][k] for j in range(K)]) + ll[t][k]
+        # backward
+        lb = [[NEG_INF] * K for _ in range(T)]
+        for k in range(K):
+            lb[T - 1][k] = 0.0
+        for t in range(T - 2, -1, -1):
+            for k in range(K):
+                lb[t][k] = _logsumexp([ltr[k][j] + ll[t + 1][j] + lb[t + 1][j] for j in range(K)])
+        # gamma + xi
+        for t in range(T):
+            denom = _logsumexp([la[t][k] + lb[t][k] for k in range(K)])
+            for k in range(K):
+                gamma[t][k] = math.exp(la[t][k] + lb[t][k] - denom)
+        xi_sum = [[0.0] * K for _ in range(K)]
+        for t in range(T - 1):
+            denom = _logsumexp([la[t][i] + ltr[i][j] + ll[t + 1][j] + lb[t + 1][j]
+                                for i in range(K) for j in range(K)])
+            for i in range(K):
+                for j in range(K):
+                    xi_sum[i][j] += math.exp(la[t][i] + ltr[i][j] + ll[t + 1][j] + lb[t + 1][j] - denom)
+        # M-step
+        pi = [max(gamma[0][k], 1e-8) for k in range(K)]
+        s = sum(pi); pi = [p / s for p in pi]
+        for i in range(K):
+            row = xi_sum[i]; rs = sum(row) or 1e-12
+            trans[i] = [v / rs for v in row]
+        for k in range(K):
+            wsum = sum(gamma[t][k] for t in range(T)) or 1e-12
+            means[k] = sum(gamma[t][k] * x[t] for t in range(T)) / wsum
+            vars[k] = max(1e-10, sum(gamma[t][k] * (x[t] - means[k]) ** 2 for t in range(T)) / wsum)
+    # order by ascending mean for stable labels
+    order = sorted(range(K), key=lambda k: means[k])
+    inv = {old: new for new, old in enumerate(order)}
+    means = [means[o] for o in order]
+    vars = [vars[o] for o in order]
+    pi = [pi[o] for o in order]
+    trans = [[trans[order[i]][order[j]] for j in range(K)] for i in range(K)]
+    post_last = [gamma[T - 1][o] for o in order]
+    return {"K": K, "ok": True, "means": means, "vars": vars, "trans": trans,
+            "pi": pi, "post_last": post_last}
+
+
+def lineage_object(returns: Sequence[float], horizons=PRIMARY_HORIZONS,
+                   step_days_per_unit: float = 5.0, K: int = 2) -> Optional[Dict]:
+    """Fit HMM to (weekly) returns and emit the per-ticker lineage payload:
+    regime posterior, transition matrix, top branches, and per-horizon diffusive-vs-
+    branching confidence split + MAP-branch drift/vol. step_days_per_unit: trading days
+    per return step (weekly = 5)."""
+    fit = gaussian_hmm_fit(returns, K=K)
+    if not fit.get("ok"):
+        return None
+    post = fit["post_last"]
+    trans = fit["trans"]
+    means = fit["means"]
+    vars = fit["vars"]
+    branches = top_branches(post, trans, k=min(3, K))
+    regime_now = max(range(K), key=lambda k: post[k])
+    hz = {}
+    for label, days, _primary in horizons:
+        steps = days / step_days_per_unit                   # return-steps in this horizon
+        hmeans = [means[k] * steps for k in range(K)]        # drift scales linearly
+        hvars = [vars[k] * steps for k in range(K)]          # diffusion variance additive
+        dec = branch_decomposition(post, hmeans, hvars)
+        mapk = branches[0]["regime"]
+        hz[label] = {
+            "diffusive": round(dec["diffusive_share"], 4),
+            "branching": round(dec["branching_share"], 4),
+            "mapDrift": round(hmeans[mapk], 6),
+            "mapVol": round(math.sqrt(max(hvars[mapk], 0)), 6),
+            "totVol": round(math.sqrt(max(dec["total"], 0)), 6),
+        }
+    return {
+        "K": K, "regimeNow": regime_now,
+        "post": [round(p, 4) for p in post],
+        "trans": [[round(v, 4) for v in row] for row in trans],
+        "means": [round(m, 6) for m in means],
+        "vols": [round(math.sqrt(max(v, 0)), 6) for v in vars],
+        "branches": [{"regime": b["regime"], "p": round(b["p"], 4)} for b in branches],
+        "horizons": hz,
+        "stepDays": step_days_per_unit,
+    }

@@ -21,6 +21,10 @@ from __future__ import annotations
 import argparse, json, math, os, random, re, sys, time, datetime as dt
 import xml.etree.ElementTree as ET
 try:
+    import lineage as _lineage   # Phase 2 regime-lineage engine (same dir)
+except Exception:
+    _lineage=None
+try:
     import options_gex as _ogex, eodhd_options as _eod, fmp_connector as _fmp, short_squeeze as _sqz
 except Exception:
     _ogex=_eod=_fmp=_sqz=None
@@ -746,6 +750,13 @@ def build(names,mkt,ff,macro=None):
         _pool.sort(key=lambda d:-(abs(d["pcorr"]) if d.get("pcorr") is not None else abs(d.get("corr") or 0)))
         n["macro3"]={"rate":(_slim(_rate) if _rate else None),
                      "top":[_slim(d) for d in _pool[:3]]}
+        # ---- Phase 2: server-side regime-lineage object (HMM -> branches + LoTV split) ----
+        if _lineage is not None and "FACTOR" not in (n.get("idx") or []):
+            try:
+                _lin=_lineage.lineage_object(wr)
+                if _lin: n["lineage"]=_lin
+            except Exception:
+                pass
         cols=[mkt]+[macro[f] for f in ("RATE","DXY","OIL","VIX") if macro.get(f)]
         _,res=macro_fit(wr,cols); vy=_var(wr)
         n["macroR2"]=int(round(max(0.0,1.0-_var(res)/vy)*100)) if vy>0 else 0

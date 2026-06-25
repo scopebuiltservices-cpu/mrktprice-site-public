@@ -130,8 +130,43 @@ def test_driver_label_discipline_and_reasoning():
     assert "median 100.00" in txt and "42%" in txt and "10Y" in txt
 
 
+def test_gaussian_hmm_recovers_planted_regimes():
+    random.seed(11)
+    params = {0: (-0.02, 0.03), 1: (0.015, 0.01)}
+    z, x = 1, []
+    for _ in range(600):
+        z = z if random.random() < 0.92 else 1 - z
+        mu, sd = params[z]
+        x.append(random.gauss(mu, sd))
+    fit = L.gaussian_hmm_fit(x, K=2)
+    assert fit["ok"]
+    assert fit["means"][0] < fit["means"][1]
+    assert abs(fit["means"][0] - (-0.02)) < 0.012, fit["means"]
+    assert abs(fit["means"][1] - 0.015) < 0.012, fit["means"]
+    assert fit["vars"][1] < fit["vars"][0]
+    assert fit["trans"][0][0] > 0.7 and fit["trans"][1][1] > 0.7
+
+
+def test_lineage_object_shape_and_decomposition():
+    random.seed(12)
+    z, x = 0, []
+    for _ in range(400):
+        z = z if random.random() < 0.9 else 1 - z
+        x.append(random.gauss(-0.02 if z == 0 else 0.02, 0.02))
+    lo = L.lineage_object(x)
+    assert lo is not None
+    assert lo["K"] == 2 and len(lo["post"]) == 2
+    assert abs(sum(lo["post"]) - 1.0) < 1e-6
+    assert abs(sum(b["p"] for b in lo["branches"]) - 1.0) < 1e-6
+    for label, _d, _p in L.PRIMARY_HORIZONS:
+        h = lo["horizons"][label]
+        assert abs(h["diffusive"] + h["branching"] - 1.0) < 1e-3, (label, h)
+        assert h["totVol"] >= 0 and h["mapVol"] >= 0
+    assert lo["horizons"]["5d"]["branching"] >= lo["horizons"]["intraday"]["branching"] - 1e-6
+
+
 if __name__ == "__main__":
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    for f in fns:
-        f(); print("PASS", f.__name__)
-    print("\nALL %d LINEAGE TESTS PASSED" % len(fns))
+    _fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    for _f in _fns:
+        _f(); print("PASS", _f.__name__)
+    print("\nALL %d LINEAGE TESTS PASSED" % len(_fns))

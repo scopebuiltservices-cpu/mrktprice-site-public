@@ -28,6 +28,9 @@ fi
 if [ -f tools/test_intraday.mjs ]; then
   node tools/test_intraday.mjs || fail=1
 fi
+if [ -f tools/test_calendar.mjs ]; then
+  node tools/test_calendar.mjs || fail=1
+fi
 
 echo "==> 4/5  Inline <script> syntax gate (every *.html)"
 node tools/check-scripts.mjs || fail=1

@@ -1289,9 +1289,30 @@ def real_universe():
                 sys.stderr.write("FMP Ultimate macro: %d real driver series (%s)\n"%(len(_mm["macro"]),", ".join(sorted(_mm["macro"].keys()))))
     except Exception as _e:
         sys.stderr.write("FMP history skip: %s\n"%str(_e)[:140])
+    # EARNINGS CALENDAR — FMP Ultimate is the PRIMARY source now (report dates + EPS actual/est +
+    # surprise + the next date), driving the terminal's 5 quarterly report-date lines. Finnhub (below)
+    # is demoted to a gap-filler for any name FMP didn't return, and only when its key is present.
+    try:
+        import fmp_history as _fmpe
+        if _fmpe.have_key():
+            import requests as _rq
+            _esess=_rq.Session(); _ne=0; _nq=0
+            for n in [x for x in names if "RUT" not in x.get("idx",[])]:
+                try: ec=_fmpe.earnings_calendar(n["t"], sess=_esess)
+                except Exception: ec=None
+                if not ec: continue
+                earn={"q":ec.get("q") or []}
+                if ec.get("next"): earn["next"]=ec["next"]
+                if earn["q"] or earn.get("next"):
+                    n["earn"]=earn; n["_earnSrc"]="FMP Ultimate"; _ne+=1; _nq+=len(earn["q"])
+                if ec.get("beat") is not None: n["_beat"]=ec["beat"]
+            sys.stderr.write("FMP Ultimate earnings: %d names, %d quarters (primary)\n"%(_ne,_nq))
+    except Exception as _e:
+        sys.stderr.write("FMP earnings skip: %s\n"%str(_e)[:140])
     ek=os.environ.get("FINNHUB_API_KEY","").strip()
     if ek:
-        try: finnhub_beat(ek, names); sys.stderr.write("Finnhub estimates: beat-prob set\n")
+        _gap=[n for n in names if not n.get("earn")]      # FMP is primary; Finnhub fills only the gaps
+        try: finnhub_beat(ek, _gap); sys.stderr.write("Finnhub estimates: gap-fill %d names\n"%len(_gap))
         except Exception as e: sys.stderr.write(f"Finnhub skip: {e}\n")
     tk=os.environ.get("TWELVEDATA_API_KEY","").strip()
     if tk:

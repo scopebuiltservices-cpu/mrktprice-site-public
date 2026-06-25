@@ -1010,7 +1010,7 @@ function _qNextReportISO(d,sym){var n=_mmName(sym);if(n&&n.earn&&n.earn.next&&n.
   try{var last=(d&&d.length)?d[d.length-1]:null;var ne=nextEarnings(last,sym);if(ne)return ne.toISOString().slice(0,10);}catch(_e){}return null;}
 function _qNextReportFull(d,sym){var iso=_qNextReportISO(d,sym);if(!iso)return null;var est=null,lab='NEXT',n=_mmName(sym);
   if(n&&n.earn&&n.earn.next){est=n.earn.next.e;if(n.earn.next.q)lab='Q'+n.earn.next.q+" '"+String(n.earn.next.y||'').slice(2);}
-  var bd=0,last=(d&&d.length)?d[d.length-1]:null;if(last){var ms=Date.parse(iso+'T00:00:00Z')-Date.parse(last+'T00:00:00Z');if(ms>0)bd=Math.round(ms/86400000*5/7);}
+  var bd=0,last=(d&&d.length)?d[d.length-1]:null;if(last){try{bd=_forwardTradingDays(last,iso);}catch(_e3){bd=0;}}
   return {iso:iso,est:est,bd:bd,label:lab};}
 function _qReportDates(d,sym){var out=[],seen={},n=_mmName(sym);
   if(n&&n.earn&&n.earn.q){n.earn.q.forEach(function(e){if(!e.d||seen[e.d])return;seen[e.d]=1;out.push({iso:e.d,label:'Q'+(e.q||'?')+" '"+String(e.y||'').slice(2),eps:e.a,surpr:e.s,src:'cal'});});}
@@ -1030,6 +1030,38 @@ function _qBuildExpTile(sym,fut,past){var el=document.getElementById('qExpTile')
     +'<div style="font-size:10px;color:var(--muted)">'+(fut.est!=null?'consensus EPS est <b style="color:#cfe0f0">'+fut.est+'</b>':'no consensus EPS embedded')+(beat?' · hist '+beat:'')+'</div>'
     +(trend?'<div style="font-size:9px;color:var(--muted);margin-top:1px">mechanical FY-trend (not consensus): '+trend+'</div>':'')
     +'</div>';}
+/* ===== TRADING-CALENDAR (independent of the analysis layer) =====
+   Exact NYSE session calendar so the future report line lands on the right trading day — no more
+   calendar-days×5/7 approximation. Weekends + rule-derived US market holidays (incl. Good Friday via
+   the Gregorian Easter algorithm, Juneteenth from 2022, and Sat→Fri / Sun→Mon observed shifts). */
+function _easter(y){var a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451);return {m:Math.floor((h+l-7*m+114)/31),d:((h+l-7*m+114)%31)+1};}
+function _nthWeekday(y,month,weekday,n){var first=new Date(Date.UTC(y,month-1,1)),fw=first.getUTCDay(),day=1+((7+weekday-fw)%7)+(n-1)*7;return new Date(Date.UTC(y,month-1,day));}
+function _lastWeekday(y,month,weekday){var last=new Date(Date.UTC(y,month,0)),lw=last.getUTCDay();return new Date(Date.UTC(y,month-1,last.getUTCDate()-((7+lw-weekday)%7)));}
+function _usMarketHolidays(y){var H={},iso=function(dt){return dt.toISOString().slice(0,10);},addObs=function(dt){var wd=dt.getUTCDay();if(wd===6)dt=new Date(dt.getTime()-86400000);else if(wd===0)dt=new Date(dt.getTime()+86400000);H[iso(dt)]=1;};
+  addObs(new Date(Date.UTC(y,0,1)));H[iso(_nthWeekday(y,1,1,3))]=1;H[iso(_nthWeekday(y,2,1,3))]=1;
+  var e=_easter(y),ed=new Date(Date.UTC(y,e.m-1,e.d));H[iso(new Date(ed.getTime()-2*86400000))]=1;
+  H[iso(_lastWeekday(y,5,1))]=1;if(y>=2022)addObs(new Date(Date.UTC(y,5,19)));addObs(new Date(Date.UTC(y,6,4)));
+  H[iso(_nthWeekday(y,9,1,1))]=1;H[iso(_nthWeekday(y,11,4,4))]=1;addObs(new Date(Date.UTC(y,11,25)));return H;}
+var _HOLI={};
+function _isTradingDay(dt){var wd=dt.getUTCDay();if(wd===0||wd===6)return false;var y=dt.getUTCFullYear();if(!_HOLI[y])_HOLI[y]=_usMarketHolidays(y);return !_HOLI[y][dt.toISOString().slice(0,10)];}
+function _forwardTradingDays(fromISO,toISO){if(!fromISO||!toISO)return 0;var a=Date.parse(fromISO+'T00:00:00Z'),b=Date.parse(toISO+'T00:00:00Z');if(!(b>a))return 0;var n=0,cur=a;while(cur<b){cur+=86400000;if(_isTradingDay(new Date(cur)))n++;if(n>400)break;}return n;}
+function _monthAbbr(m){return ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][m];}
+/* ===== INDEPENDENT CALENDAR-TIMELINE LAYER =====
+   Bold, calendar-centered month grid drawn purely from the date array + geometry (no analysis state).
+   Past = real trading bars; the future zone is walked on the forward trading calendar so month
+   boundaries and the quarterly report line share one exact session axis. */
+function drawCalendarTimeline(g,G){try{
+  var d=G.d,h0=G.h0,show=G.show,jx=G.jx,X=G.X,yTop=G.yP0,yBot=G.yBot,lastISO=G.lastISO,totX=G.totX;
+  var tick=function(x,iso,faint){var mo=parseInt(iso.slice(5,7),10)-1;
+    g.strokeStyle=faint?'rgba(120,140,170,.10)':'rgba(120,140,170,.20)';g.lineWidth=1;g.setLineDash([2,4]);
+    g.beginPath();g.moveTo(x,yTop);g.lineTo(x,yBot);g.stroke();g.setLineDash([]);
+    g.fillStyle='rgba(160,175,195,.85)';g.font='bold 8px sans-serif';
+    g.fillText(_monthAbbr(mo)+(mo===0?(" '"+iso.slice(2,4)):''),x+2,yBot+10);};
+  var prevM=null;
+  for(var i=h0;i<h0+show;i++){var ds=d[i];if(!ds)continue;var mm=ds.slice(0,7);if(prevM!==null&&mm!==prevM)tick(X(i-h0),ds,false);prevM=mm;}
+  if(lastISO){var cur=Date.parse(lastISO+'T00:00:00Z'),col=jx,end=totX-1,pm=lastISO.slice(0,7),guard=0;
+    while(col<end&&guard++<800){cur+=86400000;var dt=new Date(cur);if(!_isTradingDay(dt))continue;col++;var iso=dt.toISOString().slice(0,10);if(iso.slice(0,7)!==pm){tick(X(col),iso,true);pm=iso.slice(0,7);}}}
+}catch(_e){}}
 function buildQLedger(sym,c,d){var el=document.getElementById('qledger');if(!el)return;
  var C=(typeof FUND==='object'&&FUND)?FUND[sym]:null;
  if(!C||!C.quarters||!C.quarters.length){el.innerHTML='<span style="font-size:10px;color:var(--muted)"><b style="color:var(--gold)">QUARTERLY REPORT LEDGER</b> — no quarterly filings embedded for '+sym+'. Run the SEC EDGAR refresh (or live mode) to populate report dates &amp; figures.</span>';return;}
@@ -2653,7 +2685,7 @@ function drawCone(){const cv=document.getElementById('cone');const {W,H,g}=fitCa
 let GEO=null;
 function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanvas(cv);
  const padL=6,padR=58,gap=7;const c=CUR.c,d=CUR.d,vol=CUR.vol,pj=CUR.pj,A=CUR.anchors,ic=CUR.icss;
- const _eSel=(function(){var e=document.getElementById('tfEarn');return e?e.value:'0';})();let _eTF=(_eSel==='bracket')?-1:(+_eSel||0);let _eShow=_eTF>0?Math.max(_eTF,21):160;if(_eTF===-1){try{if(window.MMAP&&window.MMAP.names){var _tt=(CUR.t||'').toUpperCase();for(var _z=0;_z<window.MMAP.names.length;_z++){if((window.MMAP.names[_z].t||'').toUpperCase()===_tt){var _qq=(window.MMAP.names[_z].earn&&window.MMAP.names[_z].earn.q)||[];if(_qq.length>=2){var _pd=_qq[_qq.length-2].d;for(var _k=0;_k<d.length;_k++){if(d[_k]>=_pd){_eShow=Math.min(c.length,c.length-_k+8);break;}}}break;}}}}catch(_e2){}}const show=Math.min(c.length,_eShow),h0=c.length-show,jx=show-1,nP=pj.path.length;var _qrNext=null;try{_qrNext=_qNextReportISO(d,CUR.sym);}catch(_q0){}var _qrBD=0;if(_qrNext){var _qms=Date.parse(_qrNext+'T00:00:00Z')-Date.parse(d[d.length-1]+'T00:00:00Z');if(_qms>0)_qrBD=Math.round(_qms/86400000*5/7);}var _futExt=Math.max(nP,Math.min(_qrBD+3,nP+90));const totX=show+_futExt;const X=i=>padL+(i/(totX-1))*(W-padL-padR);const xConeEnd=X(jx+nP);
+ const _eSel=(function(){var e=document.getElementById('tfEarn');return e?e.value:'0';})();let _eTF=(_eSel==='bracket')?-1:(+_eSel||0);let _eShow=_eTF>0?Math.max(_eTF,21):160;if(_eTF===-1){try{if(window.MMAP&&window.MMAP.names){var _tt=(CUR.t||'').toUpperCase();for(var _z=0;_z<window.MMAP.names.length;_z++){if((window.MMAP.names[_z].t||'').toUpperCase()===_tt){var _qq=(window.MMAP.names[_z].earn&&window.MMAP.names[_z].earn.q)||[];if(_qq.length>=2){var _pd=_qq[_qq.length-2].d;for(var _k=0;_k<d.length;_k++){if(d[_k]>=_pd){_eShow=Math.min(c.length,c.length-_k+8);break;}}}break;}}}}catch(_e2){}}const show=Math.min(c.length,_eShow),h0=c.length-show,jx=show-1,nP=pj.path.length;var _qrNext=null;try{_qrNext=_qNextReportISO(d,CUR.sym);}catch(_q0){}var _qrBD=0;if(_qrNext){try{_qrBD=_forwardTradingDays(d[d.length-1],_qrNext);}catch(_qb){_qrBD=0;}}var _futExt=Math.max(nP,Math.min(_qrBD+3,nP+90));const totX=show+_futExt;const X=i=>padL+(i/(totX-1))*(W-padL-padR);const xConeEnd=X(jx+nP);
  const avail=Ht-4*gap-8;const Hp=avail*.40,Hv=avail*.11,HiA=avail*.17,HiB=avail*.16,Hd=avail*.16;const yP0=4,yV0=yP0+Hp+gap,yIA0=yV0+Hv+gap,yIB0=yIA0+HiA+gap,yD0=yIB0+HiB+gap;
  let lo=1e18,hi=-1e18;for(let i=h0;i<c.length;i++){lo=Math.min(lo,c[i]);hi=Math.max(hi,c[i]);}pj.p95.forEach(b=>{lo=Math.min(lo,b.low);hi=Math.max(hi,b.high);});[A.low,A.mid,A.high].forEach(v=>{if(v){lo=Math.min(lo,v);hi=Math.max(hi,v);}});
  if(document.getElementById('tVwap').checked){for(let i=h0;i<c.length;i++){if(CUR.v20[i]!=null){lo=Math.min(lo,CUR.v20[i]);hi=Math.max(hi,CUR.v20[i]);}}}
@@ -2663,6 +2695,8 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
  const pad=(hi-lo)*.06;lo-=pad;hi+=pad;const Yp=p=>yP0+(1-(p-lo)/(hi-lo))*Hp;const Ypc=p=>Math.max(yP0,Math.min(yP0+Hp,Yp(p)));
  if(document.getElementById('tReg').checked&&ic.breaks.length){const maxr=Math.max(...ic.rms);for(let i=0;i<ic.bounds.length-1;i++){const a0=ic.bounds[i]+1-h0,b0=ic.bounds[i+1]+1-h0;const x0=Math.max(X(Math.max(a0,0)),padL),x1=X(Math.min(b0,show-1));if(x1<=padL)continue;g.fillStyle=`rgba(192,57,43,${.04+.10*(ic.rms[i]/maxr)})`;g.fillRect(x0,yP0,x1-x0,Hp);}ic.breaks.forEach(bk=>{const x=X(bk+1-h0);if(x>padL){g.strokeStyle='rgba(192,57,43,.7)';g.lineWidth=1;g.setLineDash([3,3]);g.beginPath();g.moveTo(x,yP0);g.lineTo(x,yP0+Hp);g.stroke();g.setLineDash([]);}});}
  g.font='10px sans-serif';for(let k=0;k<=4;k++){const p=lo+(hi-lo)*k/4,y=Yp(p);g.strokeStyle='#1d2530';g.lineWidth=1;g.beginPath();g.moveTo(padL,y);g.lineTo(W-padR,y);g.stroke();g.fillStyle='#69727f';g.fillText(p.toFixed(1),W-padR+5,y+3);}
+ // INDEPENDENT calendar layer (month grid + bold labels) — drawn behind price, shared trading axis
+ try{drawCalendarTimeline(g,{d:d,h0:h0,show:show,jx:jx,nP:nP,totX:totX,X:X,yP0:yP0,Hp:Hp,yBot:yD0+Hd,lastISO:(d&&d.length)?d[d.length-1]:null});}catch(_ctl){}
  if(document.getElementById('tVP').checked&&CUR.vp){const vp=CUR.vp,mxv=Math.max(...vp.vol)||1,vpW=78;
   for(let bi=0;bi<vp.vol.length;bi++){const pTop=vp.lo+(bi+1)*vp.w,pBot=vp.lo+bi*vp.w;if(pTop<lo||pBot>hi)continue;const yT=Yp(pTop),yB=Yp(pBot),bw=(vp.vol[bi]/mxv)*vpW;const mid=vp.lo+(bi+0.5)*vp.w;const inVA=mid>=vp.val&&mid<=vp.vah;g.fillStyle=bi===vp.pocBin?'rgba(224,161,60,.30)':(inVA?'rgba(91,157,255,.15)':'rgba(105,114,127,.10)');g.fillRect(W-padR-bw,yT,bw,Math.max(yB-yT-1,1));}
   g.strokeStyle='rgba(224,161,60,.6)';g.setLineDash([1,3]);g.lineWidth=1;g.beginPath();g.moveTo(padL,Yp(vp.pocPrice));g.lineTo(W-padR,Yp(vp.pocPrice));g.stroke();g.setLineDash([]);g.fillStyle='rgba(224,161,60,.85)';g.font='9px sans-serif';g.fillText('POC '+vp.pocPrice.toFixed(1),padL+2,Yp(vp.pocPrice)-2);}
@@ -2679,21 +2713,20 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
  g.strokeStyle=css('--hist');g.lineWidth=1.4;g.beginPath();for(let i=h0;i<c.length;i++){const x=X(i-h0),y=Yp(c[i]);i===h0?g.moveTo(x,y):g.lineTo(x,y);}g.stroke();
  // ===== QUARTERLY REPORT LINES — 4 past + 1 future, calendar-aligned, full-height, labeled =====
  try{var _qBot=yD0+Hd;
-  var _qLine=function(xx,col,a,dash){g.strokeStyle=col;g.globalAlpha=a;g.lineWidth=1.2;g.setLineDash(dash||[4,4]);g.beginPath();g.moveTo(xx,yP0);g.lineTo(xx,_qBot);g.stroke();g.setLineDash([]);g.globalAlpha=1;};
+  var _qLine=function(xx,col,a,dash,flagTxt,flagBg){g.strokeStyle=col;g.globalAlpha=a;g.lineWidth=2;g.setLineDash(dash||[5,4]);g.beginPath();g.moveTo(xx,yP0);g.lineTo(xx,_qBot);g.stroke();g.setLineDash([]);g.globalAlpha=1;
+    if(flagTxt){g.font='bold 8px sans-serif';var fw=g.measureText(flagTxt).width+6;g.fillStyle=flagBg||col;g.fillRect(xx,yP0-0.5,fw,11);g.fillStyle='#0b0e13';g.fillText(flagTxt,xx+3,yP0+8);}};
   var _qPast=_qReportDates(d,CUR.sym),_qFut=_qNextReportFull(d,CUR.sym);
   _qPast.forEach(function(q){var xi=q.idx-h0;if(xi<0||xi>=show)return;var xx=X(xi);
-    _qLine(xx,'rgba(245,196,81,.55)',1);
-    var yy=yP0+9;g.textAlign='left';g.font='bold 9px sans-serif';g.fillStyle='#f5c451';g.fillText(q.label,xx+2,yy);yy+=9;
-    g.font='8px sans-serif';g.fillStyle='rgba(245,196,81,.9)';g.fillText(q.iso.slice(5),xx+2,yy);yy+=9;
-    if(q.eps!=null){g.fillStyle='#cfe0f0';g.fillText('EPS '+(typeof q.eps==='number'?q.eps.toFixed(2):q.eps),xx+2,yy);yy+=9;}
+    _qLine(xx,'rgba(245,196,81,.7)',1,[5,4],q.iso.slice(5),'#f5c451');     // bold dated flag at top
+    var yy=yP0+20;g.textAlign='left';g.font='bold 8px sans-serif';g.fillStyle='#f5c451';g.fillText(q.label,xx+2,yy);yy+=9;
+    if(q.eps!=null){g.font='8px sans-serif';g.fillStyle='#cfe0f0';g.fillText('EPS '+(typeof q.eps==='number'?q.eps.toFixed(2):q.eps),xx+2,yy);yy+=9;}
     if(q.surpr!=null){g.fillStyle=q.surpr>=0?'#2ecc8f':'#ef5f4e';g.fillText((q.surpr>=0?'beat +':'miss ')+q.surpr+'%',xx+2,yy);}
     var cP=c[q.idx];if(cP!=null){var yC=Yp(cP);g.fillStyle='#f5c451';g.beginPath();g.arc(xx,yC,3.2,0,7);g.fill();g.strokeStyle='rgba(11,14,19,.95)';g.lineWidth=1;g.beginPath();g.arc(xx,yC,3.2,0,7);g.stroke();g.fillStyle='#f5d489';g.font='bold 8px sans-serif';g.fillText('$'+cP.toFixed(2),xx+4,yC-4);}
   });
   if(_qFut&&_qFut.bd>0){var xf=X(jx+_qFut.bd);if(xf>X(jx)){
-    _qLine(xf,'rgba(57,182,255,.85)',1,[3,3]);
-    var yu=yP0+9;g.textAlign='left';g.font='bold 9px sans-serif';g.fillStyle='#39b6ff';g.fillText('NEXT '+_qFut.label,xf+2,yu);yu+=9;
-    g.font='8px sans-serif';g.fillStyle='rgba(57,182,255,.95)';g.fillText(_qFut.iso.slice(5),xf+2,yu);yu+=9;
-    if(_qFut.est!=null){g.fillStyle='#cfe0f0';g.fillText('est '+_qFut.est,xf+2,yu);}
+    _qLine(xf,'rgba(57,182,255,.95)',1,[5,4],'▼ '+_qFut.iso.slice(5),'#39b6ff');   // bold future flag
+    var yu=yP0+20;g.textAlign='left';g.font='bold 8px sans-serif';g.fillStyle='#39b6ff';g.fillText('NEXT '+_qFut.label,xf+2,yu);yu+=9;
+    if(_qFut.est!=null){g.font='8px sans-serif';g.fillStyle='#cfe0f0';g.fillText('est '+_qFut.est,xf+2,yu);}
   }}
   _qBuildExpTile(CUR.sym,_qFut,_qPast);
  }catch(_qe){}

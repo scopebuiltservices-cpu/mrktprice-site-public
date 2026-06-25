@@ -196,6 +196,78 @@ def commodities_history(symbols=None, sess=None, days=420, cap=40):
     return out or None
 
 
+def earnings_calendar(symbol, sess=None, limit=24):
+    """FMP Ultimate EARNINGS REPORT for one symbol -> the same compact shape the terminal expects:
+       {'q':[{d,a,e,q,y,s} ... last ~8 reported quarters], 'next':{d,a,e,q,y,s}|absent,
+        'beat':<Bayesian-shrunk beat prob>, 'source':'FMP Ultimate'}  — or None.
+
+    Endpoint: /stable/earnings?symbol=SYM  (past + upcoming; epsActual is null for the upcoming ones).
+    Fields handled defensively (epsActual|eps, epsEstimated|epsEstimate). Fiscal q/y are NOT in this
+    feed, so they are derived from the *reported period* (~45d before the announce date) and clearly
+    treated as a calendar-quarter label; the authoritative datum on the chart is the report DATE.
+    """
+    key = _key()
+    if not key:
+        return None
+    import requests, datetime as dt
+    s = sess or requests.Session()
+    url = "%s/earnings?symbol=%s&limit=%d&apikey=%s" % (STABLE, symbol, int(limit), key)
+    r = _get(s, url)
+    if r is None or r.status_code != 200:
+        return None
+    try:
+        j = r.json()
+    except Exception:
+        return None
+    if not isinstance(j, list) or not j:
+        return None
+    rows = [d for d in j if isinstance(d, dict) and d.get("date")]
+    rows.sort(key=lambda d: str(d["date"])[:10])
+    today = dt.date.today().isoformat()
+
+    def _num(x):
+        try:
+            return float(x)
+        except Exception:
+            return None
+
+    def rec(d):
+        a = _num(d.get("epsActual") if d.get("epsActual") is not None else d.get("eps"))
+        e = _num(d.get("epsEstimated") if d.get("epsEstimated") is not None else d.get("epsEstimate"))
+        ds = str(d.get("date"))[:10]
+        s_ = None
+        if a is not None and e not in (None, 0):
+            try:
+                s_ = round(100.0 * (a - e) / abs(e), 1)
+            except Exception:
+                s_ = None
+        q = y = None
+        try:
+            yy, mm, dd = (int(p) for p in ds.split("-"))
+            pe = dt.date(yy, mm, min(max(dd, 1), 28)) - dt.timedelta(days=45)  # reported period end
+            q = (pe.month - 1) // 3 + 1
+            y = pe.year
+        except Exception:
+            pass
+        return {"d": ds, "a": a, "e": e, "q": q, "y": y, "s": s_}
+
+    def _reported(d):
+        return (d.get("epsActual") is not None or d.get("eps") is not None) and str(d.get("date"))[:10] <= today
+
+    past = [rec(d) for d in rows if _reported(d)]
+    fut = [d for d in rows if not _reported(d) and str(d.get("date"))[:10] > today]
+    out = {"q": past[-8:], "source": SOURCE_LABEL}
+    if fut:
+        out["next"] = rec(fut[0])
+    tot = [r for r in out["q"] if r["a"] is not None and r["e"] not in (None, 0)]
+    if tot:
+        beats = [r for r in tot if (r["a"] or 0) >= (r["e"] or 0)]
+        out["beat"] = round((len(beats) + 1.0) / (len(tot) + 2.0), 2)   # shrink toward 0.5
+    if not out["q"] and not out.get("next"):
+        return None
+    return out
+
+
 def _weekly_pct(rows):
     """Daily [[date,close,vol]] -> weekly pct-change list (sample every 5 sessions), matching the
     FRED weekly convention used elsewhere in the build."""
@@ -267,7 +339,7 @@ def macro_from_fmp(sess=None):
 
 
 __all__ = ["eod_history", "treasury_curve", "commodities_list", "commodities_history",
-           "macro_from_fmp", "have_key", "SOURCE_LABEL"]
+           "macro_from_fmp", "earnings_calendar", "have_key", "SOURCE_LABEL"]
 
 
 if __name__ == "__main__":

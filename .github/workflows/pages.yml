@@ -115,4 +115,4 @@ jobs:
         with: { path: '_site' }
 
       - id: deployment
-        uses: actions/deploy-page
+        uses: actions/deploy-pages@v4

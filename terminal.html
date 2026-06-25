@@ -1060,8 +1060,8 @@ function _isETF(sym){sym=(sym||'').toUpperCase();if(_ETFSET[sym])return true;
    last guarantees the lines sit ABOVE the price/volume/indicator/drawdown panes instead of being
    painted over. Skipped entirely for ETFs/funds (no earnings). */
 function drawEarningsLayer(g,G){try{
-  if(_isETF(G.sym))return;
-  try{drawCalendarTimeline(g,G);}catch(_e){}
+  try{drawCalendarTimeline(g,G);}catch(_e){}     // bold month calendar grid on ALL charts (incl. ETFs)
+  if(_isETF(G.sym))return;                        // ETFs: month grid only, no quarterly report verticals
   var d=G.d,c=G.c,h0=G.h0,show=G.show,jx=G.jx,X=G.X,Yp=G.Yp,yP0=G.yP0,_qBot=G.yBot;
   var _qLine=function(xx,col,a,dash,flagTxt,flagBg){g.strokeStyle=col;g.globalAlpha=a;g.lineWidth=2;g.setLineDash(dash||[5,4]);g.beginPath();g.moveTo(xx,yP0);g.lineTo(xx,_qBot);g.stroke();g.setLineDash([]);g.globalAlpha=1;
     if(flagTxt){g.font='bold 8px sans-serif';var fw=g.measureText(flagTxt).width+6;g.fillStyle=flagBg||col;g.fillRect(xx,yP0-0.5,fw,11);g.fillStyle='#0b0e13';g.fillText(flagTxt,xx+3,yP0+8);}};
@@ -2833,7 +2833,13 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
    g.beginPath();let st=false;for(let i=h0;i<c.length;i++){if(CUR.bbU2[i]==null)continue;const x=X(i-h0),y=Yp(CUR.bbU2[i]);st?g.lineTo(x,y):g.moveTo(x,y);st=true;}for(let i=c.length-1;i>=h0;i--){if(CUR.bbL2[i]==null)continue;g.lineTo(X(i-h0),Yp(CUR.bbL2[i]));}g.closePath();g.fillStyle='rgba(105,114,127,.06)';g.fill();
    const bl=(arr,col)=>{g.strokeStyle=col;g.lineWidth=1;g.beginPath();let s2=false;for(let i=h0;i<c.length;i++){if(arr[i]==null)continue;const x=X(i-h0),y=Yp(arr[i]);s2?g.lineTo(x,y):g.moveTo(x,y);s2=true;}g.stroke();};
    bl(CUR.sma20,'rgba(154,167,180,.55)');bl(CUR.bbU2,'rgba(224,90,78,.4)');bl(CUR.bbL2,'rgba(63,183,107,.4)');}
- g.strokeStyle=css('--hist');g.lineWidth=1.4;g.beginPath();for(let i=h0;i<c.length;i++){const x=X(i-h0),y=Yp(c[i]);i===h0?g.moveTo(x,y):g.lineTo(x,y);}g.stroke();
+ // price line — inside the CURRENT regime, colour each segment by σ-displacement (green above / red below
+ // fair value, brighter = more stretched) so "where the stock is on the vol path" reads off the trace.
+ if(document.getElementById('tReg').checked&&ic.bounds&&ic.bounds.length>=2){
+  const _rs=(ic.bounds[ic.bounds.length-2]||0)+1;
+  const _zc=function(z){if(z==null)return css('--hist');var a=Math.min(Math.abs(z)/2,1);return (z>=0?'rgba(63,183,107,':'rgba(224,90,78,')+(0.45+0.55*a).toFixed(2)+')';};
+  g.lineWidth=1.5;for(let i=h0+1;i<c.length;i++){g.strokeStyle=(i>=_rs)?_zc(CUR.z[i]):css('--hist');g.beginPath();g.moveTo(X(i-1-h0),Yp(c[i-1]));g.lineTo(X(i-h0),Yp(c[i]));g.stroke();}
+ } else {g.strokeStyle=css('--hist');g.lineWidth=1.4;g.beginPath();for(let i=h0;i<c.length;i++){const x=X(i-h0),y=Yp(c[i]);i===h0?g.moveTo(x,y):g.lineTo(x,y);}g.stroke();}
 
   if(document.getElementById('tEMA').checked){(CUR.emaShow||[]).forEach(N=>{const e=CUR.emaM[N].e;g.strokeStyle=EMACOL[N];g.lineWidth=1;g.beginPath();let st=false;for(let i=h0;i<c.length;i++){const x=X(i-h0),y=Yp(e[i]);st?g.lineTo(x,y):g.moveTo(x,y);st=true;}g.stroke();});
   if(CUR.emaProj){g.strokeStyle=EMACOL[CUR.emaProj.N];g.lineWidth=1.5;g.setLineDash([2,2]);g.beginPath();g.moveTo(X(jx),Yp(CUR.last));CUR.emaProj.path.forEach((p,k)=>g.lineTo(X(jx+1+k),Yp(p.price)));g.stroke();g.setLineDash([]);const l2=CUR.emaProj.path[CUR.emaProj.path.length-1];g.fillStyle=EMACOL[CUR.emaProj.N];g.font='9px sans-serif';g.fillText('EMA'+CUR.emaProj.N+' '+l2.price.toFixed(1),xConeEnd-46,Yp(l2.price)+(l2.price>=CUR.last?-4:11));}}

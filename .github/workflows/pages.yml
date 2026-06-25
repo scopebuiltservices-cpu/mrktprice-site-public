@@ -100,6 +100,9 @@ jobs:
             cp /tmp/mmbuild/xsection.json  "$GITHUB_WORKSPACE/xsection.json" 2>/dev/null || echo "::warning::xsection.json not produced this run"
             cd "$GITHUB_WORKSPACE"
             python tools/market_map/emit_static.py --universe marketmap.json --out . --hist --cap 250 || echo "::warning::history emit partial"
+            # KEYLESS: refresh cik.json (ticker->CIK) from SEC's free company_tickers.json so the
+            # terminal can pull CONFIRMED quarterly report dates client-side for the whole universe.
+            python tools/market_map/emit_cik.py --out cik.json --marketmap marketmap.json --cards cards || echo "::warning::cik.json refresh skipped"
             # GUARD: loud signal if the engine ran but the FMP history layer produced nothing
             # (catches "new code committed but didn't execute / connect").
             FMP_API_KEY="$FMP_API_KEY" python tools/market_map/verify_history.py marketmap.json || true

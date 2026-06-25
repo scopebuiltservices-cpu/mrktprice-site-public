@@ -11,6 +11,10 @@ Research only; not investment advice.
 """
 from __future__ import annotations
 import argparse, json, os, sys
+try:
+    import lineage as _lineage   # Phase 4 volume-ahead + touch (same dir)
+except Exception:
+    _lineage = None
 
 def _stooq(t):
     import requests
@@ -54,15 +58,27 @@ def emit(universe_path, out_dir, do_hist=False, cap=0):
     for n in names:
         t = n.get("t")
         if not t: continue
+        rows = history(t) if (do_hist and (not cap or nh < cap)) else None
+        # Phase 4: augment the card with volume-ahead (sigma-volume matrix) + touch odds,
+        # computed from the daily history (the only place with per-name daily volume).
+        if rows and _lineage is not None and "FACTOR" not in (n.get("idx") or []):
+            try:
+                va = _lineage.volume_ahead(rows)
+                to = _lineage.touch_odds(rows)
+                lin = n.get("lineage")
+                if isinstance(lin, dict):
+                    if va.get("sigvol"): lin["sigvol"] = va["sigvol"]
+                    if va.get("base"):   lin["volBase"] = va["base"]
+                    if to:               lin["touch"] = to
+            except Exception:
+                pass
         with open(os.path.join(cdir, t + ".json"), "w") as f:
             json.dump(n, f, allow_nan=False)
         nc += 1
-        if do_hist and (not cap or nh < cap):
-            rows = history(t)
-            if rows:
-                with open(os.path.join(hdir, t + ".json"), "w") as f:
-                    json.dump({"ticker": t, "asof": rows[-1][0], "count": len(rows), "rows": rows}, f, allow_nan=False)
-                nh += 1
+        if rows:
+            with open(os.path.join(hdir, t + ".json"), "w") as f:
+                json.dump({"ticker": t, "asof": rows[-1][0], "count": len(rows), "rows": rows}, f, allow_nan=False)
+            nh += 1
     with open(os.path.join(out_dir, "cards_index.json"), "w") as f:
         json.dump({"asof": d.get("asof"), "source": d.get("source"),
                    "cards": [n["t"] for n in names if n.get("t")], "count": nc, "hist": nh}, f)

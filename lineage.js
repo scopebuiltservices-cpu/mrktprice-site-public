@@ -195,6 +195,48 @@
       calibrated: Math.abs(k/m-(1-alpha))<=0.05 };
   }
 
+
+  // ---- Phase 4: first-passage touch + volume-ahead (sigma-volume) ----
+  function firstPassageUp(a, mu, sigma){
+    if (a<=0) return 1; if (sigma<=0) return 0;
+    var t1=normCdf((mu-a)/sigma);
+    var t2=Math.exp(Math.min(2*mu*a/(sigma*sigma),700))*normCdf((-mu-a)/sigma);
+    return Math.max(0, Math.min(1, t1+t2));
+  }
+  function firstPassageDown(a, mu, sigma){ if (a>=0) return 1; return firstPassageUp(-a,-mu,sigma); }
+  function _logReturns(c){ var o=[]; for(var i=1;i<c.length;i++){ if(c[i-1]>0&&c[i]>0) o.push(Math.log(c[i]/c[i-1])); } return o; }
+  function volumeAhead(rows, horizons, sigmaBins){
+    horizons=horizons||HORIZONS; sigmaBins=sigmaBins||[-3,-2,-1,0,1,2,3];
+    var closes=[], vols=[];
+    rows.forEach(function(r){ if(r[1]!=null){ closes.push(+r[1]); vols.push(r.length>2&&r[2]!=null?+r[2]:0); } });
+    if (closes.length<40) return {sigvol:{}, base:{}};
+    var lr=_logReturns(closes), sd=lr.length>2?Math.sqrt(_var(lr)):0, paths=[], labels=[];
+    horizons.forEach(function(H){ var label=H[0], h=Math.max(1,Math.round(H[1])); labels.push(label);
+      var denom=(sd*Math.sqrt(h))||1e-9;
+      for(var i=0;i<closes.length-h;i++){ if(closes[i]<=0||closes[i+h]<=0) continue;
+        var rh=Math.log(closes[i+h]/closes[i]), cum=0; for(var j=i+1;j<=i+h;j++) cum+=vols[j];
+        paths.push({horizon:label, retZ:rh/denom, cumVol:cum}); } });
+    var sv=sigmaVolumeMatrix(paths, labels, sigmaBins);
+    Object.keys(sv).forEach(function(h){ Object.keys(sv[h]).forEach(function(b){ var mv=sv[h][b].meanCumVol; if(mv!=null) sv[h][b].meanCumVol=Math.round(mv); }); });
+    var last20=vols.slice(-20), logv=vols.filter(function(v){return v>0;}).map(Math.log), acf1=null;
+    if(logv.length>5){ var m=_mean(logv), num=0, den=0; for(var k=1;k<logv.length;k++) num+=(logv[k]-m)*(logv[k-1]-m); for(var q=0;q<logv.length;q++) den+=(logv[q]-m)*(logv[q]-m); acf1=num/(den||1e-9); }
+    var srt=vols.slice().sort(function(a,b){return a-b;});
+    return {sigvol:sv, base:{ avgVol20:last20.length?Math.round(_mean(last20)):null, medVol:vols.length?Math.round(srt[srt.length>>1]):null,
+      volOfVol:logv.length>2?Math.round(Math.sqrt(_var(logv))*1e4)/1e4:null, volAcf1:acf1!=null?Math.round(acf1*1e4)/1e4:null, dailySigma:Math.round(sd*1e6)/1e6 }};
+  }
+  function touchOdds(rows, horizons, lookback, muPerDay){
+    horizons=horizons||HORIZONS; lookback=lookback||20; muPerDay=muPerDay||0;
+    var closes=[]; rows.forEach(function(r){ if(r[1]!=null) closes.push(+r[1]); });
+    if (closes.length<lookback+5) return {};
+    var S=closes[closes.length-1], lr=_logReturns(closes), sd=lr.length>2?Math.sqrt(_var(lr)):0;
+    var win=closes.slice(-lookback), hi=Math.max.apply(null,win), lo=Math.min.apply(null,win), out={};
+    horizons.forEach(function(H){ var label=H[0], h=Math.max(1,Math.round(H[1])), muH=muPerDay*h, sigH=sd*Math.sqrt(h);
+      var aUp=(hi>S&&S>0)?Math.log(hi/S):null, aDn=(lo<S&&S>0)?Math.log(lo/S):null;
+      out[label]={ pUp:aUp!=null?Math.round(firstPassageUp(aUp,muH,sigH)*1e4)/1e4:1, pDn:aDn!=null?Math.round(firstPassageDown(aDn,muH,sigH)*1e4)/1e4:1,
+        levelHigh:Math.round(hi*1e4)/1e4, levelLow:Math.round(lo*1e4)/1e4, S:Math.round(S*1e4)/1e4 }; });
+    return out;
+  }
+
   var API = {
     HORIZONS: HORIZONS, viterbi: viterbi, topBranches: topBranches,
     branchDecomposition: branchDecomposition, bridgeTouchUpper: bridgeTouchUpper,
@@ -203,7 +245,9 @@
     straddleLabels: straddleLabels, eventVariance: eventVariance, houseBlend: houseBlend,
     driverContributions: driverContributions, DRIVER_LABELS: DRIVER_LABELS,
     crpsGaussian: crpsGaussian, intervalScore: intervalScore, wilsonInterval: wilsonInterval,
-    pitKs: pitKs, dkwBand: dkwBand, calibrateHorizon: calibrateHorizon, normCdf: normCdf
+    pitKs: pitKs, dkwBand: dkwBand, calibrateHorizon: calibrateHorizon, normCdf: normCdf,
+    firstPassageUp: firstPassageUp, firstPassageDown: firstPassageDown,
+    volumeAhead: volumeAhead, touchOdds: touchOdds
   };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   root.MrktLineage = API;

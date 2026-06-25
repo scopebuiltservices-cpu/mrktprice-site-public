@@ -584,3 +584,110 @@ def validation_snapshot(returns: Sequence[float], fit: Dict, horizons=HORIZONS,
         if c:
             out[label] = c
     return out
+
+
+# ============================================================================
+# Phase 4 — Volume & impact: first-passage touch, sigma-volume matrix, RVOL base
+# ============================================================================
+def first_passage_up(a: float, mu: float, sigma: float) -> float:
+    """P(running max of arithmetic BM (mu, sigma) over the horizon reaches level a>0).
+    a = log(barrier/S) > 0; mu, sigma are TOTAL drift/stdev over the horizon (log space).
+    Reflection principle with drift. Driftless: 2*Phi(-a/sigma)."""
+    if a <= 0:
+        return 1.0
+    if sigma <= 0:
+        return 0.0
+    t1 = norm_cdf((mu - a) / sigma)
+    t2 = math.exp(min(2.0 * mu * a / (sigma * sigma), 700.0)) * norm_cdf((-mu - a) / sigma)
+    return max(0.0, min(1.0, t1 + t2))
+
+
+def first_passage_down(a: float, mu: float, sigma: float) -> float:
+    """P(running min reaches level a<0). a = log(barrier/S) < 0. By reflection of -X."""
+    if a >= 0:
+        return 1.0
+    return first_passage_up(-a, -mu, sigma)
+
+
+def _log_returns(closes: Sequence[float]) -> List[float]:
+    out = []
+    for i in range(1, len(closes)):
+        if closes[i - 1] > 0 and closes[i] > 0:
+            out.append(math.log(closes[i] / closes[i - 1]))
+    return out
+
+
+def volume_ahead(rows: Sequence[Sequence], horizons=HORIZONS,
+                 sigma_bins=(-3, -2, -1, 0, 1, 2, 3)) -> Dict:
+    """From daily [date, close, vol] rows build the sigma-volume matrix
+    M[horizon]["lo..hi"] = {n, meanCumVol} = E[cumulative volume | terminal kσ move], plus a
+    volume baseline for RVOL/Hawkes. retZ = h-step log-return / (daily σ · √h) (global σ)."""
+    closes = [float(r[1]) for r in rows if r[1] is not None]
+    vols = [float(r[2]) for r in rows if len(r) > 2 and r[2] is not None]
+    if len(closes) < 40 or len(vols) != len(closes):
+        return {"sigvol": {}, "base": {}}
+    lr = _log_returns(closes)
+    sd = math.sqrt(_var(lr)) if len(lr) > 2 else 0.0
+    paths = []
+    labels = []
+    for label, days, _p in horizons:
+        h = max(1, round(days))
+        labels.append(label)
+        denom = (sd * math.sqrt(h)) or 1e-9
+        for i in range(0, len(closes) - h):
+            if closes[i] <= 0 or closes[i + h] <= 0:
+                continue
+            rh = math.log(closes[i + h] / closes[i])
+            cum = sum(vols[i + 1:i + h + 1])
+            paths.append({"horizon": label, "retZ": rh / denom, "cumVol": cum})
+    sv = sigma_volume_matrix(paths, labels, list(sigma_bins))
+    # round meanCumVol
+    for h in sv:
+        for b in sv[h]:
+            mv = sv[h][b]["meanCumVol"]
+            if mv is not None:
+                sv[h][b]["meanCumVol"] = int(round(mv))
+    last20 = vols[-20:] if len(vols) >= 20 else vols
+    logv = [math.log(v) for v in vols if v > 0]
+    # lag-1 autocorrelation of log-volume = self-excitation / clustering proxy (Hawkes-adjacent)
+    acf1 = None
+    if len(logv) > 5:
+        m = _mean(logv)
+        num = sum((logv[i] - m) * (logv[i - 1] - m) for i in range(1, len(logv)))
+        den = sum((v - m) ** 2 for v in logv) or 1e-9
+        acf1 = num / den
+    base = {
+        "avgVol20": int(round(_mean(last20))) if last20 else None,
+        "medVol": int(round(sorted(vols)[len(vols) // 2])) if vols else None,
+        "volOfVol": round(math.sqrt(_var(logv)), 4) if len(logv) > 2 else None,
+        "volAcf1": (round(acf1, 4) if acf1 is not None else None),   # >0 = bursty/clustered
+        "dailySigma": round(sd, 6),
+    }
+    return {"sigvol": sv, "base": base}
+
+
+def touch_odds(rows: Sequence[Sequence], horizons=HORIZONS,
+               lookback: int = 20, mu_per_day: float = 0.0) -> Dict:
+    """Per-horizon touch-before-finish odds to the recent high (up) and low (down), via
+    first-passage with the name's daily σ. Returns {horizon: {pUp,pDn,levelHigh,levelLow}}."""
+    closes = [float(r[1]) for r in rows if r[1] is not None]
+    if len(closes) < lookback + 5:
+        return {}
+    S = closes[-1]
+    lr = _log_returns(closes)
+    sd = math.sqrt(_var(lr)) if len(lr) > 2 else 0.0
+    win = closes[-lookback:]
+    hi = max(win); lo = min(win)
+    out = {}
+    for label, days, _p in horizons:
+        h = max(1, round(days))
+        mu_h = mu_per_day * h
+        sig_h = sd * math.sqrt(h)
+        a_up = math.log(hi / S) if (hi > S and S > 0) else None
+        a_dn = math.log(lo / S) if (lo < S and S > 0) else None
+        out[label] = {
+            "pUp": round(first_passage_up(a_up, mu_h, sig_h), 4) if a_up is not None else 1.0,
+            "pDn": round(first_passage_down(a_dn, mu_h, sig_h), 4) if a_dn is not None else 1.0,
+            "levelHigh": round(hi, 4), "levelLow": round(lo, 4), "S": round(S, 4),
+        }
+    return out

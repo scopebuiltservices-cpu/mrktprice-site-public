@@ -244,6 +244,59 @@ def test_validation_snapshot_per_horizon():
         assert c["conformalPad"] >= 0
 
 
+def test_first_passage_reflection_principle():
+    import math
+    # driftless: P(touch a) = 2*Phi(-a/sigma)
+    a, sig = 0.05, 0.05
+    assert approx(L.first_passage_up(a, 0.0, sig), 2 * L.norm_cdf(-a / sig), 1e-9)
+    # monotone: closer barrier -> higher touch prob
+    assert L.first_passage_up(0.02, 0, sig) > L.first_passage_up(0.10, 0, sig)
+    # bounds + already-through
+    assert L.first_passage_up(0.0, 0, sig) == 1.0
+    assert 0.0 <= L.first_passage_up(0.08, 0.001, sig) <= 1.0
+    # down is the mirror of up
+    assert approx(L.first_passage_down(-a, 0.0, sig), L.first_passage_up(a, 0.0, sig))
+    # upward drift raises an upper touch, lowers a lower touch
+    assert L.first_passage_up(0.05, 0.02, sig) > L.first_passage_up(0.05, -0.02, sig)
+
+
+def test_volume_ahead_conditioning():
+    import random, math
+    random.seed(21)
+    # build daily rows where volume scales with |return| -> big moves carry big volume
+    px = 100.0; rows = []
+    base = 1_000_000
+    for d in range(400):
+        r = random.gauss(0, 0.02)
+        px *= math.exp(r)
+        vol = int(base * (1 + 6 * abs(r) / 0.02))   # |move| in sigma -> volume multiplier
+        rows.append(["2020-01-%02d" % (d % 28 + 1), round(px, 4), vol])
+    va = L.volume_ahead(rows)
+    sv = va["sigvol"]["1d"]
+    # outer |z| bin should carry more volume than the center bin
+    center = sv["0..1"]["meanCumVol"]
+    outer = sv["2..3"]["meanCumVol"]
+    assert center is not None and outer is not None and outer > center, (center, outer)
+    assert va["base"]["avgVol20"] and va["base"]["dailySigma"] > 0
+    assert va["base"]["volAcf1"] is not None
+
+
+def test_touch_odds_structure():
+    import random, math
+    random.seed(22)
+    px = 100.0; rows = []
+    for d in range(120):
+        px *= math.exp(random.gauss(0, 0.015))
+        rows.append(["2020-01-%02d" % (d % 28 + 1), round(px, 4), 1000])
+    to = L.touch_odds(rows)
+    assert "5d" in to and "20d" in to
+    for label, c in to.items():
+        assert 0.0 <= c["pUp"] <= 1.0 and 0.0 <= c["pDn"] <= 1.0
+        assert c["levelHigh"] >= c["S"] >= 0 and c["levelLow"] <= c["levelHigh"]
+    # longer horizon -> higher chance of touching the recent extreme
+    assert to["20d"]["pUp"] >= to["1d"]["pUp"] - 1e-9
+
+
 if __name__ == "__main__":
     _fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for _f in _fns:

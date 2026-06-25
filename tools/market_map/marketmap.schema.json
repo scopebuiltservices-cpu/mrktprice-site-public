@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mrktprice.com/marketmap.schema.json",
+  "title": "MrktPrice ProjectionPayload (marketmap.json)",
+  "description": "The single contract between the Python build engine (producer) and the browser dashboard (consumer). The producer validates against this before serializing; the consumer version-gates and re-checks the load-bearing invariants before rendering. Optional/evolving fields are allowed (additionalProperties), but the load-bearing structure here may not be reshaped or widened on either side without a schemaVersion bump.",
+  "type": "object",
+  "required": ["schemaVersion", "asof", "source", "names"],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "major.minor; consumer rejects an unknown MAJOR loudly (no-call)."
+    },
+    "asof": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "source": { "type": "string", "minLength": 3 },
+    "dataHealth": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "coverage": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "universe": { "type": "integer", "minimum": 0 },
+            "priceOk":  { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "governance": { "type": ["object", "null"], "additionalProperties": true },
+    "macroSeries": { "type": ["object", "null"], "additionalProperties": true },
+    "names": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/name" }
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "object",
+      "required": ["t"],
+      "additionalProperties": true,
+      "properties": {
+        "t":    { "type": "string", "minLength": 1 },
+        "n":    { "type": ["string", "null"] },
+        "sec":  { "type": ["string", "null"] },
+        "vol":  { "type": ["number", "null"] },
+        "beta": { "type": ["number", "null"] },
+        "ret":  { "type": ["object", "null"] },
+        "deps": { "type": ["array", "null"] },
+        "macro3": { "type": ["object", "null"] },
+        "lineage": { "type": ["object", "null"] }
+      }
+    }
+  }
+}

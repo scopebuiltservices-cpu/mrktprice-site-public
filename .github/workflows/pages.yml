@@ -92,6 +92,10 @@ jobs:
           cd tools/market_map
           if python build_market_map.py --real --out /tmp/mmbuild/marketmap.json; then
             python publish_guards.py /tmp/mmbuild/marketmap.json
+            # CONTRACT GATE: validate the payload against marketmap.schema.json + invariants (version,
+            # coverage, quantile non-crossing, finite). A violation BLOCKS publish - never ship a payload
+            # the consumer would have to render as no-call.
+            python validate_payload.py /tmp/mmbuild/marketmap.json --min-names 30 || { echo "::error::contract violated - refusing to publish"; exit 1; }
             cp /tmp/mmbuild/marketmap.json "$GITHUB_WORKSPACE/marketmap.json"
             cp /tmp/mmbuild/xsection.json  "$GITHUB_WORKSPACE/xsection.json" 2>/dev/null || echo "::warning::xsection.json not produced this run"
             cd "$GITHUB_WORKSPACE"

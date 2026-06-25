@@ -79,6 +79,34 @@ def _resid_on(a,c):                       # residual of a regressed on single co
 def partial_corr(y,x,ctrl):               # correlation of y,x after removing the linear effect of ctrl
     return pearson(_resid_on(y,ctrl),_resid_on(x,ctrl))
 
+# ---- Student-t two-sided p (exact, via regularized incomplete beta) — replaces the normal approx so
+#      small-sample (n~53 weekly) correlation significance is honest; feeds the FDR control below. ----
+def _betacf(a,b,x,itmax=200,eps=3e-12):
+    qab=a+b; qap=a+1.0; qam=a-1.0; c=1.0; d=1.0-qab*x/qap
+    d=1e-30 if abs(d)<1e-30 else d; d=1.0/d; h=d
+    for m in range(1,itmax+1):
+        m2=2*m
+        aa=m*(b-m)*x/((qam+m2)*(a+m2))
+        d=1.0+aa*d; d=1e-30 if abs(d)<1e-30 else d
+        c=1.0+aa/c; c=1e-30 if abs(c)<1e-30 else c
+        d=1.0/d; h*=d*c
+        aa=-(a+m)*(qab+m)*x/((a+m2)*(qap+m2))
+        d=1.0+aa*d; d=1e-30 if abs(d)<1e-30 else d
+        c=1.0+aa/c; c=1e-30 if abs(c)<1e-30 else c
+        d=1.0/d; de=d*c; h*=de
+        if abs(de-1.0)<eps: break
+    return h
+def _betai(a,b,x):                        # regularized incomplete beta I_x(a,b)
+    if x<=0.0: return 0.0
+    if x>=1.0: return 1.0
+    bt=math.exp(math.lgamma(a+b)-math.lgamma(a)-math.lgamma(b)+a*math.log(x)+b*math.log(1.0-x))
+    return bt*_betacf(a,b,x)/a if x<(a+1.0)/(a+b+2.0) else 1.0-bt*_betacf(b,a,1.0-x)/b
+def _t_two_sided_p(t,df):                 # P(|T_df| > |t|); ν=df>0
+    t=abs(t)
+    if df<=0 or t!=t: return 1.0
+    if t>1e6: return 0.0
+    return _betai(df/2.0, 0.5, df/(df+t*t))
+
 def ols_betas(y,X):
     k=len(X[0]); n=len(y)
     XtX=[[sum(X[r][i]*X[r][j] for r in range(n)) for j in range(k)] for i in range(k)]
@@ -732,7 +760,7 @@ def build(names,mkt,ff,macro=None):
         else: stab="stable"
         lg,lc=best_lag(wr,ser)                              # lead/lag: factor leads stock by lg weeks
         es=exp_sign(sec,fk); unexp=bool(es!=0 and ((1 if c>0 else -1)!=es))   # sign vs economic prior
-        pval=2.0*(1.0-0.5*(1.0+math.erf(abs(t)/math.sqrt(2.0))))              # two-sided p from the corr t-stat
+        pval=_t_two_sided_p(t, max(n_obs-2,1))                                # exact two-sided Student-t p (ν=n-2)
         return {"f":lab,"corr":round(c,2),"pcorr":round(pc,2) if pc==pc else None,
                 "sens":round(sens*100,2),"sig":bool(sig),"p":round(pval,4),"stab":stab,"dir":("with" if c>0 else "against"),
                 "lag":lg,"unexp":unexp}
@@ -746,13 +774,14 @@ def build(names,mkt,ff,macro=None):
         if sc:
             d=_dep(wr,sc,n["sec"]+" sector",n["sec"],"SECTOR")
             if d: deps.append(d)
-        # Benjamini-Hochberg FDR (q=0.10) across the ~36 per-name factor tests — with 30 commodities
-        # in the candidate set, raw t>=1.96 over-claims; BH keeps the "significant driver" flag honest.
+        # Benjamini-Yekutieli FDR (q=0.10) across the ~36 per-name factor tests. BY (not BH) because the
+        # candidate factors are arbitrarily DEPENDENT — the 30 commodities are heavily collinear — so the
+        # harmonic-number penalty c(m)=Σ(1/i) is required to actually control the false-discovery rate.
         if deps:
             _order=sorted(range(len(deps)), key=lambda i: deps[i].get("p",1.0))
-            _m=len(_order); _thr=0
+            _m=len(_order); _Hm=sum(1.0/_i for _i in range(1,_m+1)); _thr=0
             for _rank,_i in enumerate(_order,1):
-                if deps[_i].get("p",1.0) <= 0.10*_rank/_m: _thr=_rank
+                if deps[_i].get("p",1.0) <= 0.10*_rank/(_m*_Hm): _thr=_rank
             _crit=deps[_order[_thr-1]].get("p",1.0) if _thr>0 else -1.0
             for d in deps: d["sig"]=bool(d.get("p",1.0)<=_crit)
         keep=[d for d in deps if d["sig"]] or sorted(deps,key=lambda d:-abs(d["corr"]))[:1]
@@ -1555,6 +1584,7 @@ def main():
         if isinstance(o,list): return [_finite(x) for x in o]
         if isinstance(o,dict): return {k:_finite(v) for k,v in o.items()}
         return o
+    snap.setdefault("schemaVersion","1.0")                                 # producer-stamped contract version (consumer version-gates)
     snap=_finite(snap)
     json.dump(snap,open(a.out,"w"),separators=(",",":"),allow_nan=False)   # allow_nan=False = hard guard: never emit invalid JSON
     print(f"wrote {a.out}: {len(names)} names, asof {snap['asof']}, source={snap['source'][:24]}")

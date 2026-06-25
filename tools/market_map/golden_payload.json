@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0",
+  "asof": "2026-06-25",
+  "source": "Golden fixture - drives both producer (Python) and consumer (JS) contract tests",
+  "dataHealth": { "coverage": { "universe": 3, "priceOk": 3, "valOk": 2 } },
+  "governance": { "releaseGate": "research-only" },
+  "names": [
+    { "t": "AAPL", "n": "Apple", "sec": "Technology", "vol": 24.8, "beta": 1.07,
+      "ret": { "1w": -2.0, "12m": 46.0 },
+      "deps": [ { "f": "10Y yield", "corr": -0.31, "p": 0.012, "sig": true } ],
+      "lineage": { "conformal": { "20d": { "lo": -0.08, "hi": 0.07 } } } },
+    { "t": "XOM", "n": "Exxon", "sec": "Energy", "vol": 21.0, "beta": 0.9,
+      "ret": { "1w": 1.1 },
+      "deps": [ { "f": "WTI oil", "corr": 0.55, "p": 0.001, "sig": true } ],
+      "lineage": { "conformal": { "20d": { "lo": -0.06, "hi": 0.09 } } } },
+    { "t": "JPM", "n": "JPMorgan", "sec": "Financials", "vol": 19.5, "beta": 1.1,
+      "ret": { "1w": 0.4 },
+      "deps": [ { "f": "2s10s slope", "corr": 0.42, "p": 0.02, "sig": true } ],
+      "lineage": { "conformal": { "20d": { "lo": -0.05, "hi": 0.06 } } } }
+  ]
+}

@@ -727,6 +727,25 @@ def build(names,mkt,ff,macro=None):
         keep=[d for d in deps if d["sig"]] or sorted(deps,key=lambda d:-abs(d["corr"]))[:1]
         keep.sort(key=lambda d:-(abs(d["pcorr"]) if d.get("pcorr") is not None else abs(d["corr"])))
         n["deps"]=keep[:7]
+        # ---- macro3: ALWAYS-present rate-family driver + top-3 rate/commodity drivers ----
+        # (decoupled from the significance-filtered deps so the terminal's interest-rate
+        #  impact block can always rate the rate channel, even when it is weak.)
+        def _slim(d):
+            return {"f":d["f"],"sens":d["sens"],"corr":d["corr"],"pcorr":d.get("pcorr"),
+                    "sig":bool(d.get("sig")),"stab":d.get("stab"),"dir":d.get("dir"),
+                    "weak":(not bool(d.get("sig")))}
+        _byf={d["f"]:d for d in deps}
+        _rate=None
+        for _w in ("10Y yield","2s10s slope"):          # 10Y -> 2s10s fallback chain
+            if _w in _byf: _rate=_byf[_w]; break
+        if _rate is None:                                 # last resort: the name's own sector driver
+            for d in deps:
+                if str(d.get("f","")).endswith(" sector"): _rate=d; break
+        _RC={"10Y yield","2s10s slope","WTI oil","gold","copper","nat gas"}
+        _pool=[d for d in deps if d["f"] in _RC]
+        _pool.sort(key=lambda d:-(abs(d["pcorr"]) if d.get("pcorr") is not None else abs(d.get("corr") or 0)))
+        n["macro3"]={"rate":(_slim(_rate) if _rate else None),
+                     "top":[_slim(d) for d in _pool[:3]]}
         cols=[mkt]+[macro[f] for f in ("RATE","DXY","OIL","VIX") if macro.get(f)]
         _,res=macro_fit(wr,cols); vy=_var(wr)
         n["macroR2"]=int(round(max(0.0,1.0-_var(res)/vy)*100)) if vy>0 else 0

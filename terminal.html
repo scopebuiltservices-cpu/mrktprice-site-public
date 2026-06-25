@@ -1844,36 +1844,57 @@ function overnightProjection(closes,vols,name,o){o=o||{};var f=(o.ovFrac!=null?o
   var sdON=sd*Math.sqrt(f),driftON=mu*damp,P=c[c.length-1];
   var v=vols?vols.slice(-20).filter(function(x){return x>0;}):[];
   var vAvg=v.length?v.reduce(function(s,x){return s+x;},0)/v.length:null;
-  return {Pnow:P,openProj:P*Math.exp(driftON),lo:P*Math.exp(driftON-z*sdON),hi:P*Math.exp(driftON+z*sdON),lo90:P*Math.exp(driftON-1.645*sdON),hi90:P*Math.exp(driftON+1.645*sdON),sdON:sdON,sdDaily:sd,driftON:driftON,volProj:vAvg,ovFrac:f,deps:(name&&name.deps)||[]};}
+  return {Pnow:P,openProj:P*Math.exp(driftON),lo:P*Math.exp(driftON-z*sdON),hi:P*Math.exp(driftON+z*sdON),lo90:P*Math.exp(driftON-1.645*sdON),hi90:P*Math.exp(driftON+1.645*sdON),sdON:sdON,sdDaily:sd,driftON:driftON,volProj:vAvg,ovFrac:f,deps:(name&&name.deps)||[],macro3:(name&&name.macro3)||null};}
 function rateImpactBlock(p,sym,chip,pxLabel){
   pxLabel=pxLabel||'proj open';
-  if(!p||!p.deps||!p.deps.length)return '';
-  /* isolate the interest-rate driver from this name's learned macro sensitivities */
-  var rd=null;
-  for(var i=0;i<p.deps.length;i++){var f=(p.deps[i].f||'').toLowerCase();
-    if(f.indexOf('yield')>=0||f.indexOf('rate')>=0||f.indexOf('slope')>=0||f.indexOf('2s10s')>=0){rd=p.deps[i];break;}}
-  if(!rd||rd.sens==null)
-    return '<div style="margin-top:7px;padding:6px 9px;border:1px dashed var(--line,#2a2f3a);border-radius:6px;font-size:9px;color:var(--faint,#646e7c)">Interest-rate impact &middot; no statistically-significant 10-yr-yield sensitivity learned for '+sym+' over its history.</div>';
-  var s=+rd.sens;                       // % move per +1sigma rise in the rate factor (learned)
-  var amp=s*100;                        // the rate factor amplified 100x
-  var P=p.openProj;                     // projected next-session open
-  var d1=P*s/100, dAmp=P*amp/100;       // concurrent $ shift it imposes on the projected open
-  var up=s>=0, accent='#e0c14a';
+  if(!p)return '';
+  var P=p.openProj; if(P==null)return '';
+  var accent='#e0c14a';
   function sgn(x){return (x>=0?'+':'')+x;}
-  var dirNote=up?(sym+' has risen WITH the 10-yr yield'):(sym+' has fallen as the 10-yr yield rises');
-  return '<div style="margin-top:7px;padding:7px 9px;border:1px solid '+accent+'55;border-left:3px solid '+accent+';border-radius:6px;background:rgba(224,193,74,.06)">'
-    +'<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:'+accent+';margin-bottom:4px">Interest-rate impact &middot; '+rd.f+(rd.stab&&rd.stab!=='stable'?' ('+rd.stab+')':'')+'</div>'
-    +'<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">'
-      +chip('rate &beta; (per 1&sigma;)',sgn(s.toFixed(2))+'%/&sigma;',up?'#2ecc8f':'#ef5f4e')
-      +chip('&times;100 factor',sgn(amp.toFixed(0))+'%',up?'#2ecc8f':'#ef5f4e')
-      +chip(pxLabel,'$'+P.toFixed(2),'#39b6ff')
-    +'</div>'
-    +'<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">'
-      +chip('rates +1&sigma; &rarr;','$'+(P+d1).toFixed(2)+' ('+sgn(d1.toFixed(2))+')',d1>=0?'#2ecc8f':'#ef5f4e')
-      +chip('&times;100 scenario &rarr;','$'+Math.max(0,P+dAmp).toFixed(2)+' ('+sgn(dAmp.toFixed(2))+')',dAmp>=0?'#2ecc8f':'#ef5f4e')
-    +'</div>'
-    +'<div style="margin-top:4px;font-size:8px;color:var(--faint,#646e7c)">&beta; = % move in '+sym+' per +1&sigma; rise in the '+rd.f+', learned over the company history (partial corr '+(rd.pcorr!=null?rd.pcorr:rd.corr)+', '+(rd.sig?'significant':'weak')+'). &times;100 amplifies the rate factor 100&times; to make the channel visible and shows the concurrent shift it would impose on the '+pxLabel+' &mdash; '+dirNote+'. Hypothetical stress scaling, not a forecast.</div>'
-  +'</div>';
+  function num(d){return (d.pcorr!=null?d.pcorr:d.corr);}
+  /* primary interest-rate driver - ALWAYS shown even when weak: macro3.rate, else deps chain
+     (10Y yield -> 2s10s slope -> any rate/yield/slope -> sector) */
+  var rd=(p.macro3&&p.macro3.rate)?p.macro3.rate:null;
+  if(!rd){var dp=p.deps||[],order=['10y yield','2s10s slope'];
+    for(var o=0;o<order.length&&!rd;o++)for(var i=0;i<dp.length;i++){if((dp[i].f||'').toLowerCase()===order[o]){rd=dp[i];break;}}
+    if(!rd)for(var i2=0;i2<dp.length;i2++){var f=(dp[i2].f||'').toLowerCase();if(f.indexOf('yield')>=0||f.indexOf('slope')>=0||f.indexOf('rate')>=0){rd=dp[i2];break;}}}
+  /* top-3 strongest rate + commodity drivers: macro3.top, else derived from deps */
+  var top=(p.macro3&&p.macro3.top&&p.macro3.top.length)?p.macro3.top.slice(0,3):null;
+  if(!top){var RC={'10y yield':1,'2s10s slope':1,'wti oil':1,'gold':1,'copper':1,'nat gas':1};
+    var pool=(p.deps||[]).filter(function(d){return RC[(d.f||'').toLowerCase()];});
+    pool.sort(function(a,b){var aa=Math.abs(a.pcorr!=null?a.pcorr:(a.corr||0)),bb=Math.abs(b.pcorr!=null?b.pcorr:(b.corr||0));return bb-aa;});
+    top=pool.slice(0,3);}
+  if((!rd||rd.sens==null)&&(!top||!top.length))
+    return '<div style="margin-top:7px;padding:6px 9px;border:1px dashed var(--line,#2a2f3a);border-radius:6px;font-size:9px;color:var(--faint,#646e7c)">Rate &amp; commodity impact &middot; macro drivers populate on the next nightly build for '+sym+'.</div>';
+  var html='<div style="margin-top:7px;padding:7px 9px;border:1px solid '+accent+'55;border-left:3px solid '+accent+';border-radius:6px;background:rgba(224,193,74,.06)">';
+  if(rd&&rd.sens!=null){
+    var s=+rd.sens, amp=s*100, d1=P*s/100, dAmp=P*amp/100, up=s>=0;
+    var weak=(rd.weak||rd.sig===false);
+    var dirNote=up?(sym+' rises WITH the '+rd.f):(sym+' falls as the '+rd.f+' rises');
+    html+='<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:'+accent+';margin-bottom:4px">Interest-rate impact &times;100 &middot; '+rd.f+(weak?' &middot; low-confidence':'')+(rd.stab&&rd.stab!=='stable'?' ('+rd.stab+')':'')+'</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">'
+        +chip('rate &beta; (1&sigma;)',sgn(s.toFixed(2))+'%/&sigma;',up?'#2ecc8f':'#ef5f4e')
+        +chip('&times;100 factor',sgn(amp.toFixed(0))+'%',up?'#2ecc8f':'#ef5f4e')
+        +chip(pxLabel,'$'+P.toFixed(2),'#39b6ff')
+        +chip('rates +1&sigma; &rarr;','$'+(P+d1).toFixed(2)+' ('+sgn(d1.toFixed(2))+')',d1>=0?'#2ecc8f':'#ef5f4e')
+        +chip('&times;100 &rarr;','$'+Math.max(0,P+dAmp).toFixed(2)+' ('+sgn(dAmp.toFixed(2))+')',dAmp>=0?'#2ecc8f':'#ef5f4e')
+      +'</div>'
+      +'<div style="margin-top:3px;font-size:8px;color:var(--faint,#646e7c)">&beta; = % move in '+sym+' per +1&sigma; rise in the '+rd.f+' (partial corr '+(num(rd)!=null?num(rd):'?')+', '+(weak?'weak / low-confidence':'significant')+'). &times;100 amplifies the real rate impact 100&times; &mdash; '+dirNote+'. Stress scaling, not a forecast.</div>';
+  }
+  if(top&&top.length){
+    html+='<div style="margin-top:6px;border-top:1px solid var(--line,#2a2f3a);padding-top:5px"><div style="font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#8a93a0);margin-bottom:3px">Top rate &amp; commodity drivers &middot; &times;100 concurrent price impact</div>'
+      +'<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:2px 12px;font-size:9px;align-items:baseline">'
+      +'<span style="color:var(--faint,#646e7c)">factor</span><span style="color:var(--faint,#646e7c);text-align:right">&beta;/&sigma;</span><span style="color:var(--faint,#646e7c);text-align:right">&times;100</span><span style="color:var(--faint,#646e7c);text-align:right">&rarr; price (&Delta;)</span>';
+    for(var k=0;k<top.length;k++){var dd=top[k],sv=+dd.sens;if(sv!==sv)continue;var a=sv*100,dl=P*sv,pr=Math.max(0,P+dl),cc=sv>=0?'#2ecc8f':'#ef5f4e';
+      html+='<span style="color:var(--ink,#eef3f8)">'+dd.f+((dd.weak||dd.sig===false)?' <span style="color:var(--faint,#646e7c)">(weak)</span>':'')+'</span>'
+        +'<span style="text-align:right;color:'+cc+'">'+sgn(sv.toFixed(2))+'%</span>'
+        +'<span style="text-align:right;color:'+cc+'">'+sgn(a.toFixed(0))+'%</span>'
+        +'<span style="text-align:right;color:'+cc+'">$'+pr.toFixed(2)+' ('+sgn(dl.toFixed(2))+')</span>';
+    }
+    html+='</div></div>';
+  }
+  html+='</div>';
+  return html;
 }
 function renderOvernight(sym,host,card,head){
   function chip(k,v,c){return '<div style="display:flex;flex-direction:column;gap:1px;min-width:80px"><span style="font-size:8.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--faint,#646e7c)">'+k+'</span><span style="font-size:13px;font-weight:700;color:'+(c||'var(--ink,#eef3f8)')+'">'+v+'</span></div>';}
@@ -1936,7 +1957,7 @@ function renderIntraday(sym,j){
   try{var _mm=window.MMAP&&window.MMAP.names,_nn=null;
     if(_mm){for(var _ri=0;_ri<_mm.length;_ri++){if((_mm[_ri].t||'').toUpperCase()===sym.toUpperCase()){_nn=_mm[_ri];break;}}}
     var _basePx=(typeof _p!=='undefined'&&_p&&_p.triggered&&_p.Pproj!=null)?_p.Pproj:(m.price!=null?m.price:null);
-    if(_nn&&_nn.deps&&_basePx!=null)_rateBlk=rateImpactBlock({openProj:_basePx,deps:_nn.deps},sym,chip,'live price');
+    if(_nn&&_basePx!=null)_rateBlk=rateImpactBlock({openProj:_basePx,deps:_nn.deps||[],macro3:_nn.macro3||null},sym,chip,'live price');
   }catch(_re){_rateBlk='';}
   host.innerHTML='<div style="'+card+'">'+head+strip+note+projHTML+_rateBlk+'</div>';
 }
@@ -2952,4 +2973,41 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
       if(pe!=null){g.fillStyle=MUT; g.fillText('PE '+pe.toFixed(0), x+2, padT+31);}
     });
     // next pending earnings (6M emphasis): marker at right edge
-    if(n.earn&&n.earn.next&&n.earn.next.d){var nx=n.earn.next;g.strokeStyle=ACC;g.setLineDash([3,3]);g.globalAlpha=.7;g.beginPath();g.moveTo(W-padR-1,padT);g.lineTo(W-padR-1,H-padB);g.stroke();g.setLineDash
+    if(n.earn&&n.earn.next&&n.earn.next.d){var nx=n.earn.next;g.strokeStyle=ACC;g.setLineDash([3,3]);g.globalAlpha=.7;g.beginPath();g.moveTo(W-padR-1,padT);g.lineTo(W-padR-1,H-padB);g.stroke();g.setLineDash([]);g.globalAlpha=1;g.fillStyle=ACC;g.font='9px sans-serif';g.fillText('next '+(nx.d||'').slice(5), W-padR-44, H-padB-2);if(nx.e!=null)g.fillText('est '+nx.e, W-padR-44, padT+9);}
+    g.fillStyle=MUT;g.font='10px sans-serif';g.fillText(dates[0]+' → '+dates[dates.length-1], padL, H-5);
+  }
+  function render(){
+    var box=document.getElementById('earntl'); if(!box) return;
+    var t=sym(), n=rec(t);
+    if(!n||!n.earn){box.style.display='none';return;}
+    box.style.display='';
+    document.getElementById('etlHdr').textContent='Earnings & valuation — '+t;
+    if(t!==lastT){lastT=t;
+      fetch('hist/'+t+'.json',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){
+        var rows=j&&j.rows?j.rows:null; box._rows=rows; draw(rows,n);
+      }).catch(function(){draw(null,n);});
+    } else { draw(box._rows||null,n); }
+  }
+  // build the panel container + toggle (once)
+  function ensure(){
+    if(document.getElementById('earntl')) return;
+    var host=document.getElementById('premcard')||document.getElementById('decision'); if(!host) return;
+    var d=document.createElement('div'); d.id='earntl'; d.style.cssText='display:none;margin:8px 0 0;padding:9px 12px;background:rgba(13,18,27,.6);border:1px solid '+LINE+';border-radius:10px';
+    d.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
+      +'<span id="etlHdr" style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:'+MINT+'">Earnings &amp; valuation</span>'
+      +'<span><button class="etlTf" data-tf="252" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1px solid '+LINE+';background:'+'#16202e'+';color:'+INK+';cursor:pointer">1Y</button>'
+      +'<button class="etlTf" data-tf="126" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1px solid '+LINE+';background:transparent;color:'+MUT+';cursor:pointer;margin-left:4px">6M</button></span></div>'
+      +'<canvas id="etlCv"></canvas>'
+      +'<div style="font-size:10px;color:'+MUT+';margin-top:4px">Vertical lines = earnings dates (EPS actual/est, P/E at report). <span style="color:'+MINT+'">DCF</span> &amp; <span style="color:'+ACC+'">analyst target</span> levels. Green=beat, red=miss.</div>';
+    host.parentNode.insertBefore(d, host.nextSibling);
+    Array.prototype.forEach.call(d.querySelectorAll('.etlTf'),function(b){b.addEventListener('click',function(){TF=+b.getAttribute('data-tf');Array.prototype.forEach.call(d.querySelectorAll('.etlTf'),function(x){x.style.background='transparent';x.style.color=MUT;});b.style.background='#16202e';b.style.color=INK;var n=rec(sym());if(n)draw(d._rows||null,n);});});
+  }
+  ensure();
+  var s=document.getElementById('sym'); if(s){s.addEventListener('change',function(){ensure();render();});s.addEventListener('input',function(){setTimeout(function(){ensure();render();},60);});}
+  var dec=document.getElementById('decision'); if(dec){try{new MutationObserver(function(){setTimeout(function(){ensure();render();},50);}).observe(dec,{childList:true,subtree:true});}catch(e){}}
+  var tries=0,iv=setInterval(function(){if(window.MMAP&&window.MMAP.names){ensure();render();if(++tries>2)clearInterval(iv);}else if(++tries>80)clearInterval(iv);},400);
+  window.addEventListener('resize',function(){var n=rec(sym());if(n&&document.getElementById('earntl'))draw((document.getElementById('earntl')._rows)||null,n);});
+})();
+</script>
+
+</body></html>

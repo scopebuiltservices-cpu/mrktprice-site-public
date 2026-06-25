@@ -43,11 +43,37 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # full history so the change-detector can diff the whole push range
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
 
+      # ROOT-CAUSE FIX: a push that changes the build engine but NOT .rebuild (and has no
+      # [rebuild] tag) used to deploy stale data — the new code sat committed but never executed.
+      # This step rebuilds whenever ANY file under tools/market_map/ (engine + connectors) changes,
+      # so "push new engine code" always regenerates the published data. Manual triggers kept as backup.
+      - name: Detect whether a data rebuild is needed
+        id: detect
+        run: |
+          need=false
+          ev="${{ github.event_name }}"
+          if [ "$ev" = "schedule" ] || [ "$ev" = "workflow_dispatch" ]; then
+            need=true
+          else
+            before="${{ github.event.before }}"
+            if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ]; then
+              changed=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+            else
+              changed=$(git diff --name-only "$before" "${{ github.sha }}" 2>/dev/null || git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+            fi
+            echo "changed files in push:"; echo "$changed"
+            if echo "$changed" | grep -qE '^tools/market_map/|^\.rebuild$'; then need=true; fi
+            if printf '%s' "${{ github.event.head_commit.message }}" | grep -q '\[rebuild\]'; then need=true; fi
+          fi
+          echo "need=$need" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Rebuild decision::data rebuild needed = $need"
+
       - name: Refresh Market Map (live) + xsection + static history
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (contains(github.event.head_commit.modified, '.rebuild') || contains(github.event.head_commit.added, '.rebuild') || contains(github.event.head_commit.message, '[rebuild]')))
+        if: steps.detect.outputs.need == 'true'
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
@@ -70,12 +96,15 @@ jobs:
             cp /tmp/mmbuild/xsection.json  "$GITHUB_WORKSPACE/xsection.json" 2>/dev/null || echo "::warning::xsection.json not produced this run"
             cd "$GITHUB_WORKSPACE"
             python tools/market_map/emit_static.py --universe marketmap.json --out . --hist --cap 250 || echo "::warning::history emit partial"
+            # GUARD: loud signal if the engine ran but the FMP history layer produced nothing
+            # (catches "new code committed but didn't execute / connect").
+            FMP_API_KEY="$FMP_API_KEY" python tools/market_map/verify_history.py marketmap.json || true
           else
             echo "::error::Real Market Map build FAILED - refusing to publish synthetic data"; exit 1
           fi
 
       - name: Commit refreshed data (self-publish, no PAT)
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (contains(github.event.head_commit.modified, '.rebuild') || contains(github.event.head_commit.added, '.rebuild') || contains(github.event.head_commit.message, '[rebuild]')))
+        if: steps.detect.outputs.need == 'true'
         run: |
           git config user.name  "mrktprice-bot"
           git config user.email "bot@mrktprice.com"

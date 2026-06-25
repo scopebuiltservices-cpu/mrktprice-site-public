@@ -1019,9 +1019,30 @@ function _qNextReportFull(d,sym){var iso=_qNextReportISO(d,sym);if(!iso)return n
   var last=(d&&d.length)?d[d.length-1]:null;
   var bd=0,bdLo=0,bdHi=0;if(last){try{bd=_forwardTradingDays(last,iso);bdLo=_forwardTradingDays(last,win[0]);bdHi=_forwardTradingDays(last,win[1]);}catch(_e3){}}
   return {iso:iso,est:est,bd:bd,bdLo:bdLo,bdHi:bdHi,label:lab,status:status,window:win,conf:false};}
+function _cadencePastDates(d,sym,k){
+  // FALLBACK: estimated past report dates from the company's fiscal cadence (qMonths if known, else
+  // the generic Feb/May/Aug/Nov calendar). Flagged conf:false/est:true so they are never shown as
+  // confirmed. Guarantees the 4 past lines render even before the authoritative feed is built.
+  var n=_mmName(sym),out=[];
+  var qm=(n&&n.earn&&n.earn.qMonths&&n.earn.qMonths.length)?n.earn.qMonths.slice():[2,5,8,11];
+  qm=qm.slice().sort(function(a,b){return a-b;});
+  var today=new Date(),ty=today.getUTCFullYear(),dates=[];
+  for(var yy=ty-2;yy<=ty;yy++){qm.forEach(function(m){dates.push(new Date(Date.UTC(yy,m-1,15)));});}
+  dates=dates.filter(function(x){return x<=today;}).sort(function(a,b){return b-a;});
+  for(var i=0;i<Math.min(k,dates.length);i++){var iso=dates[i].toISOString().slice(0,10);
+    // reported quarter = the quarter whose end precedes the report month (Feb→Q4 prior FY, May→Q1, Aug→Q2, Nov→Q3)
+    var rd=dates[i],mo=rd.getUTCMonth(),yl=rd.getUTCFullYear(),q;
+    if(mo>=3&&mo<=5)q=1;else if(mo>=6&&mo<=8)q=2;else if(mo>=9&&mo<=11)q=3;else{q=4;if(mo<=2)yl=yl-1;}
+    out.push({iso:iso,label:'Q'+q+" '"+String(yl).slice(2),eps:null,surpr:null,src:'cal',conf:false,labelSrc:'cal',est:true});}
+  return out;}
 function _qReportDates(d,sym){var out=[],seen={},n=_mmName(sym);
   if(n&&n.earn&&n.earn.q){n.earn.q.forEach(function(e){if(!e.d||seen[e.d])return;seen[e.d]=1;out.push({iso:e.d,label:'Q'+(e.q||'?')+" '"+String(e.y||'').slice(2),eps:e.a,surpr:e.s,src:'cal',conf:(e.conf!==false),labelSrc:(e.labelSrc||'cal')});});}
   try{var C=(typeof FUND==='object'&&FUND)?FUND[sym]:null;if(C&&C.quarters){C.quarters.forEach(function(q){var fd=q.filedDate||q.endDate;if(!fd||seen[fd])return;seen[fd]=1;out.push({iso:fd,label:(q.label||'Q'),eps:(q.eps!=null?q.eps:null),surpr:null,src:'sec',conf:true,labelSrc:'sec'});});}}catch(_e){}
+  // CADENCE FILL — ensure up to 4 past lines even when no authoritative feed is present (estimated).
+  if(out.length<4){_cadencePastDates(d,sym,4-out.length+3).forEach(function(o){
+    if(seen[o.iso])return;
+    var dup=out.some(function(x){return Math.abs(Date.parse(x.iso)-Date.parse(o.iso))<12*86400000;});
+    if(dup)return;seen[o.iso]=1;out.push(o);});}
   out.forEach(function(o){o.idx=-1;for(var k=0;k<d.length;k++){if(d[k]>=o.iso){o.idx=k;break;}}});
   out=out.filter(function(o){return o.idx>=0;});
   out.sort(function(a,b){return a.iso<b.iso?1:-1;});out=out.slice(0,4);out.sort(function(a,b){return a.iso<b.iso?-1:1;});return out;}
@@ -2725,7 +2746,8 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
     if(flagTxt){g.font='bold 8px sans-serif';var fw=g.measureText(flagTxt).width+6;g.fillStyle=flagBg||col;g.fillRect(xx,yP0-0.5,fw,11);g.fillStyle='#0b0e13';g.fillText(flagTxt,xx+3,yP0+8);}};
   var _qPast=_qReportDates(d,CUR.sym),_qFut=_qNextReportFull(d,CUR.sym);
   _qPast.forEach(function(q){var xi=q.idx-h0;if(xi<0||xi>=show)return;var xx=X(xi);
-    _qLine(xx,'rgba(245,196,81,.7)',1,[5,4],q.iso.slice(5),'#f5c451');     // bold dated flag at top
+    var _est=(q.conf===false);   // cadence-estimated date -> dim + dashed; confirmed -> bold gold
+    _qLine(xx,_est?'rgba(245,196,81,.4)':'rgba(245,196,81,.7)',1,_est?[2,5]:[5,4],(_est?'~':'')+q.iso.slice(5),_est?'rgba(245,196,81,.45)':'#f5c451');
     var yy=yP0+20;g.textAlign='left';g.font='bold 8px sans-serif';g.fillStyle='#f5c451';g.fillText((q.labelSrc==='cal'?'~':'')+q.label+(q.labelSrc==='sec'?' ✓':''),xx+2,yy);yy+=9;
     if(q.eps!=null){g.font='8px sans-serif';g.fillStyle='#cfe0f0';g.fillText('EPS '+(typeof q.eps==='number'?q.eps.toFixed(2):q.eps),xx+2,yy);yy+=9;}
     if(q.surpr!=null){g.fillStyle=q.surpr>=0?'#2ecc8f':'#ef5f4e';g.fillText((q.surpr>=0?'beat +':'miss ')+q.surpr+'%',xx+2,yy);}

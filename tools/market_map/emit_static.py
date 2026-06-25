@@ -79,7 +79,7 @@ def emit(universe_path, out_dir, do_hist=False, cap=0, hist_dir=None):
                     if va.get("sigvol"): lin["sigvol"] = va["sigvol"]
                     if va.get("base"):   lin["volBase"] = va["base"]
                     if to:               lin["touch"] = to
-                    # Second/Third Build: EVT POT/GPD tail on the DAILY returns (250+ pts, robust)
+                    # Second/Third Build: EVT POT/GPD tail on DAILY returns (250+ pts, robust)
                     _cl=[float(r[1]) for r in rows if r[1] is not None]
                     _dret=[]
                     for _i in range(1,len(_cl)):
@@ -87,6 +87,16 @@ def emit(universe_path, out_dir, do_hist=False, cap=0, hist_dir=None):
                             import math as _m; _dret.append(_m.log(_cl[_i]/_cl[_i-1]))
                     _ev=_lineage.evt_gpd_tail(_dret)
                     if _ev: lin["evt"]=_ev
+                    # alert score A (spec): edge / tail / liquidity / modellable / governance
+                    _g=lin.get("gov") or {}
+                    _blh=((lin.get("bl") or {}).get("horizons") or {}).get(_g.get("horizon") or "20d") or {}
+                    _edge=(_blh.get("postMu",0.0) or 0.0)-(_blh.get("priorMu",0.0) or 0.0)
+                    _es=((_g.get("es975") or {}).get("es")) or 0.0
+                    _pmax=max((lin.get("post") or [0]) or [0])
+                    _vb=va.get("base") or {}
+                    _G={"deployable":1.0,"research-only":0.5}.get(_g.get("releaseGate","blocked"),0.0)
+                    _M=1 if ((lin.get("pq") or {}).get("modellable") or lin.get("factor")) else 0
+                    lin["alert"]=_lineage.alert_score(_pmax,_edge,_es,_vb.get("avgVol20"),_vb.get("medVol"),_M,_G)
             except Exception:
                 pass
         with open(os.path.join(cdir, t + ".json"), "w") as f:

@@ -686,6 +686,12 @@ def build(names,mkt,ff,macro=None):
           ("OIL",macro.get("OIL"),"WTI oil"),("VIX",macro.get("VIX"),"VIX"),("HYG",macro.get("HYG"),"credit (HYG)"),
           ("GOLD",macro.get("GOLD"),"gold"),("COPPER",macro.get("COPPER"),"copper"),
           ("NATGAS",macro.get("NATGAS"),"nat gas"),("SLOPE",macro.get("SLOPE"),"2s10s slope")]
+    _fcov=None
+    try:
+        if _lineage is not None:
+            _fcov=_lineage.factor_covariance({lab:ser for fk,ser,lab in FACS if ser})
+    except Exception:
+        _fcov=None
     EXPSIGN={"_base":{"MKT":1,"VIX":-1,"HYG":1},
       "Energy":{"OIL":1,"NATGAS":1,"DXY":-1},"Financials":{"RATE":1,"SLOPE":1,"DXY":1},
       "Materials":{"OIL":1,"GOLD":1,"COPPER":1,"DXY":-1},"Utilities":{"RATE":-1},"Real Estate":{"RATE":-1},
@@ -757,6 +763,35 @@ def build(names,mkt,ff,macro=None):
                 if _lin: n["lineage"]=_lin
             except Exception:
                 pass
+            # ---- Second/Third Build: causal (DML) + EVT/tail + factor decomp + Black-Litterman ----
+            try:
+                _facs={lab:ser for fk,ser,lab in FACS if ser and len(ser)==len(wr)}
+                if len(_facs)>=2:
+                    _cs=_lineage.causal_support(wr,_facs)
+                    if _cs: n["causal"]=_cs
+                _L=n.get("lineage")
+                if isinstance(_L,dict):
+                    _ev=_lineage.evt_gpd_tail(wr)
+                    if _ev: _L["evt"]=_ev
+                    if mkt and len(mkt)==len(wr):
+                        _td=_lineage.tail_dependence(wr,mkt)
+                        if _td: _L["tailDep"]=_td
+                    if len(_facs)>=2:
+                        _fd=_lineage.factor_decomp(wr,_facs,_fcov)
+                        if _fd: _L["factor"]=_fd
+                    _hm=sum(wr)/len(wr) if wr else 0.0
+                    _hv=(sum((x-_hm)**2 for x in wr)/max(1,len(wr)-1)) if len(wr)>2 else 1e-4
+                    _STP={"intraday":0.25,"1d":1,"5d":5,"10d":10,"20d":20,"63d":63}
+                    _bl={"hist":{"mean":round(_hm,6),"var":round(_hv,8)},"horizons":{},
+                         "viewIds":["regime-conditional"],"entropyApplied":False}
+                    for _lab,_H in (_L.get("horizons") or {}).items():
+                        _st=_STP.get(_lab,5)/5.0
+                        _b=_lineage.black_litterman(_hm*_st, max(_hv*_st,1e-9),
+                              [{"q":_H.get("mapDrift",0.0),"omega":max((_H.get("mapVol",0.0))**2,1e-9)}])
+                        _bl["horizons"][_lab]=_b
+                    _L["bl"]=_bl
+            except Exception:
+                pass
             # ---- Second/Third Build: causal macro-support (DML) + EVT/t-copula tail ----
             try:
                 _facs={lab:ser for fk,ser,lab in FACS if ser and len(ser)==len(wr)}
@@ -792,7 +827,7 @@ def build(names,mkt,ff,macro=None):
     cal=calibrate_touch(_calib)                    # idea 1: reliability backtest of the touch model
     return {"asof":dt.date.today().isoformat(),"source":"SAMPLE (synthetic, illustrative) — replaced by the nightly job","calibration":cal,
             "indices":{"DOW":"Dow Jones 30","NDX":"Nasdaq-100","SPX":"S&P 500","RUT":"Russell 2000"},"sectors":SECTORS,"factors":FACTORS,"macrof":["MKT"]+MFAC,
-            "names":names,"sectorCorr":{"order":osec,"m":M}}
+            "names":names,"sectorCorr":{"order":osec,"m":M},"factorCov":_fcov}
 
 # ---------- real fetch (nightly Action only; needs network) ------------------------------------
 SECMAP={"Information Technology":"Technology","Technology":"Technology","Financials":"Financials",
@@ -1336,6 +1371,50 @@ def main():
                 _lin["pq"]=_lineage.pq_layer(_lin["horizons"], _iv, int(_gx.get("days") or 30), _eda)
             except Exception:
                 pass
+    # ---- Phase 5.5 + 6: options-implied P/Q layer + governance (ES, challenger gate, scan-risk,
+    #      SIMM, provenance). Runs after enrichment so gex.atmIV / val / deps are populated. ----
+    if _lineage is not None:
+        _gov_counts={"deployable":0,"research-only":0,"blocked":0}
+        _builtAt=dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        try:
+            _asof=dt.date.fromisoformat(str(snap.get("asof")))
+        except Exception:
+            _asof=None
+        for _n in snap.get("names",[]):
+            _lin=_n.get("lineage"); _gx=_n.get("gex") or {}
+            if not isinstance(_lin,dict) or not _lin.get("horizons"): continue
+            _ivp=_gx.get("atmIV")
+            _iv=(_ivp/100.0) if isinstance(_ivp,(int,float)) and _ivp>0 else None
+            _eda=None
+            try:
+                _nx=((_n.get("earn") or {}).get("next") or {}).get("d")
+                if _nx and _asof: _eda=(dt.date.fromisoformat(str(_nx))-_asof).days
+            except Exception:
+                _eda=None
+            try:
+                _lin["pq"]=_lineage.pq_layer(_lin["horizons"], _iv, int(_gx.get("days") or 30), _eda)
+            except Exception:
+                pass
+            try:
+                _wr=_n.get("wr") or []
+                _gov=_lineage.governance_block(_wr, _lin, _iv)
+                _hh=_gov.get("horizon") or "20d"
+                _pqh=((_lin.get("pq") or {}).get("horizons") or {}).get(_hh, {})
+                _deps=(_n.get("macro3") or {}).get("top") or (_n.get("deps") or [])
+                _gov["simm"]=_lineage.simm_decomp(_deps, _pqh.get("sigP"), _pqh.get("sigQ"))
+                _srcs=["yfinance"]
+                if _n.get("deps"): _srcs.append("FRED (macro)")
+                if _gx: _srcs.append("EODHD (options)")
+                if _n.get("val"): _srcs.append("FMP (valuation)")
+                if _n.get("inst") or _n.get("insider"): _srcs.append("SEC EDGAR")
+                _gov["provenance"]={"asof":snap.get("asof"),"modelVersion":"lineage-1.0","builtAt":_builtAt,
+                    "sources":_srcs,"ivSource":("EODHD" if _gx else None),"histWeeks":len(_wr)}
+                _lin["gov"]=_gov
+                _g=_gov.get("releaseGate","blocked"); _g="blocked" if str(_g).startswith("blocked") else _g
+                if _g in _gov_counts: _gov_counts[_g]+=1
+            except Exception:
+                pass
+        snap["governance"]={"counts":_gov_counts,"modelVersion":"lineage-1.0","builtAt":_builtAt,"asof":snap.get("asof")}
     # ---- Phase 5.5 + 6: options-implied P/Q layer + governance (ES, challenger gate, scan-risk,
     #      SIMM, provenance). Runs after enrichment so gex.atmIV / val / deps are populated. ----
     if _lineage is not None:

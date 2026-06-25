@@ -178,6 +178,18 @@
         + '<div style="margin-top:3px;font-size:8.5px;color:' + MUTED + '">event-variance share <b style="color:' + INK + '">' + (pq.eventShare != null ? (pq.eventShare * 100).toFixed(0) + "%" : "—") + '</b> of implied variance (implied-over-realized excess' + (pq.evtIn ? ", earnings in window" : "") + '). IV ' + (top.ivAnnual != null ? (top.ivAnnual * 100).toFixed(0) + "% ann · " + top.ivDays + "d ATM" : "—") + ', &omega;_Q ' + (top.omegaQ != null ? top.omegaQ : "—") + '. Straddle &asymp; implied |move|, NOT the 1&sigma; move.</div>'
         + '</div>';
     }
+    var bl = (lin.bl && lin.bl.horizons) ? lin.bl.horizons[node.h] : null, fac = lin.factor, blHTML = "";
+    if (bl || fac) {
+      var edge = bl ? (bl.postMu - bl.priorMu) : 0;
+      blHTML = '<div style="margin-top:6px;border-top:1px solid ' + LINE + ';padding-top:5px">'
+        + '<div style="font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:' + MUTED + '">Factor prior &rarr; view overlay (Black-Litterman)</div>'
+        + '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-top:3px">'
+        + (bl ? chip("prior μ", pct(bl.priorMu)) + chip("posterior μ", pct(bl.postMu), (bl.postMu >= bl.priorMu ? UP : DN)) + chip("view edge", (edge >= 0 ? "+" : "") + (edge * 100).toFixed(2) + "%", (edge >= 0 ? UP : DN)) : "")
+        + (fac ? chip("factor-explained", fac.explainedPct + "%") : "")
+        + '</div>'
+        + (fac ? '<div style="margin-top:3px;font-size:8px;color:' + FAINT + '">Σ = BFB′+D · specific var ' + (fac.specificVar * 1e4).toFixed(1) + 'e-4 · top exposures ' + Object.keys(fac.exposures || {}).slice(0, 3).map(function (k) { return esc(k) + " " + fac.exposures[k]; }).join(", ") + ' · ' + esc(fac.factorCovVersion || "") + '</div>' : '')
+        + '</div>';
+    }
     var evtChip = evt ? '<span style="font-size:9px;font-weight:700;color:#0a0d12;background:' + ACC + ';padding:1px 7px;border-radius:5px;margin-left:8px">⚑ earnings ' + evt + '</span>' : '';
     return '<div style="background:' + PANEL + ';border:1px solid ' + LINE + ';border-left:3px solid ' + ACC + ';border-radius:8px;padding:8px 10px;margin-top:7px">'
       + '<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:' + ACC + ';margin-bottom:5px">Lineage node · ' + node.h + (node.primary ? '' : ' (context)') + evtChip + '</div>'
@@ -191,6 +203,7 @@
       + '<div style="margin-top:4px;font-size:9px;color:' + MUTED + '">Drivers (causal) — ' + driverHTML + '</div>'
       + '<div style="margin-top:4px;font-size:9px;color:' + MUTED + '">Validation — ' + validHTML + '</div>'
       + pqHTML
+      + blHTML
       + '<div style="margin-top:5px;font-size:8.5px;color:' + FAINT + '">' + esc(reason) + ' Research only; not advice.</div>'
       + '</div>';
   }
@@ -228,13 +241,13 @@
     return '<div style="background:' + PANEL + ';border:1px solid ' + LINE + ';border-left:3px solid ' + gol(gcol) + ';border-radius:8px;padding:8px 10px;margin-top:7px">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">'
       + '<span style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:' + MUTED + '">Governance &amp; release gate</span>'
-      + '<span style="font-size:10px;font-weight:700;color:#0a0d12;background:' + gol(gol(gcol)) + ';padding:1px 8px;border-radius:5px">' + gate.toUpperCase() + '</span>'
+      + '<span style="font-size:10px;font-weight:700;color:#0a0d12;background:' + gcol + ';padding:1px 8px;border-radius:5px">' + ({deployable:"GREEN","research-only":"AMBER",blocked:"RED"}[gate] || gate.toUpperCase()) + ' · ' + gate + '</span>'
       + '</div>'
       + (uni ? '<div style="font-size:8.5px;color:' + FAINT + ';margin-top:2px">universe: <b style="color:' + UP + '">' + (uni.counts.deployable || 0) + '</b> deployable · <b style="color:' + ACC + '">' + (uni.counts["research-only"] || 0) + '</b> research-only · <b style="color:' + DN + '">' + (uni.counts.blocked || 0) + '</b> blocked</div>' : '')
       + '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-top:5px">'
       + chip("ES 97.5", p2(es && es.es), DN) + chip("stressed ES", p2(ses && ses.es), DN)
       + chip("scan risk", p2(sr && sr.scanRisk), DN) + chip("vega (σQ−σP)", sm && sm.vega != null ? p2(sm.vega) : "—", VIO)
-      + chip("Δ driver", sm && sm.delta ? esc(sm.delta.factor) : "—")
+      + chip("Δ driver", sm && sm.delta ? esc(sm.delta.factor) : "—") + chip("alert score", lin.alert != null ? lin.alert : "—", lin.alert > 0.05 ? UP : (lin.alert > 0 ? ACC : FAINT))
       + '</div>'
       + (chHTML ? '<div style="margin-top:6px"><div style="font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:' + MUTED + '">Challenger scorecard · CRPS (lower = better) · winner ★ ' + (ch.calibrated ? '<span style="color:' + UP + '">calibrated</span>' : '<span style="color:' + DN + '">miscalibrated</span>') + '</div>' + chHTML + '</div>' : '')
       + '<div style="margin-top:5px;font-size:8.5px;color:' + MUTED + '">Verdict — <b style="color:' + gol(gcol) + '">' + gate + '</b>: ' + esc(g.gateReason || "") + '. Curvature ' + (sm && sm.curvature == null ? 'n/a (needs option gamma)' : (sm ? p2(sm.curvature) : '—')) + '.</div>'
@@ -246,6 +259,37 @@
       + '<div style="margin-top:4px;font-size:8px;color:' + FAINT + '">Frameworks — ' + badges + '</div>'
       + '<div style="margin-top:3px;font-size:8px;color:' + FAINT + '">Provenance — sources: ' + srcHTML + ' · model ' + (pr ? esc(pr.modelVersion) : "—") + ' · built ' + (pr && pr.builtAt ? esc(pr.builtAt.slice(0, 16).replace("T", " ")) + " UTC" : "—") + ' · ' + (pr ? pr.histWeeks : "—") + 'w history. Research only; not advice.</div>'
       + '</div>';
+  }
+  function scatterEdgeTail(sym) {
+    var m = window.MMAP && window.MMAP.names; if (!m) return "";
+    var pts = [];
+    for (var i = 0; i < m.length; i++) {
+      var L = m[i].lineage; if (!L || !L.bl || !L.gov) continue;
+      var bh = (L.bl.horizons || {})["20d"]; var es = (L.gov.es975 || {}).es;
+      if (!bh || es == null) continue;
+      pts.push({ t: m[i].t, edge: bh.postMu - bh.priorMu, es: es, reg: L.regimeNow, mod: !!(L.pq && L.pq.modellable) });
+    }
+    if (pts.length < 3) return "";
+    var W = 680, Ht = 176, padL = 48, padR = 12, padT = 10, padB = 28;
+    var xs = pts.map(function (p) { return p.edge; }), ys = pts.map(function (p) { return p.es; });
+    var xlo = Math.min.apply(null, xs), xhi = Math.max.apply(null, xs), ylo = Math.min.apply(null, ys), yhi = Math.max.apply(null, ys);
+    var xp = (xhi - xlo) * 0.08 || 0.01, yp = (yhi - ylo) * 0.08 || 0.01; xlo -= xp; xhi += xp; ylo -= yp; yhi += yp;
+    var X = function (v) { return padL + (v - xlo) / (xhi - xlo) * (W - padL - padR); };
+    var Y = function (v) { return padT + (1 - (v - ylo) / (yhi - ylo)) * (Ht - padT - padB); };
+    var g = '<svg viewBox="0 0 ' + W + ' ' + Ht + '" width="100%" style="display:block">';
+    g += '<line x1="' + X(0) + '" y1="' + padT + '" x2="' + X(0) + '" y2="' + (Ht - padB) + '" stroke="' + LINE + '" stroke-dasharray="2 3"/>';
+    g += '<text x="' + (W - padR) + '" y="' + (Ht - 14) + '" fill="' + FAINT + '" font-size="8" text-anchor="end">edge (posterior − prior μ) →</text>';
+    g += '<text x="2" y="' + (padT + 8) + '" fill="' + FAINT + '" font-size="8">tail ES (higher=safer)</text>';
+    pts.forEach(function (p) {
+      var hot = p.t === sym, col = p.reg > 0 ? UP : DN;
+      g += '<circle cx="' + X(p.edge).toFixed(1) + '" cy="' + Y(p.es).toFixed(1) + '" r="' + (hot ? 4.5 : 2.6) + '" fill="' + (hot ? BLUE : col) + '" opacity="' + (hot ? 1 : 0.5) + '" stroke="' + (p.mod ? "#0a0d12" : DN) + '" stroke-width="' + (p.mod ? 0.5 : 1.2) + '"><title>' + p.t + ' edge ' + (p.edge * 100).toFixed(2) + '% / ES ' + (p.es * 100).toFixed(1) + '%' + (p.mod ? "" : " (non-modellable)") + '</title></circle>';
+      if (hot) g += '<text x="' + (X(p.edge) + 6).toFixed(1) + '" y="' + (Y(p.es) + 3).toFixed(1) + '" fill="' + BLUE + '" font-size="9" font-weight="700">' + esc(p.t) + '</text>';
+    });
+    g += '</svg>';
+    return '<div style="background:' + PANEL + ';border:1px solid ' + LINE + ';border-radius:8px;padding:8px 10px;margin-top:7px">'
+      + '<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:' + MUTED + ';margin-bottom:2px">Universe — posterior edge vs tail risk</div>'
+      + '<div style="font-size:8px;color:' + FAINT + ';margin-bottom:3px">x = Black-Litterman edge · y = ES 97.5 (up = safer) · green/red = bull/bear regime · red ring = non-modellable · ' + pts.length + ' names. Look top-right: edge that is not a tail bomb.</div>'
+      + g + '</div>';
   }
   function paint(sym, lin, name) {
     var host = el("lineagePanel"); if (!host) return;
@@ -272,6 +316,7 @@
       + heatmapHTML(lin)
       + nodeCardHTML(fnode, lin, name)
       + governanceHTML(lin)
+      + scatterEdgeTail(sym)
       + '<div style="margin-top:4px;font-size:8px;color:' + FAINT + '">Ribbon = MAP-branch projected return band (q10–q90 outer, q25–q75 inner), opacity ∝ branch probability; dashed lines = alternate-regime branches; dots sized by expected volume, coloured by branch-vs-diffusion confidence, gold ring = earnings inside the horizon. Returns from the current level. Research only.</div>'
       + '</div>';
   }

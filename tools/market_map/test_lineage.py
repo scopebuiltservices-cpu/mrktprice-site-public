@@ -468,6 +468,54 @@ def test_tail_dependence_comonotone_vs_independent():
     assert ti["lambdaLower"] < 0.4 and ti["lambdaUpper"] < 0.4   # ~ q under independence
 
 
+def test_factor_covariance_and_decomp():
+    import random
+    random.seed(61)
+    n = 300
+    f1 = [random.gauss(0, 0.02) for _ in range(n)]
+    f2 = [random.gauss(0, 0.015) for _ in range(n)]
+    fcov = L.factor_covariance({"F1": f1, "F2": f2})
+    assert fcov is not None and fcov["version"].startswith("fcov-")
+    assert fcov["cov"][0][0] > 0 and fcov["cov"][1][1] > 0
+    assert approx(fcov["cov"][0][1], fcov["cov"][1][0], 1e-12)   # symmetric
+    # y = 2*F1 + 0.5*F2 + small idio
+    y = [2.0 * f1[i] + 0.5 * f2[i] + random.gauss(0, 0.005) for i in range(n)]
+    fd = L.factor_decomp(y, {"F1": f1, "F2": f2}, fcov)
+    assert abs(fd["exposures"]["F1"] - 2.0) < 0.3 and abs(fd["exposures"]["F2"] - 0.5) < 0.3
+    assert fd["explainedPct"] > 70          # factors explain most variance
+    assert approx(fd["totalVar"], fd["factorVar"] + fd["specificVar"], 1e-9)
+
+
+def test_black_litterman_precision_blend():
+    # prior N(0, 0.04); a confident view q=0.02, omega=0.0001 -> posterior pulled toward view
+    bl = L.black_litterman(0.0, 0.04, [{"q": 0.02, "omega": 0.0001}])
+    assert 0.0 < bl["postMu"] < 0.02 and bl["postMu"] > 0.018   # confident view dominates
+    assert bl["postVar"] < 0.04                                 # posterior tighter than prior
+    # no views -> posterior == prior
+    bl0 = L.black_litterman(0.005, 0.02, [])
+    assert approx(bl0["postMu"], 0.005) and approx(bl0["postVar"], 0.02)
+
+
+def test_entropy_pool_hits_target():
+    p = [0.25, 0.25, 0.25, 0.25]
+    x = [-0.02, -0.01, 0.01, 0.02]
+    ep = L.entropy_pool(p, x, target=0.01)
+    assert approx(ep["achieved"], 0.01, 1e-4)        # constraint satisfied
+    assert approx(sum(ep["q"]), 1.0, 1e-3)
+    assert ep["kl"] >= 0                              # relative entropy non-negative
+    # upweights the higher-x scenarios
+    assert ep["q"][3] > ep["q"][0]
+
+
+def test_alert_score_properties():
+    base = L.alert_score(0.7, 0.01, 0.05, 5e6, 4e6, True, 1.0)
+    assert base > 0
+    assert L.alert_score(0.7, 0.02, 0.05, 5e6, 4e6, True, 1.0) > base   # more edge -> higher
+    assert L.alert_score(0.7, 0.01, 0.20, 5e6, 4e6, True, 1.0) < base   # more tail risk -> lower
+    assert L.alert_score(0.7, 0.01, 0.05, 5e6, 4e6, False, 1.0) == 0.0  # not modellable -> 0
+    assert L.alert_score(0.7, 0.01, 0.05, 5e6, 4e6, True, 0.0) == 0.0   # blocked governance -> 0
+
+
 if __name__ == "__main__":
     _fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for _f in _fns:

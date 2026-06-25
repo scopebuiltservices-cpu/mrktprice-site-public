@@ -1017,3 +1017,138 @@ def tail_dependence(a, b, q=0.10):
     lamU = (sum(1 for i in inAU if b[i] >= bU) / len(inAU)) if inAU else 0.0
     return {"lambdaLower": round(lamL, 3), "lambdaUpper": round(lamU, 3), "q": q,
             "gaussianRef": round(q, 3)}   # independent baseline ~ q
+
+
+# ============================================================================
+# Second Build spine — factor covariance (BFB'+D), Black-Litterman + entropy
+#                      pooling, alert score.
+# ============================================================================
+def _ols_coef(y, cols):
+    """Coefficients [intercept, b1..bk] of y on [1]+cols (ridge-stabilized normal equations)."""
+    n = len(y)
+    X = [[1.0] + [cols[j][i] for j in range(len(cols))] for i in range(n)]
+    k = len(X[0])
+    XtX = [[sum(X[i][a] * X[i][b] for i in range(n)) for b in range(k)] for a in range(k)]
+    Xty = [sum(X[i][a] * y[i] for i in range(n)) for a in range(k)]
+    for d in range(k):
+        XtX[d][d] += 1e-8
+    A = [XtX[r][:] + [Xty[r]] for r in range(k)]
+    for c in range(k):
+        pv = max(range(c, k), key=lambda r: abs(A[r][c]))
+        if abs(A[pv][c]) < 1e-12:
+            continue
+        A[c], A[pv] = A[pv], A[c]
+        piv = A[c][c]; A[c] = [v / piv for v in A[c]]
+        for r in range(k):
+            if r != c and abs(A[r][c]) > 0:
+                f = A[r][c]; A[r] = [A[r][j] - f * A[c][j] for j in range(k + 1)]
+    return [A[r][k] for r in range(k)]
+
+
+def factor_covariance(factors, lam=0.94):
+    """EWMA factor covariance matrix Sigma_f (RiskMetrics lambda). factors: dict {label: series}."""
+    labs = [l for l in factors if factors[l]]
+    if len(labs) < 2:
+        return None
+    n = min(len(factors[l]) for l in labs)
+    series = {l: factors[l][-n:] for l in labs}
+    K = len(labs)
+    cov = [[0.0] * K for _ in range(K)]
+    for i in range(K):
+        for j in range(i, K):
+            a = series[labs[i]]; b = series[labs[j]]
+            ma = _mean(a); mb = _mean(b)
+            c = (a[0] - ma) * (b[0] - mb)
+            for t in range(1, n):
+                c = lam * c + (1 - lam) * (a[t] - ma) * (b[t] - mb)
+            cov[i][j] = cov[j][i] = c
+    ver = "fcov-" + str(abs(hash(tuple(labs))) % 100000)
+    return {"factors": labs, "cov": [[round(v, 8) for v in row] for row in cov],
+            "lam": lam, "version": ver, "n": n}
+
+
+def factor_decomp(y, factors, factor_cov):
+    """Multi-factor risk decomposition Sigma = b' Sigma_f b + d  (Barra/Axioma style).
+    Returns exposures b, specific variance d, factor variance, total, explained fraction."""
+    labs = (factor_cov or {}).get("factors") or [l for l in factors if factors[l]]
+    cols = [factors[l] for l in labs if factors.get(l)]
+    labs = [l for l in labs if factors.get(l)]
+    if len(labs) < 2 or len(y) < 3 * len(labs):
+        return None
+    coef = _ols_coef(y, cols)
+    b = coef[1:]
+    resid = [y[i] - (coef[0] + sum(b[j] * cols[j][i] for j in range(len(b)))) for i in range(len(y))]
+    d = _var(resid)
+    cov = factor_cov["cov"] if factor_cov else None
+    if cov:
+        # align b to factor_cov ordering
+        idx = {l: i for i, l in enumerate(factor_cov["factors"])}
+        bb = [0.0] * len(factor_cov["factors"])
+        for j, l in enumerate(labs):
+            if l in idx:
+                bb[idx[l]] = b[j]
+        fv = sum(bb[i] * cov[i][k] * bb[k] for i in range(len(bb)) for k in range(len(bb)))
+    else:
+        fv = sum(b[j] ** 2 * _var(cols[j]) for j in range(len(b)))
+    fv = max(0.0, fv); tot = fv + d
+    return {"exposures": {labs[j]: round(b[j], 4) for j in range(len(b))},
+            "specificVar": round(d, 8), "factorVar": round(fv, 8), "totalVar": round(tot, 8),
+            "explainedPct": round(100.0 * fv / tot, 1) if tot > 0 else 0.0,
+            "factorCovVersion": (factor_cov or {}).get("version")}
+
+
+def black_litterman(prior_mu, prior_var, views):
+    """Scalar Black-Litterman: precision-weighted blend of an equilibrium/historical prior with one
+    or more views. views = [{q: view return, omega: view variance}]. Returns posterior mu/var and
+    the prior so the UI can show both (the spec requires storing prior AND posterior)."""
+    prior_var = max(prior_var, 1e-12)
+    prec = 1.0 / prior_var
+    num = prior_mu / prior_var
+    for v in views or []:
+        om = max(v.get("omega", 1e9), 1e-12); prec += 1.0 / om; num += v.get("q", 0.0) / om
+    post_var = 1.0 / prec
+    return {"priorMu": round(prior_mu, 6), "postMu": round(num * post_var, 6),
+            "priorVar": round(prior_var, 8), "postVar": round(post_var, 8),
+            "nViews": len(views or [])}
+
+
+def entropy_pool(probs, x, target, iters=60):
+    """Meucci entropy pooling (single linear view): reweight scenario probs to satisfy E_q[x]=target
+    with minimal relative entropy -> exponential tilt q_i ∝ p_i exp(theta x_i). Newton on theta.
+    Returns {q, theta, kl, achieved}."""
+    n = len(probs)
+    if n < 2 or len(x) != n:
+        return None
+    p = list(probs); s = sum(p) or 1.0; p = [v / s for v in p]
+    lo, hi = min(x), max(x)
+    if not (lo <= target <= hi):
+        target = min(hi, max(lo, target))
+    theta = 0.0
+    for _ in range(iters):
+        w = [p[i] * math.exp(theta * x[i]) for i in range(n)]
+        z = sum(w) or 1e-12
+        q = [v / z for v in w]
+        m = sum(q[i] * x[i] for i in range(n))
+        var = sum(q[i] * (x[i] - m) ** 2 for i in range(n))
+        if var < 1e-15:
+            break
+        step = (m - target) / var
+        theta -= step
+        if abs(step) < 1e-10:
+            break
+    w = [p[i] * math.exp(theta * x[i]) for i in range(n)]
+    z = sum(w) or 1e-12
+    q = [v / z for v in w]
+    kl = sum(q[i] * math.log(q[i] / p[i]) for i in range(n) if q[i] > 0 and p[i] > 0)
+    return {"q": [round(v, 4) for v in q], "theta": round(theta, 4), "kl": round(kl, 5),
+            "achieved": round(sum(q[i] * x[i] for i in range(n)), 6)}
+
+
+def alert_score(p_max, edge, es99, vfwd, adv, M, G, c=0.01):
+    """Spec alert score A = p_max * |mu_post - mu_prior|/(ES99 + c) * (V_fwd/ADV) * M * G.
+    Rewards view-driven edge, penalizes tail risk, boosts liquidity, gates on modellability/governance."""
+    es = abs(es99) if es99 else 0.0
+    liq = (vfwd / adv) if (adv and adv > 0 and vfwd) else 1.0
+    liq = max(0.1, min(3.0, liq))
+    A = max(0.0, p_max) * (abs(edge) / (es + c)) * liq * (1.0 if M else 0.0) * max(0.0, min(1.0, G))
+    return round(A, 4)

@@ -84,6 +84,13 @@ if out["triggered"]:
 
 # 9) coverage audit
 ok("coverage = hit fraction", abs(ie.coverage([1, 1, 0, 1]) - 0.75) < 1e-9)
+_ev = [{"lo": 0.95, "hi": 1.05, "center": 1.0, "realized": (1.15 if i == 0 else 1.0 + 0.01 * (i - 5)),
+        "pT": 0.98, "gatePass": i % 2 == 0, "rwLo": 0.80, "rwHi": 1.20} for i in range(10)]
+_a = ie.audit_coverage(_ev, 0.90)
+ok("audit coverage = 9/10", abs(_a["coverage"] - 0.9) < 1e-9, _a["coverage"])
+ok("audit RW baseline wider -> covers all", _a["rwBaselineCoverage"] == 1.0, _a["rwBaselineCoverage"])
+ok("audit avg band width 0.10", abs(_a["avgBandWidth"] - 0.10) < 1e-9, _a["avgBandWidth"])
+ok("audit empty -> None", ie.audit_coverage([]) is None)
 
 print("\n" + ("ALL INTRADAY ENGINE TESTS PASSED" if not FAILS else "%d FAILED: %s" % (len(FAILS), FAILS)))
 raise SystemExit(1 if FAILS else 0)

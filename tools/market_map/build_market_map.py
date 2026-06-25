@@ -1301,6 +1301,27 @@ def main():
             import sys as _sys3; _sys3.stderr.write("::warning::xsection build failed: %s\n"%str(_xe)[:120])
     else:
         names,mkt,ff,macro=synth(); snap=build(names,mkt,ff,macro)
+    # ---- Phase 5.5: options-implied P/Q layer (needs gex.atmIV, set during enrichment) ----
+    if _lineage is not None:
+        try:
+            _asof=dt.date.fromisoformat(str(snap.get("asof")))
+        except Exception:
+            _asof=None
+        for _n in snap.get("names",[]):
+            _lin=_n.get("lineage"); _gx=_n.get("gex") or {}
+            if not isinstance(_lin,dict) or not _lin.get("horizons"): continue
+            _ivp=_gx.get("atmIV")
+            _iv=(_ivp/100.0) if isinstance(_ivp,(int,float)) and _ivp>0 else None
+            _eda=None
+            try:
+                _nx=((_n.get("earn") or {}).get("next") or {}).get("d")
+                if _nx and _asof: _eda=(dt.date.fromisoformat(str(_nx))-_asof).days
+            except Exception:
+                _eda=None
+            try:
+                _lin["pq"]=_lineage.pq_layer(_lin["horizons"], _iv, int(_gx.get("days") or 30), _eda)
+            except Exception:
+                pass
     def _finite(o):
         if isinstance(o,float): return o if (o==o and o not in (float("inf"),float("-inf"))) else 0.0
         if isinstance(o,list): return [_finite(x) for x in o]

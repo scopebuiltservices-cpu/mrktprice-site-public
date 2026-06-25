@@ -52,7 +52,7 @@
         q10: drift - Z90 * vol, q25: drift - Z75 * vol, q50: drift, q75: drift + Z75 * vol, q90: drift + Z90 * vol, q95: drift + Z95 * vol,
         pNode: mapP, evol: evol, branching: H.branching, diffusive: H.diffusive,
         calib: v ? v.coverage : null, valid: v || null, pUp: t ? t.pUp : null, pDn: t ? t.pDn : null,
-        S: t ? t.S : null, eventLinked: earnInWindow(name, DAYS[h] || 1)
+        S: t ? t.S : null, eventLinked: earnInWindow(name, DAYS[h] || 1), pq: (lin.pq && lin.pq.horizons && lin.pq.horizons[h]) || null
       });
     });
     return nodes;
@@ -79,6 +79,10 @@
     nodes.forEach(function (n, i) { t2 += (i ? " L" : "M") + X(i) + " " + Y(n.q75); });
     for (i = nodes.length - 1; i >= 0; i--) b2 += " L" + X(i) + " " + Y(nodes[i].q25);
     s += '<path d="' + t2 + b2 + ' Z" fill="rgba(57,182,255,' + (op + 0.1) + ')"/>';
+    // options-implied (Q) envelope: dotted lines at q50 +/- z90*sigQ (per horizon)
+    var qUp = "", qLo = "";
+    nodes.forEach(function (n, i) { var sq = n.pq && n.pq.sigQ; if (sq != null) { qUp += (qUp ? " L" : "M") + X(i) + " " + Y(n.q50 + Z90 * sq); qLo += (qLo ? " L" : "M") + X(i) + " " + Y(n.q50 - Z90 * sq); } });
+    if (qUp) { s += '<path d="' + qUp + '" stroke="' + VIO + '" stroke-width="1" stroke-dasharray="1 3" fill="none"/><path d="' + qLo + '" stroke="' + VIO + '" stroke-width="1" stroke-dasharray="1 3" fill="none"/>'; }
     // alternate-branch center lines (dashed), opacity by branch probability
     (branches || []).slice(1, 3).forEach(function (b, bi) {
       if (!nodes[0].rd) return;
@@ -103,6 +107,7 @@
     // legend
     var leg = '<text x="' + padL + '" y="' + (Ht - 1) + '" fill="' + FAINT + '" font-size="8">solid = MAP branch';
     (branches || []).slice(1, 3).forEach(function (b, bi) { leg += '  ·  <tspan fill="' + BRANCH_COL[(bi + 1) % BRANCH_COL.length] + '">– – R' + b.regime + ' ' + (b.p * 100).toFixed(0) + '%</tspan>'; });
+    if (nodes.some(function(n){return n.pq&&n.pq.sigQ!=null;})) leg += '  ·  <tspan fill="'+VIO+'">&middot;&middot;&middot; Q (options-implied)</tspan>';
     leg += '  ·  <tspan fill="' + ACC + '">○ earnings-in-window</tspan></text>';
     s += leg + '</svg>';
     return s;
@@ -150,6 +155,19 @@
       + (node.evol != null ? ' Expected volume ' + fmtVol(node.evol) + '.' : '')
       + (node.branching != null ? ' Confidence ' + (node.branching * 100).toFixed(0) + '% branch/' + (node.diffusive * 100).toFixed(0) + '% diffusion.' : '');
     var post = lin.post ? lin.post.map(function (p) { return (p * 100).toFixed(0) + '%'; }).join(" / ") : "—";
+    var pq = node.pq, top = (lin.pq || {});
+    var pqHTML = "";
+    if (pq && pq.sigQ != null) {
+      var mvp = function (r) { return r == null ? "—" : (S ? "$" + (S * r).toFixed(2) : (r * 100).toFixed(2) + "%"); };
+      pqHTML = '<div style="margin-top:6px;border-top:1px solid ' + LINE + ';padding-top:5px">'
+        + '<div style="font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:' + VIO + '">Physical vs Risk-neutral (P / Q)' + (top.modellable ? ' · <span style="color:' + UP + '">IV present</span>' : ' · <span style="color:' + DN + '">no IV</span>') + '</div>'
+        + '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-top:3px">'
+        + chip("σ_P model", pct(pq.sigP)) + chip("σ_Q implied", pct(pq.sigQ), VIO) + chip("σ_House", pct(pq.sigHouse))
+        + chip("implied |move|", mvp(pq.impliedAbsMove), VIO) + chip("σ-equiv move", mvp(pq.sigmaEquiv))
+        + '</div>'
+        + '<div style="margin-top:3px;font-size:8.5px;color:' + MUTED + '">event-variance share <b style="color:' + INK + '">' + (pq.eventShare != null ? (pq.eventShare * 100).toFixed(0) + "%" : "—") + '</b> of implied variance (implied-over-realized excess' + (pq.evtIn ? ", earnings in window" : "") + '). IV ' + (top.ivAnnual != null ? (top.ivAnnual * 100).toFixed(0) + "% ann · " + top.ivDays + "d ATM" : "—") + ', &omega;_Q ' + (top.omegaQ != null ? top.omegaQ : "—") + '. Straddle &asymp; implied |move|, NOT the 1&sigma; move.</div>'
+        + '</div>';
+    }
     var evtChip = evt ? '<span style="font-size:9px;font-weight:700;color:#0a0d12;background:' + ACC + ';padding:1px 7px;border-radius:5px;margin-left:8px">⚑ earnings ' + evt + '</span>' : '';
     return '<div style="background:' + PANEL + ';border:1px solid ' + LINE + ';border-left:3px solid ' + ACC + ';border-radius:8px;padding:8px 10px;margin-top:7px">'
       + '<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:' + ACC + ';margin-bottom:5px">Lineage node · ' + node.h + (node.primary ? '' : ' (context)') + evtChip + '</div>'
@@ -162,6 +180,7 @@
       + '<div style="margin-top:6px;font-size:9px;color:' + MUTED + '">Confidence — branch <b style="color:' + INK + '">' + (node.branching != null ? (node.branching * 100).toFixed(0) + "%" : "—") + '</b> · diffusion <b style="color:' + INK + '">' + (node.diffusive != null ? (node.diffusive * 100).toFixed(0) + "%" : "—") + '</b> · calibration <b style="color:' + INK + '">' + (node.calib != null ? (node.calib * 100).toFixed(0) + "%" : "—") + '</b> &nbsp;·&nbsp; regime posterior ' + post + '</div>'
       + '<div style="margin-top:4px;font-size:9px;color:' + MUTED + '">Drivers (ranked) — ' + driverHTML + '</div>'
       + '<div style="margin-top:4px;font-size:9px;color:' + MUTED + '">Validation — ' + validHTML + '</div>'
+      + pqHTML
       + '<div style="margin-top:5px;font-size:8.5px;color:' + FAINT + '">' + esc(reason) + ' Research only; not advice.</div>'
       + '</div>';
   }

@@ -378,7 +378,7 @@ def gaussian_hmm_fit(returns: Sequence[float], K: int = 2, iters: int = 60,
             "pi": pi, "post_last": post_last}
 
 
-def lineage_object(returns: Sequence[float], horizons=PRIMARY_HORIZONS,
+def lineage_object(returns: Sequence[float], horizons=HORIZONS,
                    step_days_per_unit: float = 5.0, K: int = 2) -> Optional[Dict]:
     """Fit HMM to (weekly) returns and emit the per-ticker lineage payload:
     regime posterior, transition matrix, top branches, and per-horizon diffusive-vs-
@@ -694,3 +694,47 @@ def touch_odds(rows: Sequence[Sequence], horizons=HORIZONS,
             "levelHigh": round(hi, 4), "levelLow": round(lo, 4), "S": round(S, 4),
         }
     return out
+
+
+# ============================================================================
+# Phase 5.5 — options-implied P/Q layer (Girsanov P<->Q discipline, honest labels)
+# ============================================================================
+def pq_layer(hz: Dict, iv_annual: Optional[float], iv_days: int = 30,
+             earn_days_ahead: Optional[float] = None, omega_q: float = 0.5) -> Dict:
+    """Per-horizon physical (P) vs risk-neutral (Q) variance, from the per-horizon unconditional
+    vol (totVol = sigma_P, return-space) and an ATM implied vol (annualized) sqrt-time-scaled to
+    each horizon (CME convention). Emits:
+      sigP, sigQ, sigHouse (= omega_Q sigQ^2 + (1-omega_Q) sigP^2),
+      eventShare = max(0, sigQ^2 - sigP^2)/sigQ^2   (implied-over-realized excess / VRP proxy;
+                   concentrated around a catalyst when one is in-window — evtIn flags that),
+      impliedAbsMove = sigQ*sqrt(2/pi)  (E|move|, the straddle),  sigmaEquiv = sigQ (1-sigma move).
+    Keeps P and Q as separate, clearly-labeled quantities (never blends a straddle into a 1-sigma)."""
+    DAYS = {h[0]: h[1] for h in HORIZONS}
+    has_iv = (iv_annual is not None and iv_annual > 0)
+    w = max(0.0, min(1.0, omega_q)) if has_iv else 0.0
+    out_h = {}
+    for label, H in (hz or {}).items():
+        days = DAYS.get(label, 1)
+        sigP = H.get("totVol")
+        sigQ = (iv_annual * math.sqrt(days / 252.0)) if has_iv else None
+        evt_in = (earn_days_ahead is not None and 0 <= earn_days_ahead <= days * 1.45)
+        if sigQ is not None and sigP is not None:
+            var_house = w * sigQ * sigQ + (1 - w) * sigP * sigP
+            sig_house = math.sqrt(max(var_house, 0.0))
+            excess = max(0.0, sigQ * sigQ - sigP * sigP)
+            event_share = (excess / (sigQ * sigQ)) if sigQ > 0 else 0.0
+            iam = sigQ * math.sqrt(2.0 / math.pi)
+            seq = sigQ
+        else:
+            sig_house = sigP; event_share = None; iam = None; seq = None
+        out_h[label] = {
+            "sigP": round(sigP, 6) if sigP is not None else None,
+            "sigQ": round(sigQ, 6) if sigQ is not None else None,
+            "sigHouse": round(sig_house, 6) if sig_house is not None else None,
+            "eventShare": round(event_share, 4) if event_share is not None else None,
+            "impliedAbsMove": round(iam, 6) if iam is not None else None,
+            "sigmaEquiv": round(seq, 6) if seq is not None else None,
+            "evtIn": bool(evt_in),
+        }
+    return {"ivAnnual": round(iv_annual, 4) if has_iv else None, "ivDays": iv_days,
+            "omegaQ": w, "modellable": bool(has_iv), "horizons": out_h}

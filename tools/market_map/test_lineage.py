@@ -315,6 +315,42 @@ def test_lineage_per_regime_drift_vol():
         assert all(v >= 0 for v in h["rv"])
 
 
+def test_pq_layer_scaling_blend_straddle():
+    import math
+    hz = { "1d": {"totVol": 0.012}, "5d": {"totVol": 0.030}, "20d": {"totVol": 0.060} }
+    pq = L.pq_layer(hz, iv_annual=0.20, iv_days=30, earn_days_ahead=4.0, omega_q=0.5)
+    assert pq["modellable"] and pq["ivAnnual"] == 0.2 and pq["omegaQ"] == 0.5
+    q1, q5 = pq["horizons"]["1d"]["sigQ"], pq["horizons"]["5d"]["sigQ"]
+    # sqrt-of-time scaling: sigQ(5d)/sigQ(1d) == sqrt(5)
+    assert approx(q5 / q1, math.sqrt(5), 1e-3), (q1, q5)
+    # sigQ(1d) == iv*sqrt(1/252)
+    assert approx(q1, 0.20 * math.sqrt(1/252), 1e-5)
+    # house blend (omega 0.5)
+    h5 = pq["horizons"]["5d"]
+    assert approx(h5["sigHouse"], math.sqrt(0.5*h5["sigQ"]**2 + 0.5*0.030**2), 1e-6)
+    # straddle: sigmaEquiv == impliedAbsMove * sqrt(pi/2)
+    assert approx(h5["sigmaEquiv"], h5["impliedAbsMove"] * math.sqrt(math.pi/2), 1e-6)
+    # event-in-window: 4 days -> inside 5d (span 7.25), inside 20d, NOT inside 1d (span 1.45)
+    assert pq["horizons"]["5d"]["evtIn"] and pq["horizons"]["20d"]["evtIn"]
+    assert not pq["horizons"]["1d"]["evtIn"]
+    # event share positive when implied > realized (iv 20% annual vs realized ~ here)
+    assert h5["eventShare"] is not None and 0 <= h5["eventShare"] <= 1
+
+
+def test_pq_layer_no_iv_degrades():
+    hz = { "5d": {"totVol": 0.03} }
+    pq = L.pq_layer(hz, iv_annual=None)
+    assert pq["modellable"] is False and pq["ivAnnual"] is None and pq["omegaQ"] == 0.0
+    h = pq["horizons"]["5d"]
+    assert h["sigQ"] is None and h["sigHouse"] == 0.03 and h["eventShare"] is None
+
+
+def test_pq_event_share_zero_when_implied_below_realized():
+    hz = { "5d": {"totVol": 0.50} }   # huge realized vol, tiny implied
+    pq = L.pq_layer(hz, iv_annual=0.10, earn_days_ahead=None)
+    assert pq["horizons"]["5d"]["eventShare"] == 0.0   # sigQ <= sigP -> no excess
+
+
 if __name__ == "__main__":
     _fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for _f in _fns:

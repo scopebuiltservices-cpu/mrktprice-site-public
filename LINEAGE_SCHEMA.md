@@ -97,3 +97,28 @@ attached per ticker. Validation lives on the chart, not a hidden notebook.
 
 Computed for all six horizons (intraday/1d/5d collapse to the 1-step bucket on weekly data;
 the browser recomputes short horizons on daily/intraday series via the `lineage.js` mirror).
+
+## Options-implied P/Q layer (Phase 5.5) — `lineage.pq`
+
+Honest separation of the **physical (P)** and **risk-neutral (Q)** measures (Girsanov discipline).
+Q comes from the ATM implied vol (`gex.atmIV`, annualized) sqrt-time-scaled to each horizon
+(CME convention); P is the per-horizon unconditional σ (`horizons[h].totVol`).
+
+Top level: `ivAnnual`, `ivDays` (IV tenor), `omegaQ` (Q weight, shrunk to 0 with no IV),
+`modellable` (IV present). Per horizon (`pq.horizons[h]`):
+
+| field | meaning |
+|---|---|
+| `sigP` | physical-measure σ over the horizon (model) |
+| `sigQ` | risk-neutral σ = IV·√(days/252) |
+| `sigHouse` | √(ω_Q·σ_Q² + (1−ω_Q)·σ_P²) — blended display vol |
+| `impliedAbsMove` | σ_Q·√(2/π) = the ATM straddle ≈ **E\|move\|** (NOT the 1σ move) |
+| `sigmaEquiv` | σ_Q = the **1σ-equivalent** move |
+| `eventShare` | max(0, σ_Q²−σ_P²)/σ_Q² — implied-over-realized excess (VRP proxy) |
+| `evtIn` | true when an earnings date falls inside the horizon (event-linked) |
+
+UI: a dotted violet **Q-envelope** on the lineage ribbon (q50 ± z·σ_Q), and a **P vs Q panel**
+in the node card (σ_P / σ_Q / σ_House, implied-\|move\| vs σ-equivalent labels, event-variance
+share, IV/ω_Q, modellability badge). Absent IV → P-measure only, panel/envelope hidden.
+
+*Phase 5.5 closes the two open Phase-5 gaps (P/Q + straddle labels, and event_var_share).*

@@ -25,6 +25,9 @@ echo "==> 3/5  Node unit tests (lineage parity)"
 if [ -f tools/test_lineage.mjs ]; then
   node tools/test_lineage.mjs || fail=1
 fi
+if [ -f tools/test_intraday.mjs ]; then
+  node tools/test_intraday.mjs || fail=1
+fi
 
 echo "==> 4/5  Inline <script> syntax gate (every *.html)"
 node tools/check-scripts.mjs || fail=1

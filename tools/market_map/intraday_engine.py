@@ -107,9 +107,12 @@ def regime_gate(p_hv, rho=0.5, kappa=0.0):
 
 
 # --------------------------------------------------------------------------- confirmation + trigger
-def confirm_M(A, q, tau, sign_now, sign_prev, G):
-    """M_k = A_k * B_k where B requires signal strength, sign persistence, and an open regime gate."""
-    B = 1 if (q >= tau and sign_now == sign_prev and sign_now != 0 and G > 0) else 0
+def confirm_M(A, q, tau, sign_now, sign_prev):
+    """M_k = A_k * B_k. Confirmation is about STATE PERSISTENCE + signal strength: B requires the drift
+    signal to clear the threshold (q >= tau) with a stable sign. The volatility-regime gate is applied
+    at the ACTION layer (decision), not here — vetoing confirmation on the very volatility that defines
+    the breakout would be self-defeating."""
+    B = 1 if (q >= tau and sign_now == sign_prev and sign_now != 0) else 0
     return A * B
 
 def consecutive_trigger(M_seq, K):
@@ -169,18 +172,20 @@ def conformal_band(logpath, resid_by_h, alpha=0.90):
 
 
 # --------------------------------------------------------------------------- decision + coverage
-def decision(p_T, hi_logpath, lo_logpath, h_idx, cost=0.0):
-    """Act on the BOUND-adjusted payoff, not the point forecast. Long score = upper-bound log-move
-    minus cost; short score = lower-bound. 'tradable' only if a side clears the cost threshold."""
+def decision(p_T, hi_logpath, lo_logpath, h_idx, cost=0.0, G=1.0):
+    """Act on the BOUND-adjusted payoff, not the point forecast, AND apply the regime gate at the
+    ACTION layer: a hot regime (G<1) downweights size; a hard gate (G=0) vetoes the trade. 'tradable'
+    requires a bound-implied edge over cost AND an open gate. Long score = upper-bound log-move minus
+    cost; short score = lower-bound minus cost."""
     if h_idx >= len(hi_logpath):
-        return {"tradable": False, "side": None, "edge": 0.0}
+        return {"tradable": False, "side": None, "edge": 0.0, "size": 0.0, "regimeG": round(G, 2)}
     long_s = hi_logpath[h_idx] - p_T - cost
     short_s = p_T - lo_logpath[h_idx] - cost
-    if long_s > 0 and long_s >= short_s:
-        return {"tradable": True, "side": "long", "edge": round(long_s, 5)}
-    if short_s > 0:
-        return {"tradable": True, "side": "short", "edge": round(short_s, 5)}
-    return {"tradable": False, "side": None, "edge": round(max(long_s, short_s), 5)}
+    side = "long" if (long_s > 0 and long_s >= short_s) else ("short" if short_s > 0 else None)
+    edge = long_s if side == "long" else (short_s if side == "short" else max(long_s, short_s))
+    tradable = bool(side and edge > 0 and G > 0)
+    return {"tradable": tradable, "side": side if tradable else None, "edge": round(edge, 5),
+            "size": round(max(G, 0.0), 2) if tradable else 0.0, "regimeG": round(G, 2)}
 
 def coverage(hits):
     h = [1 if x else 0 for x in hits]
@@ -195,7 +200,7 @@ def evaluate(bars, hist_bars, params=None):
     bars / hist_bars items: {'bucket','vol','rv','ret','p'}  (p = log price)
     params: thV,thRV,tau,rho,kappa,K,H (horizon windows), alpha, cost, lam.
     """
-    P = {"thV": 1.5, "thRV": 1.5, "tau": 1.5, "rho": 0.5, "kappa": 0.0,
+    P = {"thV": 1.5, "thRV": 1.5, "tau": 1.5, "rho": 0.5, "kappa": 0.34,
          "K": 3, "H": 8, "alpha": 0.90, "cost": 0.0, "lam": 0.85, "warm": 6}
     if params:
         P.update(params)
@@ -210,11 +215,12 @@ def evaluate(bars, hist_bars, params=None):
         past_rets = [bars[j]["ret"] for j in range(max(0, k - 20), k + 1)]   # info <= k only
         mu = ewma_drift(past_rets, P["lam"]); se = rolling_se(past_rets, mu)
         q = signal_q(mu, se)
-        p_hv = high_vol_prob(b.get("rv"), rv_hist)
+        _rvwin = [bars[j].get("rv") for j in range(max(0, k - 3), k + 1) if bars[j].get("rv", 0) > 0]
+        p_hv = high_vol_prob(_median(_rvwin) if _rvwin else b.get("rv"), rv_hist)   # smoothed persistent state
         G = regime_gate(p_hv, P["rho"], P["kappa"])
         sign_now = 1 if mu > 0 else (-1 if mu < 0 else 0)
         warm = k >= P["warm"]
-        M = confirm_M(A, q, P["tau"], sign_now, sign_prev, G) if warm else 0
+        M = confirm_M(A, q, P["tau"], sign_now, sign_prev) if warm else 0
         M_seq.append(M)
         gates.append({"k": k, "zV": round(zV, 2), "zRV": round(zRV, 2), "A": A, "q": round(q, 2),
                       "pHV": round(p_hv, 2), "G": G, "mu": mu, "se": se, "M": M})
@@ -240,7 +246,7 @@ def evaluate(bars, hist_bars, params=None):
     # prefer conformal where available, else parametric (more-conservative spirit)
     lo = [clo[h] if clo[h] == clo[h] else plo[h] for h in range(len(logpath))]
     hi = [chi[h] if chi[h] == chi[h] else phi[h] for h in range(len(logpath))]
-    dec = decision(p_T, hi, lo, P["H"] - 1, P["cost"])
+    dec = decision(p_T, hi, lo, P["H"] - 1, P["cost"], gates[T]["G"])
     res.update({
         "T_bucket": bars[T]["bucket"], "muT": muT, "seT": seT,
         "centerLog": logpath, "center": [math.exp(x) for x in logpath],

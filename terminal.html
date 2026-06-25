@@ -120,6 +120,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
   <div class="ctrl"><label>&nbsp;</label><div class="dz" id="dz">Drop CSV</div></div>
  </div></header>
 <div id="decision"></div>
+<div id="premcard"></div>
 <div id="oppstrip"></div>
 <div id="alertpanel" style="display:none;position:fixed;inset:0;background:rgba(10,13,18,.97);z-index:55;padding:18px;overflow:auto">
  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h2 style="margin:0;font-size:16px;color:var(--ink)">⚠ Alerts — whole book, every active threshold breach</h2><button class="ghost" id="alertClose">✕ Close</button></div>
@@ -2765,4 +2766,51 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
 })();
 
 </script>
+<script>
+/* === MrktPrice premium decision strip (FMP Ultimate): DCF fair-value gap + analyst target + earnings === */
+(function(){
+  var UP='#15c26b', DN='#f0556b';
+  function box(){return document.getElementById('premcard');}
+  function cur(){var s=document.getElementById('sym');return s?(s.value||'').trim().toUpperCase():'';}
+  function rec(t){var m=window.MMAP&&window.MMAP.names;if(!m||!t)return null;for(var i=0;i<m.length;i++){if((m[i].t||'').toUpperCase()===t)return m[i];}return null;}
+  function render(){
+    var b=box(); if(!b) return;
+    var n=rec(cur());
+    if(!n||(n.dcf==null&&!n.ptgt&&!n.earn)){b.innerHTML='';return;}
+    var parts=[];
+    if(n.dcf!=null&&n.dcfGap!=null){
+      var g=n.dcfGap*100, cls=g<=0?'up':'dn';
+      parts.push('<div class="pcell"><div class="plbl">DCF fair value</div><div class="pval">$'+n.dcf.toFixed(2)+'</div>'
+        +'<div class="psub '+cls+'">'+(g<=0?Math.abs(g).toFixed(0)+'% below intrinsic':g.toFixed(0)+'% above intrinsic')+'</div>'
+        +'<div class="pbar"><i class="'+cls+'" style="width:'+Math.min(100,Math.abs(g)*1.5)+'%"></i></div></div>');
+    }
+    if(n.ptgt&&n.ptgt.tgt!=null){
+      var up=(n.tgtUpside!=null)?n.tgtUpside*100:null, ucls=(up==null||up>=0)?'up':'dn';
+      parts.push('<div class="pcell"><div class="plbl">Analyst target</div><div class="pval">$'+n.ptgt.tgt.toFixed(0)+'</div>'
+        +'<div class="psub '+ucls+'">'+(up!=null?((up>=0?'+':'')+up.toFixed(0)+'% to consensus'):'')+'</div>'
+        +'<div class="psub" style="color:#8aa0b8">range $'+(n.ptgt.low!=null?n.ptgt.low.toFixed(0):'?')+' - $'+(n.ptgt.high!=null?n.ptgt.high.toFixed(0):'?')+'</div></div>');
+    }
+    if(n.earn){
+      var nx=n.earn.next, last=(n.earn.q||[]).slice(-1)[0], em='';
+      if(nx&&nx.d) em+='<div class="psub">next: <b>'+nx.d+'</b>'+(nx.e!=null?' &middot; est '+nx.e:'')+'</div>';
+      if(last&&last.a!=null){var bcls=((last.s||0)>=0)?'up':'dn';em+='<div class="psub '+bcls+'">last Q '+last.a+' vs '+(last.e!=null?last.e:'?')+' est ('+((last.s||0)>=0?'+':'')+(last.s!=null?last.s:0)+'%)</div>';}
+      if(em) parts.push('<div class="pcell"><div class="plbl">Earnings</div>'+em+'</div>');
+    }
+    b.innerHTML = parts.length ? '<div class="premstrip"><span class="ptag">FMP Ultimate</span>'+parts.join('')+'</div>' : '';
+  }
+  var st=document.createElement('style');
+  st.textContent='#premcard .premstrip{display:flex;flex-wrap:wrap;gap:16px;margin:8px 0 0;padding:10px 13px;background:rgba(13,18,27,.6);border:1px solid #1d2a3a;border-radius:10px;position:relative}'
+    +'#premcard .ptag{position:absolute;top:-8px;left:10px;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#27e0b0;background:#0a0d12;padding:0 6px;border:1px solid #1d2a3a;border-radius:6px}'
+    +'#premcard .pcell{min-width:135px}#premcard .plbl{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#8aa0b8;margin-bottom:2px}'
+    +'#premcard .pval{font-size:18px;font-weight:700;color:#e8eef7}#premcard .psub{font-size:11px;margin-top:1px;color:#cfe7df}'
+    +'#premcard .psub.up{color:'+UP+'}#premcard .psub.dn{color:'+DN+'}'
+    +'#premcard .pbar{height:3px;border-radius:2px;background:rgba(255,255,255,.08);margin-top:5px;max-width:150px;overflow:hidden}#premcard .pbar>i{display:block;height:100%}#premcard .pbar>i.up{background:'+UP+'}#premcard .pbar>i.dn{background:'+DN+'}';
+  document.head.appendChild(st);
+  var s=document.getElementById('sym'); if(s){s.addEventListener('change',render);s.addEventListener('input',function(){setTimeout(render,60);});}
+  var dec=document.getElementById('decision'); if(dec){try{new MutationObserver(function(){setTimeout(render,40);}).observe(dec,{childList:true,subtree:true});}catch(e){}}
+  var tries=0,iv=setInterval(function(){if(window.MMAP&&window.MMAP.names){render();if(++tries>2)clearInterval(iv);}else if(++tries>80)clearInterval(iv);},400);
+  render();
+})();
+</script>
+
 </body></html>

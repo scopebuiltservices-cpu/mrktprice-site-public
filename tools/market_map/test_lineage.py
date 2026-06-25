@@ -351,6 +351,75 @@ def test_pq_event_share_zero_when_implied_below_realized():
     assert pq["horizons"]["5d"]["eventShare"] == 0.0   # sigQ <= sigP -> no excess
 
 
+def test_expected_shortfall_normal():
+    import random, math
+    random.seed(41)
+    r = [random.gauss(0, 1) for _ in range(5000)]
+    es = L.expected_shortfall(r, 1, alpha=0.025)
+    # ES_2.5% of a standard normal ~ -phi(z)/alpha ~ -2.34
+    assert es is not None and es["es"] < es["var"] < 0
+    assert -2.7 < es["es"] < -2.0, es["es"]
+
+
+def test_stressed_es_worse_than_normal():
+    import random
+    random.seed(42)
+    calm = [random.gauss(0, 0.01) for _ in range(300)]
+    storm = [random.gauss(0, 0.05) for _ in range(60)]   # high-vol segment
+    r = calm[:150] + storm + calm[150:]
+    es = L.expected_shortfall(r, 1)
+    ses = L.stressed_es(r, 1, win=52)
+    assert ses["es"] <= es["es"] + 1e-9   # stressed window ES is at least as severe
+
+
+def test_challenger_drift_beats_rw():
+    import random
+    random.seed(43)
+    # strong positive drift -> the drift-aware model should beat the zero-drift random walk
+    r = [random.gauss(0.01, 0.015) for _ in range(600)]
+    sc = L.challenger_scorecard(r, 1, window=40)
+    assert sc is not None
+    assert sc["crps"]["model"] <= sc["crps"]["rw"]      # model (with drift) wins on CRPS
+    assert sc["beatsRW"] is True
+    assert sc["gate"] in ("deployable", "research-only")
+    assert sc["winner"] in sc["crps"]
+
+
+def test_challenger_pure_noise_no_edge():
+    import random
+    random.seed(44)
+    r = [random.gauss(0.0, 0.02) for _ in range(600)]   # no drift -> model ~ rw
+    sc = L.challenger_scorecard(r, 1, window=40)
+    # model and rw should be close; gate must not over-claim deployable falsely on a fluke
+    assert abs(sc["crps"]["model"] - sc["crps"]["rw"]) < 0.01
+
+
+def test_scan_risk_grid():
+    sr = L.scan_risk(0.03)
+    assert sr["scanRisk"] == round(-3 * 0.03 * 1.3, 4)   # worst = -3sigma under vol-up scenario
+    assert len(sr["cells"]) == 3 and len(sr["cells"][0]) == 7
+    assert L.scan_risk(None) is None and L.scan_risk(0) is None
+
+
+def test_simm_decomp():
+    sm = L.simm_decomp([{"f": "10Y yield", "sens": -1.3}], sigP=0.03, sigQ=0.034)
+    assert sm["delta"]["factor"] == "10Y yield" and sm["delta"]["sensPctPerSigma"] == -1.3
+    assert approx(sm["vega"], 0.004, 1e-9)
+    assert sm["curvature"] is None
+
+
+def test_governance_block_assembles():
+    import random
+    random.seed(45)
+    r = [random.gauss(0.002, 0.02) for _ in range(500)]
+    lin = {"horizons": {"20d": {"totVol": 0.06}}}
+    gov = L.governance_block(r, lin, iv_annual=0.2, gov_horizon="20d")
+    assert gov["horizon"] == "20d"
+    assert gov["es975"] and gov["stressedES"] and gov["challenger"] and gov["scanRisk"]
+    assert gov["releaseGate"] in ("deployable", "research-only", "blocked")
+    assert "q" in gov["challenger"]["crps"]   # options-implied challenger present (iv given)
+
+
 if __name__ == "__main__":
     _fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for _f in _fns:

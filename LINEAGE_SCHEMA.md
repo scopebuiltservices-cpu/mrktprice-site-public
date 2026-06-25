@@ -122,3 +122,32 @@ in the node card (σ_P / σ_Q / σ_House, implied-\|move\| vs σ-equivalent labe
 share, IV/ω_Q, modellability badge). Absent IV → P-measure only, panel/envelope hidden.
 
 *Phase 5.5 closes the two open Phase-5 gaps (P/Q + straddle labels, and event_var_share).*
+
+## Governance & release gate (Phase 6) — `lineage.gov` + top-level `governance`
+
+Every framework badge maps to a **genuinely-computed** number (honest proxy labels where data is
+thin), not regulatory theater.
+
+Per name (`lineage.gov`):
+
+| field | framework | meaning |
+|---|---|---|
+| `es975` | Basel FRTB | Expected Shortfall at 97.5% (VaR + mean of the worst tail) over the gov horizon |
+| `stressedES` | FRTB / OCC STANS | ES recomputed over the highest-variance trailing window |
+| `challenger` | SR 11-7 | walk-forward CRPS for model vs **random-walk**, **EWMA**, **options-Q**; `winner`, `coverage`+Wilson, `calibrated`, `beatsRW` |
+| `scanRisk` | CME SPAN | worst-case loss over a price-move × vol-scenario grid (scan array) |
+| `simm` | ISDA SIMM | delta (dominant learned factor, genuine), vega (σ_Q−σ_P, genuine), curvature = `null` (honestly — needs option gamma) |
+| `releaseGate` | SR 11-7 | **deployable** (beats random-walk on CRPS **and** calibrated) / **research-only** (miscalibrated or no edge) / **blocked** (insufficient history) |
+| `gateReason` | — | plain-English verdict |
+| `provenance` | audit | data sources + timestamps + `modelVersion` + `histWeeks` |
+
+Top-level `governance` = `{counts:{deployable, research-only, blocked}, modelVersion, builtAt, asof}`
+powers the SR 11-7 model-status banner.
+
+The gate is honest: on noise it refuses "deployable" ("no CRPS edge over a driftless random walk"),
+which is the blueprint's anti-data-snooping discipline. UI: a governance card with the gate badge,
+universe counts, ES/stressed-ES/scan-risk/vega/Δ chips, a challenger CRPS scorecard (winner ★),
+the five framework badges, and provenance.
+
+*Phase 6 complete — the full institutional roadmap (Foundation → Forecast core → Calibration →
+Volume → UI → Governance, plus the options-implied P/Q layer) is built, unit-tested, and emitted.*

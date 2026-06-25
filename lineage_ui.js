@@ -20,6 +20,7 @@
   function nameOf(sym) { var m = window.MMAP && window.MMAP.names; if (!m) return null; for (var i = 0; i < m.length; i++) if (String(m[i].t || "").toUpperCase() === sym) return m[i]; return null; }
   function pct(x, d) { return (x >= 0 ? "+" : "") + (x * 100).toFixed(d == null ? 2 : d) + "%"; }
   function fmtVol(v) { return v == null ? "—" : v >= 1e9 ? (v / 1e9).toFixed(1) + "B" : v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(0) + "K" : (+v).toFixed(0); }
+  function gol(c){return c;}
   function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
 
   function binFor(retZ, sigvolH) {
@@ -185,6 +186,53 @@
       + '</div>';
   }
 
+  function governanceHTML(lin) {
+    var g = lin.gov;
+    var uni = (window.MMAP && window.MMAP.governance) || null;
+    if (!g) {
+      var ub = uni ? ' &nbsp;·&nbsp; universe: ' + (uni.counts.deployable||0) + ' deployable / ' + (uni.counts["research-only"]||0) + ' research-only / ' + (uni.counts.blocked||0) + ' blocked' : '';
+      return '<div style="margin-top:7px;padding:7px 9px;border:1px dashed ' + LINE + ';border-radius:6px;font-size:9px;color:' + FAINT + '">Governance (FRTB ES · SR 11-7 challenger gate · SPAN scan-risk) populates after the next build.' + ub + '</div>';
+    }
+    var gate = g.releaseGate || "blocked";
+    var gcol = gate === "deployable" ? UP : (gate === "research-only" ? ACC : DN);
+    function chip(k, v, c) { return '<div style="display:flex;flex-direction:column;gap:1px;min-width:74px"><span style="font-size:8.5px;letter-spacing:.04em;text-transform:uppercase;color:' + FAINT + '">' + k + '</span><span style="font-size:12px;font-weight:700;color:' + (c || INK) + '">' + v + '</span></div>'; }
+    function p2(x) { return x == null ? "—" : (x * 100).toFixed(1) + "%"; }
+    var ch = g.challenger, sr = g.scanRisk, sm = g.simm, pr = g.provenance, es = g.es975, ses = g.stressedES;
+    // challenger bars (lower CRPS = better)
+    var chHTML = "";
+    if (ch && ch.crps) {
+      var ks = Object.keys(ch.crps), mx = 0; ks.forEach(function (k) { mx = Math.max(mx, ch.crps[k]); });
+      chHTML = ks.map(function (k) {
+        var w = mx ? (ch.crps[k] / mx * 100) : 0, win = (k === ch.winner);
+        var lbl = { model: "model", rw: "random-walk", ewma: "EWMA", q: "options-Q" }[k] || k;
+        return '<div style="display:flex;align-items:center;gap:6px;font-size:9px;margin-top:2px"><span style="width:74px;color:' + (win ? INK : MUTED) + '">' + lbl + (win ? ' ★' : '') + '</span><span style="flex:1;background:' + PANEL + ';border:1px solid ' + LINE + ';border-radius:3px;height:9px;position:relative"><span style="position:absolute;left:0;top:0;bottom:0;width:' + w.toFixed(0) + '%;background:' + (win ? UP : "rgba(57,182,255,.4)") + ';border-radius:3px"></span></span><span style="width:54px;text-align:right;color:' + (win ? INK : FAINT) + '">' + ch.crps[k] + '</span></div>';
+      }).join("");
+    }
+    var badges = [
+      ["FRTB", es ? "ES97.5 " + p2(es.es) : "—"],
+      ["STANS", ses ? "stressed " + p2(ses.es) : "—"],
+      ["SPAN", sr ? "scan " + p2(sr.scanRisk) : "—"],
+      ["SIMM", sm && sm.delta ? "Δ " + esc(sm.delta.factor) : "—"],
+      ["SR 11-7", gate]
+    ].map(function (b) { return '<span style="font-size:8px;border:1px solid ' + LINE + ';border-radius:4px;padding:1px 5px;color:' + MUTED + '"><b style="color:' + INK + '">' + b[0] + '</b> ' + esc(b[1]) + '</span>'; }).join(" ");
+    var srcHTML = pr && pr.sources ? pr.sources.map(esc).join(" · ") : "—";
+    return '<div style="background:' + PANEL + ';border:1px solid ' + LINE + ';border-left:3px solid ' + gol(gcol) + ';border-radius:8px;padding:8px 10px;margin-top:7px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">'
+      + '<span style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:' + MUTED + '">Governance &amp; release gate</span>'
+      + '<span style="font-size:10px;font-weight:700;color:#0a0d12;background:' + gol(gol(gcol)) + ';padding:1px 8px;border-radius:5px">' + gate.toUpperCase() + '</span>'
+      + '</div>'
+      + (uni ? '<div style="font-size:8.5px;color:' + FAINT + ';margin-top:2px">universe: <b style="color:' + UP + '">' + (uni.counts.deployable || 0) + '</b> deployable · <b style="color:' + ACC + '">' + (uni.counts["research-only"] || 0) + '</b> research-only · <b style="color:' + DN + '">' + (uni.counts.blocked || 0) + '</b> blocked</div>' : '')
+      + '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-top:5px">'
+      + chip("ES 97.5", p2(es && es.es), DN) + chip("stressed ES", p2(ses && ses.es), DN)
+      + chip("scan risk", p2(sr && sr.scanRisk), DN) + chip("vega (σQ−σP)", sm && sm.vega != null ? p2(sm.vega) : "—", VIO)
+      + chip("Δ driver", sm && sm.delta ? esc(sm.delta.factor) : "—")
+      + '</div>'
+      + (chHTML ? '<div style="margin-top:6px"><div style="font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:' + MUTED + '">Challenger scorecard · CRPS (lower = better) · winner ★ ' + (ch.calibrated ? '<span style="color:' + UP + '">calibrated</span>' : '<span style="color:' + DN + '">miscalibrated</span>') + '</div>' + chHTML + '</div>' : '')
+      + '<div style="margin-top:5px;font-size:8.5px;color:' + MUTED + '">Verdict — <b style="color:' + gol(gcol) + '">' + gate + '</b>: ' + esc(g.gateReason || "") + '. Curvature ' + (sm && sm.curvature == null ? 'n/a (needs option gamma)' : (sm ? p2(sm.curvature) : '—')) + '.</div>'
+      + '<div style="margin-top:4px;font-size:8px;color:' + FAINT + '">Frameworks — ' + badges + '</div>'
+      + '<div style="margin-top:3px;font-size:8px;color:' + FAINT + '">Provenance — sources: ' + srcHTML + ' · model ' + (pr ? esc(pr.modelVersion) : "—") + ' · built ' + (pr && pr.builtAt ? esc(pr.builtAt.slice(0, 16).replace("T", " ")) + " UTC" : "—") + ' · ' + (pr ? pr.histWeeks : "—") + 'w history. Research only; not advice.</div>'
+      + '</div>';
+  }
   function paint(sym, lin, name) {
     var host = el("lineagePanel"); if (!host) return;
     var head = '<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:' + MUTED + ';margin:8px 0 4px">Lineage forecast · ' + esc(sym) + '</div>';
@@ -209,6 +257,7 @@
       + '<div style="margin-top:8px;font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:' + MUTED + '">Sigma-volume (expected volume ahead)</div>'
       + heatmapHTML(lin)
       + nodeCardHTML(fnode, lin, name)
+      + governanceHTML(lin)
       + '<div style="margin-top:4px;font-size:8px;color:' + FAINT + '">Ribbon = MAP-branch projected return band (q10–q90 outer, q25–q75 inner), opacity ∝ branch probability; dashed lines = alternate-regime branches; dots sized by expected volume, coloured by branch-vs-diffusion confidence, gold ring = earnings inside the horizon. Returns from the current level. Research only.</div>'
       + '</div>';
   }

@@ -738,3 +738,130 @@ def pq_layer(hz: Dict, iv_annual: Optional[float], iv_days: int = 30,
         }
     return {"ivAnnual": round(iv_annual, 4) if has_iv else None, "ivDays": iv_days,
             "omegaQ": w, "modellable": bool(has_iv), "horizons": out_h}
+
+
+# ============================================================================
+# Phase 6 — Governance: ES (FRTB), challenger scorecard + release gate (SR 11-7),
+#           scan-risk ladder (SPAN), SIMM-style decomposition, provenance.
+# ============================================================================
+def expected_shortfall(returns: Sequence[float], n_steps: int, alpha: float = 0.025) -> Optional[Dict]:
+    """Expected Shortfall (Basel FRTB measure) of n-step returns at the (1-alpha) level:
+    VaR = alpha-quantile of the loss distribution, ES = mean of the worst alpha tail."""
+    r = [v for v in returns if v == v]
+    n = max(1, int(n_steps))
+    ys = sorted(sum(r[i:i + n]) for i in range(0, len(r) - n + 1))
+    if len(ys) < 20:
+        return None
+    k = max(1, int(math.floor(alpha * len(ys))))
+    return {"var": round(ys[k - 1], 6), "es": round(sum(ys[:k]) / k, 6), "alpha": alpha, "n": len(ys)}
+
+
+def stressed_es(returns: Sequence[float], n_steps: int, alpha: float = 0.025, win: int = 52) -> Optional[Dict]:
+    """Stressed ES: ES computed over the highest-variance trailing window (FRTB stress period)."""
+    r = [v for v in returns if v == v]
+    if len(r) < win + 10:
+        return expected_shortfall(r, n_steps, alpha)
+    best, bestsd = None, -1.0
+    for i in range(0, len(r) - win + 1):
+        w = r[i:i + win]; sd = _var(w)
+        if sd > bestsd:
+            bestsd, best = sd, w
+    return expected_shortfall(best, n_steps, alpha)
+
+
+def challenger_scorecard(returns: Sequence[float], n_steps: int, iv_annual: Optional[float] = None,
+                         window: int = 26, alpha: float = 0.10, step_days: float = 5.0) -> Optional[Dict]:
+    """Walk-forward CRPS for the model vs naive challengers — random-walk (zero drift, full-sample
+    sigma), EWMA(0.94), and the options-implied Q-Gaussian — plus model coverage and a release-gate
+    verdict (SR 11-7 outcomes analysis / benchmarking)."""
+    r = [v for v in returns if v == v]
+    T = len(r); n = max(1, int(n_steps))
+    if T < window + n + 10:
+        return None
+    lam = 0.94
+    ew = [None] * T
+    if T > window:
+        v = _var(r[:window])
+        for t in range(window, T):
+            v = lam * v + (1 - lam) * r[t - 1] * r[t - 1]; ew[t] = v
+    z = 1.6448536269514722
+    sq_step = (iv_annual * math.sqrt(step_days / 252.0)) if iv_annual else None
+    crps = {"model": [], "rw": [], "ewma": []}
+    if sq_step:
+        crps["q"] = []
+    covs = []
+    for i in range(window, T - n + 1):
+        win = r[i - window:i]; mu = _mean(win); sdw = math.sqrt(max(_var(win), 1e-12))
+        y = sum(r[i:i + n]); rt = math.sqrt(n)
+        crps["model"].append(crps_gaussian(y, n * mu, sdw * rt))
+        full = r[:i]; sdf = math.sqrt(max(_var(full), 1e-12)) if len(full) > 2 else sdw
+        crps["rw"].append(crps_gaussian(y, 0.0, sdf * rt))
+        sde = math.sqrt(max(ew[i] if ew[i] is not None else _var(win), 1e-12))
+        crps["ewma"].append(crps_gaussian(y, n * mu, sde * rt))
+        if sq_step:
+            crps["q"].append(crps_gaussian(y, n * mu, sq_step * rt))
+        lo = n * mu - z * sdw * rt; hi = n * mu + z * sdw * rt
+        covs.append(1 if lo <= y <= hi else 0)
+    means = {kk: round(_mean(vv), 6) for kk, vv in crps.items()}
+    winner = min(means, key=means.get)
+    m = len(covs); kc = sum(covs); cov = kc / m
+    wlo, whi = wilson_interval(kc, m)
+    calibrated = bool(wlo <= (1 - alpha) <= whi)
+    beats_rw = means["model"] <= means["rw"]
+    if beats_rw and calibrated:
+        gate, reason = "deployable", "beats random-walk on CRPS and calibrated"
+    elif beats_rw:
+        gate, reason = "research-only", "beats random-walk but miscalibrated"
+    else:
+        gate, reason = "research-only", "no CRPS edge over a driftless random walk"
+    return {"crps": means, "winner": winner, "coverage": round(cov, 3),
+            "wilsonLo": round(wlo, 3), "wilsonHi": round(whi, 3), "calibrated": calibrated,
+            "beatsRW": beats_rw, "gate": gate, "reason": reason, "n": m}
+
+
+def scan_risk(sigma_h: Optional[float], price_grid=(-3, -2, -1, 0, 1, 2, 3),
+              vol_scn=(0.7, 1.0, 1.3)) -> Optional[Dict]:
+    """CME SPAN-style scan: P&L (return) over a price-move x vol-scenario grid; scan risk = the
+    worst-case loss across the array."""
+    if not sigma_h or sigma_h <= 0:
+        return None
+    cells, worst = [], 0.0
+    for vs in vol_scn:
+        row = []
+        for k in price_grid:
+            ret = k * sigma_h * vs
+            row.append(round(ret, 4)); worst = min(worst, ret)
+        cells.append(row)
+    return {"priceGrid": list(price_grid), "volScn": list(vol_scn), "cells": cells, "scanRisk": round(worst, 4)}
+
+
+def simm_decomp(deps_top: Optional[Sequence[Dict]], sigP: Optional[float], sigQ: Optional[float]) -> Dict:
+    """ISDA SIMM-style risk-class decomposition. Delta = the dominant learned factor sensitivity
+    (genuine, from deps); Vega = sigma_Q - sigma_P (implied-vs-realized vol gap, genuine); Curvature
+    is left None (honestly) — it needs option gamma we do not carry."""
+    delta = None
+    if deps_top:
+        d0 = deps_top[0]
+        delta = {"factor": d0.get("f"), "sensPctPerSigma": d0.get("sens")}
+    vega = round(sigQ - sigP, 6) if (sigQ is not None and sigP is not None) else None
+    return {"delta": delta, "vega": vega, "vegaNote": "sigma_Q - sigma_P (implied-realized vol gap)",
+            "curvature": None, "curvatureNote": "needs option gamma (not carried)"}
+
+
+_GOV_DAYS = {h[0]: h[1] for h in HORIZONS}
+
+
+def governance_block(returns: Sequence[float], lin: Dict, iv_annual: Optional[float] = None,
+                     gov_horizon: str = "20d", step_days: float = 5.0) -> Dict:
+    """Assemble the per-name governance object (FRTB ES + stressed ES, SR 11-7 challenger gate,
+    SPAN scan-risk). SIMM is added by the caller (needs deps + pq)."""
+    n = max(1, round(_GOV_DAYS.get(gov_horizon, 20) / step_days))
+    es = expected_shortfall(returns, n)
+    ses = stressed_es(returns, n)
+    ch = challenger_scorecard(returns, n, iv_annual, step_days=step_days)
+    hzv = (lin.get("horizons") or {}).get(gov_horizon, {})
+    sr = scan_risk(hzv.get("totVol"))
+    gate = ch["gate"] if ch else "blocked"
+    gate_reason = ch["reason"] if ch else "insufficient history for outcomes analysis"
+    return {"horizon": gov_horizon, "es975": es, "stressedES": ses, "challenger": ch,
+            "scanRisk": sr, "releaseGate": gate, "gateReason": gate_reason}

@@ -94,7 +94,7 @@ jobs:
         run: |
           python build_reports.py || echo "::warning::reports index rebuild skipped"
           mkdir -p _site/reports
-          for f in *.html robots.txt sitemap.xml marketmap.json xsection.json; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
+          for f in *.html *.js robots.txt sitemap.xml marketmap.json xsection.json; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
           cp -r reports/*.html _site/reports/ 2>/dev/null || true
           rm -f _site/reports/report-template.html
           cp -r hist _site/hist 2>/dev/null || true
@@ -115,4 +115,4 @@ jobs:
         with: { path: '_site' }
 
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-page

@@ -782,6 +782,8 @@ def build(names,mkt,ff,macro=None):
                     _hm=sum(wr)/len(wr) if wr else 0.0
                     _hv=(sum((x-_hm)**2 for x in wr)/max(1,len(wr)-1)) if len(wr)>2 else 1e-4
                     _STP={"intraday":0.25,"1d":1,"5d":5,"10d":10,"20d":20,"63d":63}
+                    _dsig=math.sqrt(_hv)/math.sqrt(5.0)
+                    _L["impact"]={"impactBps":round(1e4*_lineage.sqrt_impact(_dsig,0.1),2),"participation":0.1,"law":"sqrt(Q/ADV)"}
                     _bl={"hist":{"mean":round(_hm,6),"var":round(_hv,8)},"horizons":{},
                          "viewIds":["regime-conditional"],"entropyApplied":False}
                     for _lab,_H in (_L.get("horizons") or {}).items():
@@ -1373,48 +1375,8 @@ def main():
                 pass
     # ---- Phase 5.5 + 6: options-implied P/Q layer + governance (ES, challenger gate, scan-risk,
     #      SIMM, provenance). Runs after enrichment so gex.atmIV / val / deps are populated. ----
-    if _lineage is not None:
-        _gov_counts={"deployable":0,"research-only":0,"blocked":0}
-        _builtAt=dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-        try:
-            _asof=dt.date.fromisoformat(str(snap.get("asof")))
-        except Exception:
-            _asof=None
-        for _n in snap.get("names",[]):
-            _lin=_n.get("lineage"); _gx=_n.get("gex") or {}
-            if not isinstance(_lin,dict) or not _lin.get("horizons"): continue
-            _ivp=_gx.get("atmIV")
-            _iv=(_ivp/100.0) if isinstance(_ivp,(int,float)) and _ivp>0 else None
-            _eda=None
-            try:
-                _nx=((_n.get("earn") or {}).get("next") or {}).get("d")
-                if _nx and _asof: _eda=(dt.date.fromisoformat(str(_nx))-_asof).days
-            except Exception:
-                _eda=None
-            try:
-                _lin["pq"]=_lineage.pq_layer(_lin["horizons"], _iv, int(_gx.get("days") or 30), _eda)
-            except Exception:
-                pass
-            try:
-                _wr=_n.get("wr") or []
-                _gov=_lineage.governance_block(_wr, _lin, _iv)
-                _hh=_gov.get("horizon") or "20d"
-                _pqh=((_lin.get("pq") or {}).get("horizons") or {}).get(_hh, {})
-                _deps=(_n.get("macro3") or {}).get("top") or (_n.get("deps") or [])
-                _gov["simm"]=_lineage.simm_decomp(_deps, _pqh.get("sigP"), _pqh.get("sigQ"))
-                _srcs=["yfinance"]
-                if _n.get("deps"): _srcs.append("FRED (macro)")
-                if _gx: _srcs.append("EODHD (options)")
-                if _n.get("val"): _srcs.append("FMP (valuation)")
-                if _n.get("inst") or _n.get("insider"): _srcs.append("SEC EDGAR")
-                _gov["provenance"]={"asof":snap.get("asof"),"modelVersion":"lineage-1.0","builtAt":_builtAt,
-                    "sources":_srcs,"ivSource":("EODHD" if _gx else None),"histWeeks":len(_wr)}
-                _lin["gov"]=_gov
-                _g=_gov.get("releaseGate","blocked"); _g="blocked" if str(_g).startswith("blocked") else _g
-                if _g in _gov_counts: _gov_counts[_g]+=1
-            except Exception:
-                pass
-        snap["governance"]={"counts":_gov_counts,"modelVersion":"lineage-1.0","builtAt":_builtAt,"asof":snap.get("asof")}
+    # ---- Phase 5.5 + 6: options-implied P/Q layer + governance (ES, challenger gate, scan-risk,
+    #      SIMM, provenance). Runs after enrichment so gex.atmIV / val / deps are populated. ----
     # ---- Phase 5.5 + 6: options-implied P/Q layer + governance (ES, challenger gate, scan-risk,
     #      SIMM, provenance). Runs after enrichment so gex.atmIV / val / deps are populated. ----
     if _lineage is not None:
@@ -1446,6 +1408,10 @@ def main():
                 _pqh=((_lin.get("pq") or {}).get("horizons") or {}).get(_hh, {})
                 _deps=(_n.get("macro3") or {}).get("top") or (_n.get("deps") or [])
                 _gov["simm"]=_lineage.simm_decomp(_deps, _pqh.get("sigP"), _pqh.get("sigQ"))
+                _exp=((_lin.get("factor") or {}).get("exposures") or {})
+                _dws=[round(v,4) for v in _exp.values()][:8]
+                if _dws: _gov["frtbSBA"]=_lineage.frtb_sba(_dws,[_gov["simm"].get("vega") or 0.0],_pqh.get("eventShare") or 0.0)
+                _gov["stans"]=_lineage.stans_es(_wr)
                 _srcs=["yfinance"]
                 if _n.get("deps"): _srcs.append("FRED (macro)")
                 if _gx: _srcs.append("EODHD (options)")
@@ -1456,50 +1422,19 @@ def main():
                 _lin["gov"]=_gov
                 _g=_gov.get("releaseGate","blocked"); _g="blocked" if str(_g).startswith("blocked") else _g
                 if _g in _gov_counts: _gov_counts[_g]+=1
-            except Exception:
-                pass
-        snap["governance"]={"counts":_gov_counts,"modelVersion":"lineage-1.0","builtAt":_builtAt,"asof":snap.get("asof")}
-    # ---- Phase 5.5 + 6: options-implied P/Q layer + governance (ES, challenger gate, scan-risk,
-    #      SIMM, provenance). Runs after enrichment so gex.atmIV / val / deps are populated. ----
-    if _lineage is not None:
-        _gov_counts={"deployable":0,"research-only":0,"blocked":0}
-        _builtAt=dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-        try:
-            _asof=dt.date.fromisoformat(str(snap.get("asof")))
-        except Exception:
-            _asof=None
-        for _n in snap.get("names",[]):
-            _lin=_n.get("lineage"); _gx=_n.get("gex") or {}
-            if not isinstance(_lin,dict) or not _lin.get("horizons"): continue
-            _ivp=_gx.get("atmIV")
-            _iv=(_ivp/100.0) if isinstance(_ivp,(int,float)) and _ivp>0 else None
-            _eda=None
-            try:
-                _nx=((_n.get("earn") or {}).get("next") or {}).get("d")
-                if _nx and _asof: _eda=(dt.date.fromisoformat(str(_nx))-_asof).days
-            except Exception:
-                _eda=None
-            try:
-                _lin["pq"]=_lineage.pq_layer(_lin["horizons"], _iv, int(_gx.get("days") or 30), _eda)
-            except Exception:
-                pass
-            try:
-                _wr=_n.get("wr") or []
-                _gov=_lineage.governance_block(_wr, _lin, _iv)
-                _hh=_gov.get("horizon") or "20d"
-                _pqh=((_lin.get("pq") or {}).get("horizons") or {}).get(_hh, {})
-                _deps=(_n.get("macro3") or {}).get("top") or (_n.get("deps") or [])
-                _gov["simm"]=_lineage.simm_decomp(_deps, _pqh.get("sigP"), _pqh.get("sigQ"))
-                _srcs=["yfinance"]
-                if _n.get("deps"): _srcs.append("FRED (macro)")
-                if _gx: _srcs.append("EODHD (options)")
-                if _n.get("val"): _srcs.append("FMP (valuation)")
-                if _n.get("inst") or _n.get("insider"): _srcs.append("SEC EDGAR")
-                _gov["provenance"]={"asof":snap.get("asof"),"modelVersion":"lineage-1.0","builtAt":_builtAt,
-                    "sources":_srcs,"ivSource":("EODHD" if _gx else None),"histWeeks":len(_wr)}
-                _lin["gov"]=_gov
-                _g=_gov.get("releaseGate","blocked"); _g="blocked" if str(_g).startswith("blocked") else _g
-                if _g in _gov_counts: _gov_counts[_g]+=1
+                _sigby={}
+                for _lab,_h in (_lin.get("horizons") or {}).items():
+                    _ph=((_lin.get("pq") or {}).get("horizons") or {}).get(_lab) or {}
+                    _sigby[_lab]=_ph.get("sigHouse") or _h.get("totVol")
+                _cube=_lineage.scenario_cube(_sigby)
+                if _cube: _lin["cube"]=_cube
+                _bl=_lin.get("bl") or {}; _post=_lin.get("post") or []; _means=_lin.get("means") or []
+                _blh=((_bl.get("horizons") or {}).get(_hh) or {})
+                if _post and _means and len(_post)==len(_means) and _blh.get("postMu") is not None:
+                    _stp={"intraday":0.25,"1d":1,"5d":5,"10d":10,"20d":20,"63d":63}.get(_hh,20)/5.0
+                    _q=_lineage.entropy_pool_regimes(_post,[m*_stp for m in _means],_blh["postMu"])
+                    if _q:
+                        _bl["entropyApplied"]=True; _bl["entropyPost"]=_q
             except Exception:
                 pass
         snap["governance"]={"counts":_gov_counts,"modelVersion":"lineage-1.0","builtAt":_builtAt,"asof":snap.get("asof")}

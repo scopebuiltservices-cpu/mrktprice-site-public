@@ -257,6 +257,15 @@
             + (td ? ' · λ_lower <b style="color:'+DN+'">'+td.lambdaLower+'</b> / λ_upper '+td.lambdaUpper+' (indep ~'+td.gaussianRef+')' : '')
             + ' · copula <b>'+((ev&&ev.copula)||'t')+'</b> (Gaussian under-states tails)</div>'; })()
       + '<div style="margin-top:4px;font-size:8px;color:' + FAINT + '">Frameworks — ' + badges + '</div>'
+      + (function(){ var st=g.stans, cu=lin.cube, fr=g.frtbSBA, im=lin.impact;
+          if(!st&&!cu&&!fr&&!im) return "";
+          var w=cu&&cu.scanRisk?(cu.scanRisk["20d"]):null;
+          return '<div style="margin-top:3px;font-size:8px;color:'+FAINT+'">Risk engines — '
+            + (st?'STANS ES99·2d '+(st.es99_2d*100).toFixed(1)+'% (stressed '+(st.stressedES*100).toFixed(1)+'%) · ':'')
+            + (w!=null?'scenario-cube worst '+(w*100).toFixed(1)+'% · ':'')
+            + (fr?'FRTB-SBA(med) '+fr.med.toFixed(2)+' · ':'')
+            + (im?'impact '+im.impactBps+'bps ('+im.law+')':'')
+            + '</div>'; })()
       + '<div style="margin-top:3px;font-size:8px;color:' + FAINT + '">Provenance — sources: ' + srcHTML + ' · model ' + (pr ? esc(pr.modelVersion) : "—") + ' · built ' + (pr && pr.builtAt ? esc(pr.builtAt.slice(0, 16).replace("T", " ")) + " UTC" : "—") + ' · ' + (pr ? pr.histWeeks : "—") + 'w history. Research only; not advice.</div>'
       + '</div>';
   }
@@ -291,6 +300,33 @@
       + '<div style="font-size:8px;color:' + FAINT + ';margin-bottom:3px">x = Black-Litterman edge · y = ES 97.5 (up = safer) · green/red = bull/bear regime · red ring = non-modellable · ' + pts.length + ' names. Look top-right: edge that is not a tail bomb.</div>'
       + g + '</div>';
   }
+  function scatterFactorImpact(sym) {
+    var m = window.MMAP && window.MMAP.names; if (!m) return "";
+    var pts = [];
+    for (var i = 0; i < m.length; i++) {
+      var L = m[i].lineage; if (!L || !L.factor || !L.impact) continue;
+      pts.push({ t: m[i].t, fx: L.factor.explainedPct, imp: L.impact.impactBps, reg: L.regimeNow });
+    }
+    if (pts.length < 3) return "";
+    var W = 680, Ht = 168, padL = 44, padR = 12, padT = 10, padB = 26;
+    var xs = pts.map(function (p) { return p.fx; }), ys = pts.map(function (p) { return p.imp; });
+    var xlo = 0, xhi = Math.max.apply(null, xs) * 1.05 || 100, ylo = 0, yhi = Math.max.apply(null, ys) * 1.1 || 1;
+    var X = function (v) { return padL + (v - xlo) / (xhi - xlo) * (W - padL - padR); };
+    var Y = function (v) { return padT + (1 - (v - ylo) / (yhi - ylo)) * (Ht - padT - padB); };
+    var g = '<svg viewBox="0 0 ' + W + ' ' + Ht + '" width="100%" style="display:block">';
+    g += '<text x="' + (W - padR) + '" y="' + (Ht - 14) + '" fill="' + FAINT + '" font-size="8" text-anchor="end">factor-explained % →</text>';
+    g += '<text x="2" y="' + (padT + 8) + '" fill="' + FAINT + '" font-size="8">impact (bps, sqrt-law)</text>';
+    pts.forEach(function (p) {
+      var hot = p.t === sym;
+      g += '<circle cx="' + X(p.fx).toFixed(1) + '" cy="' + Y(p.imp).toFixed(1) + '" r="' + (hot ? 4.5 : 2.6) + '" fill="' + (hot ? BLUE : (p.reg > 0 ? UP : DN)) + '" opacity="' + (hot ? 1 : 0.5) + '"><title>' + p.t + ' explained ' + p.fx + '% · impact ' + p.imp + 'bps</title></circle>';
+      if (hot) g += '<text x="' + (X(p.fx) + 6).toFixed(1) + '" y="' + (Y(p.imp) + 3).toFixed(1) + '" fill="' + BLUE + '" font-size="9" font-weight="700">' + esc(p.t) + '</text>';
+    });
+    g += '</svg>';
+    return '<div style="background:' + PANEL + ';border:1px solid ' + LINE + ';border-radius:8px;padding:8px 10px;margin-top:7px">'
+      + '<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:' + MUTED + ';margin-bottom:2px">Universe — factor contribution vs price impact</div>'
+      + '<div style="font-size:8px;color:' + FAINT + ';margin-bottom:3px">x = factor-explained variance · y = square-root market impact (bps) · ' + pts.length + ' names. Right+low = factor-driven and cheap to trade.</div>'
+      + g + '</div>';
+  }
   function paint(sym, lin, name) {
     var host = el("lineagePanel"); if (!host) return;
     var head = '<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:' + MUTED + ';margin:8px 0 4px">Lineage forecast · ' + esc(sym) + '</div>';
@@ -317,6 +353,7 @@
       + nodeCardHTML(fnode, lin, name)
       + governanceHTML(lin)
       + scatterEdgeTail(sym)
+      + scatterFactorImpact(sym)
       + '<div style="margin-top:4px;font-size:8px;color:' + FAINT + '">Ribbon = MAP-branch projected return band (q10–q90 outer, q25–q75 inner), opacity ∝ branch probability; dashed lines = alternate-regime branches; dots sized by expected volume, coloured by branch-vs-diffusion confidence, gold ring = earnings inside the horizon. Returns from the current level. Research only.</div>'
       + '</div>';
   }

@@ -516,6 +516,84 @@ def test_alert_score_properties():
     assert L.alert_score(0.7, 0.01, 0.05, 5e6, 4e6, True, 0.0) == 0.0   # blocked governance -> 0
 
 
+def test_bs_and_heston_and_merton():
+    import math
+    bs = L.bs_call(100, 100, 1.0, 0.0, 0.2)
+    assert abs(bs - 7.9656) < 0.02, bs                       # known ATM BS value
+    # Heston with tiny xi, rho=0, v0=theta=0.04 -> ~ BS(0.2)
+    hes = L.heston_call(100, 100, 1.0, 0.0, 0.04, 2.0, 0.04, 0.01, 0.0)
+    assert abs(hes - bs) < 0.25, (hes, bs)
+    # Merton with lam=0 -> BS
+    mer = L.merton_call(100, 100, 1.0, 0.0, 0.2, 0.0, 0.0, 0.0)
+    assert abs(mer - bs) < 0.02, (mer, bs)
+    # jumps add value (event risk)
+    mer_j = L.merton_call(100, 100, 1.0, 0.0, 0.2, 1.0, -0.1, 0.15)
+    assert mer_j > bs
+
+
+def test_kalman_tracks_latent_level():
+    import random
+    random.seed(71)
+    true = []; x = 0.0
+    for _ in range(300):
+        x += random.gauss(0, 0.01); true.append(x)
+    obs = [true[i] + random.gauss(0, 0.05) for i in range(len(true))]
+    filt = L.kalman_local_level(obs, q=1e-4, r=2.5e-3)
+    err_filt = sum((filt[i] - true[i]) ** 2 for i in range(50, len(true)))
+    err_raw = sum((obs[i] - true[i]) ** 2 for i in range(50, len(true)))
+    assert err_filt < err_raw                                # filter beats raw observation
+
+
+def test_hawkes_mv_and_sqrt_impact():
+    mu = [0.5, 0.5]; alpha = [[0.0, 0.0], [0.8, 0.0]]; beta = 1.0   # ch0 excites ch1
+    base = L.hawkes_mv_intensity(mu, alpha, beta, [], now=10.0)
+    exc = L.hawkes_mv_intensity(mu, alpha, beta, [(0, 9.5)], now=10.0)
+    assert exc[1] > base[1] and approx(exc[0], base[0])           # ch1 excited by a ch0 event
+    assert L.sqrt_impact(0.02, 0.25) > L.sqrt_impact(0.02, 0.04)  # impact rises with participation
+
+
+def test_resampling_reality_check_spa_rw():
+    import random
+    random.seed(72)
+    n = 200
+    good = [0.004 + random.gauss(0, 0.01) for _ in range(n)]   # genuinely positive differential
+    noise = [random.gauss(0, 0.01) for _ in range(n)]
+    idx = L.stationary_bootstrap_indices(n, 0.1, seed=5)
+    assert len(idx) == n and max(idx) < n and min(idx) >= 0
+    # a real edge -> low RC/SPA p; pure noise -> high p
+    assert L.reality_check([good], B=200) < 0.1
+    assert L.reality_check([noise], B=200) > 0.1
+    assert L.spa_test([good], B=200) < 0.2
+    rw = L.romano_wolf([good, noise], B=200)
+    bym = {r["model"]: r for r in rw}
+    assert bym[0]["rejected"] is True and bym[1]["rejected"] is False
+
+
+def test_simm_frtb_pla_stans_cube():
+    import random
+    # SIMM bucket: K rises with correlation
+    assert L.simm_bucket([1.0, 1.0, 1.0], 0.8) > L.simm_bucket([1.0, 1.0, 1.0], 0.1)
+    sba = L.frtb_sba([1.0, 0.5], [0.3], 0.1)
+    assert sba["high"] >= sba["low"]
+    # PLA: identical P&L -> green; reversed -> red
+    random.seed(73); a = [random.gauss(0, 0.02) for _ in range(100)]
+    assert L.pla_test(a, a)["zone"] == "green"
+    assert L.pla_test([-x for x in a], a)["zone"] == "red"
+    # STANS ES: negative loss, stressed more severe
+    r = [random.gauss(0, 0.02) for _ in range(400)]
+    st = L.stans_es(r); assert st["es99_2d"] < 0 and st["stressedES"] <= st["es99_2d"]
+    # scenario cube worst-case
+    cube = L.scenario_cube({"20d": 0.06})
+    assert approx(cube["scanRisk"]["20d"], round(-3 * 0.06 * 1.3, 5))
+    assert len(cube["riskArray"]) == 21
+
+
+def test_entropy_pool_regimes_reweights():
+    q = L.entropy_pool_regimes([0.5, 0.5], [-0.02, 0.02], target_mu=0.01)
+    assert q is not None and approx(sum(q), 1.0, 1e-3)
+    assert q[1] > q[0]    # upweight the higher-drift regime to hit a positive target
+
+
 if __name__ == "__main__":
     _fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for _f in _fns:

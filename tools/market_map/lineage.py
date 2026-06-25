@@ -22,7 +22,7 @@ Objects:
   - node_payload()             assembles the exact lineage-node field set
 """
 from __future__ import annotations
-import math
+import math, random
 from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -1152,3 +1152,265 @@ def alert_score(p_max, edge, es99, vfwd, adv, M, G, c=0.01):
     liq = max(0.1, min(3.0, liq))
     A = max(0.0, p_max) * (abs(edge) / (es + c)) * liq * (1.0 if M else 0.0) * max(0.0, min(1.0, G))
     return round(A, 4)
+
+
+# ============================================================================
+# Second/Third Build remainder — pricers, Kalman, MV-Hawkes + impact, resampling
+#   tests (stationary bootstrap / Reality Check / SPA / Romano-Wolf), SIMM bucket,
+#   FRTB SBA + PLA, STANS ES, scenario cube, entropy-pool regime reweighting.
+# ============================================================================
+def bs_call(S, K, T, r, sigma):
+    """Black-Scholes European call."""
+    if T <= 0 or sigma <= 0:
+        return max(0.0, S - K)
+    d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    return S * norm_cdf(d1) - K * math.exp(-r * T) * norm_cdf(d2)
+
+
+def _heston_cf(u, S, T, r, v0, kappa, theta, xi, rho, j):
+    """Heston characteristic function (little-trap form), j in {1,2}."""
+    i = complex(0, 1)
+    b = kappa - rho * xi if j == 1 else kappa
+    u_ = u - i if j == 1 else u
+    a = kappa * theta
+    d = ((rho * xi * i * u - b) ** 2 - xi * xi * (2 * (0.5 * i * u * (1 if j == 1 else -1) - 0.5 * u * u))) ** 0.5
+    # use standard: d = sqrt((rho xi i u - b)^2 + xi^2 (i u + u^2)) with j-sign on drift term
+    uj = 0.5 if j == 1 else -0.5
+    d = ((b - rho * xi * i * u) ** 2 - xi * xi * (2 * uj * i * u - u * u)) ** 0.5
+    g = (b - rho * xi * i * u - d) / (b - rho * xi * i * u + d)
+    eDT = (math.e ** (0))  # placeholder
+    exp_dT = (2.718281828459045 ** (0))
+    C = r * i * u * T + (a / (xi * xi)) * ((b - rho * xi * i * u - d) * T - 2 * (((1 - g * (2.718281828459045 ** (-d * T))) / (1 - g)).__abs__() and 0) )
+    # robust closed form
+    import cmath
+    d = cmath.sqrt((b - rho * xi * i * u) ** 2 - xi * xi * (2 * uj * i * u - u * u))
+    g = (b - rho * xi * i * u - d) / (b - rho * xi * i * u + d)
+    edt = cmath.exp(-d * T)
+    C = r * i * u * T + (a / (xi * xi)) * ((b - rho * xi * i * u - d) * T - 2 * cmath.log((1 - g * edt) / (1 - g)))
+    D = ((b - rho * xi * i * u - d) / (xi * xi)) * ((1 - edt) / (1 - g * edt))
+    return cmath.exp(C + D * v0 + i * u * math.log(S))
+
+
+def heston_call(S, K, T, r, v0, kappa, theta, xi, rho, umax=100.0, n=200):
+    """Heston European call via Gil-Pelaez / trapezoidal integration of the two probabilities."""
+    import cmath
+    i = complex(0, 1)
+    def Pj(j):
+        s = 0.0; du = umax / n
+        for m in range(1, n + 1):
+            u = (m - 0.5) * du
+            cf = _heston_cf(u, S, T, r, v0, kappa, theta, xi, rho, j)
+            s += (cmath.exp(-i * u * math.log(K)) * cf / (i * u)).real * du
+        return 0.5 + s / math.pi
+    P1 = Pj(1); P2 = Pj(2)
+    return max(0.0, S * P1 - K * math.exp(-r * T) * P2)
+
+
+def merton_call(S, K, T, r, sigma, lam, muJ, sigJ, nmax=40):
+    """Merton jump-diffusion European call: Poisson-weighted sum of BS prices."""
+    kappa = math.exp(muJ + 0.5 * sigJ * sigJ) - 1
+    lam_ = lam * (1 + kappa)
+    price = 0.0
+    for nn in range(nmax):
+        pois = math.exp(-lam_ * T) * (lam_ * T) ** nn / math.factorial(nn)
+        sig_n = math.sqrt(sigma * sigma + nn * sigJ * sigJ / T)
+        r_n = r - lam * kappa + nn * (muJ + 0.5 * sigJ * sigJ) / T
+        price += pois * bs_call(S, K, T, r_n, sig_n)
+        if pois < 1e-12 and nn > lam_ * T + 5:
+            break
+    return price
+
+
+def kalman_local_level(y, q=1e-4, r=1e-3):
+    """Local-level Kalman filter (latent fair value / drift): x_t = x_{t-1}+w(q), y_t = x_t+v(r).
+    Returns the filtered latent state series."""
+    if not y:
+        return []
+    x = y[0]; P = 1.0; out = []
+    for obs in y:
+        P = P + q                      # predict
+        K = P / (P + r)                # gain
+        x = x + K * (obs - x)          # update
+        P = (1 - K) * P
+        out.append(x)
+    return out
+
+
+def hawkes_mv_intensity(mu, alpha, beta, events, now):
+    """Multivariate Hawkes intensity vector at `now`. mu: [K], alpha: [K][K] (excitation of i by j),
+    beta: decay, events: [(channel, t)]. lambda_i = mu_i + sum_k alpha[i][ch_k] exp(-beta (now-t_k))."""
+    K = len(mu)
+    lam = list(mu)
+    for (ch, t) in events:
+        if t <= now:
+            decay = math.exp(-beta * (now - t))
+            for i in range(K):
+                lam[i] += alpha[i][ch] * decay
+    return lam
+
+
+def sqrt_impact(sigma_daily, participation, y=1.0):
+    """Square-root market-impact law for metaorders: impact = y * sigma_daily * sqrt(Q/ADV)."""
+    return y * sigma_daily * math.sqrt(max(participation, 0.0))
+
+
+def stationary_bootstrap_indices(n, p=0.1, seed=0):
+    """Politis-Romano stationary bootstrap: geometric-length blocks (mean 1/p)."""
+    rng = random.Random(seed)
+    idx = []
+    i = rng.randrange(n)
+    for _ in range(n):
+        idx.append(i)
+        if rng.random() < p:
+            i = rng.randrange(n)
+        else:
+            i = (i + 1) % n
+    return idx
+
+
+def reality_check(f, B=500, p=0.1, seed=1):
+    """White's Reality Check. f: list of per-model performance differentials (model better = positive),
+    each a series of length n. Returns RC p-value for H0: no model beats the benchmark."""
+    M = len(f); n = len(f[0]) if M else 0
+    if M == 0 or n < 20:
+        return None
+    means = [_mean(fk) for fk in f]
+    V = max(math.sqrt(n) * mk for mk in means)
+    rng = random.Random(seed); cnt = 0
+    for b in range(B):
+        ix = stationary_bootstrap_indices(n, p, seed=seed + b)
+        vb = max(math.sqrt(n) * (_mean([f[k][j] for j in ix]) - means[k]) for k in range(M))
+        if vb >= V:
+            cnt += 1
+    return round(cnt / B, 4)
+
+
+def spa_test(f, B=500, p=0.1, seed=2):
+    """Hansen's SPA (studentized). Returns SPA p-value (consistent recentering)."""
+    M = len(f); n = len(f[0]) if M else 0
+    if M == 0 or n < 20:
+        return None
+    means = [_mean(fk) for fk in f]
+    sds = [math.sqrt(max(_var(fk), 1e-12)) for fk in f]
+    T = max(0.0, max(math.sqrt(n) * means[k] / sds[k] for k in range(M)))
+    thr = [-sds[k] * math.sqrt(2 * math.log(math.log(n))) / math.sqrt(n) for k in range(M)]
+    rng = random.Random(seed); cnt = 0
+    for b in range(B):
+        ix = stationary_bootstrap_indices(n, p, seed=seed + b)
+        tb = 0.0
+        for k in range(M):
+            mk = _mean([f[k][j] for j in ix])
+            center = means[k] if means[k] >= thr[k] else 0.0
+            tb = max(tb, math.sqrt(n) * (mk - center) / sds[k])
+        if tb >= T:
+            cnt += 1
+    return round(cnt / B, 4)
+
+
+def romano_wolf(f, B=500, p=0.1, alpha=0.05, seed=3):
+    """Romano-Wolf stepdown FWER control. Returns per-model {tstat, rejected}."""
+    M = len(f); n = len(f[0]) if M else 0
+    if M == 0 or n < 20:
+        return None
+    means = [_mean(fk) for fk in f]; sds = [math.sqrt(max(_var(fk), 1e-12)) for fk in f]
+    t = [math.sqrt(n) * means[k] / sds[k] for k in range(M)]
+    order = sorted(range(M), key=lambda k: -t[k])
+    rejected = set(); active = list(order)
+    while active:
+        boot_max = []
+        for b in range(B):
+            ix = stationary_bootstrap_indices(n, p, seed=seed + b)
+            mx = max(math.sqrt(n) * (_mean([f[k][j] for j in ix]) - means[k]) / sds[k] for k in active)
+            boot_max.append(mx)
+        boot_max.sort()
+        crit = boot_max[min(len(boot_max) - 1, int(math.ceil((1 - alpha) * len(boot_max))) - 1)]
+        newly = [k for k in active if t[k] > crit]
+        if not newly:
+            break
+        for k in newly:
+            rejected.add(k)
+        active = [k for k in active if k not in rejected]
+    return [{"model": k, "tstat": round(t[k], 3), "rejected": k in rejected} for k in range(M)]
+
+
+def simm_bucket(ws, corr):
+    """SIMM/FRTB sensitivity bucket aggregation K_b = sqrt(sum_i sum_j corr_ij WS_i WS_j).
+    ws: weighted sensitivities list; corr: scalar off-diagonal correlation."""
+    n = len(ws)
+    if n == 0:
+        return 0.0
+    s = sum(ws[i] * ws[j] * (1.0 if i == j else corr) for i in range(n) for j in range(n))
+    return round(math.sqrt(max(0.0, s)), 6)
+
+
+def frtb_sba(delta_ws, vega_ws, curv, corr_scenarios=(0.35, 0.6, 0.85)):
+    """FRTB standardized sensitivities-based capital under low/med/high correlation scenarios:
+    K = sqrt(Kdelta^2 + Kvega^2 + curvature^2)."""
+    out = {}
+    for nm, rho in zip(("low", "med", "high"), corr_scenarios):
+        kd = simm_bucket(delta_ws, rho); kv = simm_bucket(vega_ws, rho)
+        out[nm] = round(math.sqrt(kd * kd + kv * kv + (curv or 0.0) ** 2), 6)
+    return out
+
+
+def pla_test(pnl_risk, pnl_full):
+    """FRTB P&L Attribution: agreement between risk-model P&L and full-reval P&L. Spearman corr +
+    a normalized mean-abs gap -> traffic light (green/amber/red)."""
+    n = min(len(pnl_risk), len(pnl_full))
+    if n < 20:
+        return None
+    def _rank(a):
+        order = sorted(range(len(a)), key=lambda i: a[i]); rk = [0] * len(a)
+        for r, i in enumerate(order):
+            rk[i] = r
+        return rk
+    ra, rb = _rank(pnl_risk[:n]), _rank(pnl_full[:n])
+    sp = _corr([float(x) for x in ra], [float(x) for x in rb])
+    sd = math.sqrt(max(_var(pnl_full[:n]), 1e-12))
+    gap = sum(abs(pnl_risk[i] - pnl_full[i]) for i in range(n)) / n / sd
+    zone = "green" if (sp >= 0.8 and gap <= 0.5) else ("amber" if (sp >= 0.7 and gap <= 0.9) else "red")
+    return {"spearman": round(sp, 3), "gap": round(gap, 3), "zone": zone}
+
+
+def stans_es(returns, alpha=0.01, stress_mult=1.5, two_day=True):
+    """OCC STANS-style base ES: 99% ES (2-day horizon) with EVT conservatism + a stress add-on."""
+    n2 = 2 if two_day else 1
+    base = expected_shortfall(returns, n2, alpha)
+    if not base:
+        return None
+    ev = evt_gpd_tail(returns, q=0.05)
+    es = base["es"]
+    if ev and ev.get("gpdES") is not None:
+        es = min(es, ev["gpdES"])         # EVT conservatism (more severe)
+    return {"es99_2d": round(es, 6), "stressedES": round(es * stress_mult, 6),
+            "evtFloor": (ev.get("gpdES") if ev else None), "alpha": alpha}
+
+
+def scenario_cube(sigma_by_horizon, spot_grid=(-3, -2, -1, 0, 1, 2, 3), vol_scns=(0.7, 1.0, 1.3)):
+    """SPAN-style scenario cube: returns[horizon][volScenario][spotShock] = k*sigma_h*volScn.
+    Plus a flat downloadable risk-array parameter object and per-horizon worst-case scan risk."""
+    cube = {}; params = []; worst = {}
+    for h, sig in (sigma_by_horizon or {}).items():
+        if not sig:
+            continue
+        rows = []
+        w = 0.0
+        for vs in vol_scns:
+            row = []
+            for k in spot_grid:
+                ret = round(k * sig * vs, 5); row.append(ret); w = min(w, ret)
+                params.append({"horizon": h, "volScn": vs, "spotSigma": k, "pnl": ret})
+            rows.append(row)
+        cube[h] = rows; worst[h] = round(w, 5)
+    return {"spotGrid": list(spot_grid), "volScn": list(vol_scns), "cube": cube,
+            "scanRisk": worst, "riskArray": params}
+
+
+def entropy_pool_regimes(post, branch_drifts, target_mu):
+    """Apply Meucci entropy pooling: reweight the regime posterior so the mixture mean equals the
+    BL posterior target, with minimal relative entropy. Returns the reweighted regime weights."""
+    if not post or len(post) != len(branch_drifts):
+        return None
+    ep = entropy_pool(post, branch_drifts, target_mu)
+    return ep["q"] if ep else None

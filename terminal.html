@@ -2813,4 +2813,87 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
 })();
 </script>
 
+<script>
+/* === MrktPrice Earnings & Valuation timeline (FMP Ultimate): price sparkline + Q1-Q4 report lines
+   (EPS actual/est, surprise, P/E at report date) + DCF & analyst-target levels; 1Y / 6M toggle. === */
+(function(){
+  var UP='#15c26b', DN='#f0556b', INK='#e8eef7', MUT='#8aa0b8', LINE='#1d2a3a', MINT='#27e0b0', ACC='#39b6ff';
+  var TF=252, lastT='';
+  function sym(){var s=document.getElementById('sym');return s?(s.value||'').trim().toUpperCase():'';}
+  function rec(t){var m=window.MMAP&&window.MMAP.names;if(!m||!t)return null;for(var i=0;i<m.length;i++){if((m[i].t||'').toUpperCase()===t)return m[i];}return null;}
+  function ttmEps(q,k){var s=0,c=0;for(var j=k;j>=0&&c<4;j--){if(q[j]&&q[j].a!=null){s+=q[j].a;c++;}}return c>=4?s:null;}
+  function draw(rows,n){
+    var cv=document.getElementById('etlCv'); if(!cv) return;
+    var box=document.getElementById('earntl'); var W=Math.max(360,(box.clientWidth||720)); var H=140;
+    var dpr=window.devicePixelRatio||1; cv.width=W*dpr; cv.height=H*dpr; cv.style.width='100%'; cv.style.height=H+'px';
+    var g=cv.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,W,H);
+    if(!rows||rows.length<10){g.fillStyle=MUT;g.font='12px sans-serif';g.fillText('No price history for '+sym(),10,24);return;}
+    var win=rows.slice(-TF); var dates=win.map(function(r){return r[0];}), cls=win.map(function(r){return r[1];});
+    var padL=8,padR=58,padT=16,padB=20;
+    var lo=Math.min.apply(null,cls),hi=Math.max.apply(null,cls);
+    // include DCF + target in the visible range so the levels show
+    [n.dcf, n.ptgt&&n.ptgt.tgt, n.ptgt&&n.ptgt.high, n.ptgt&&n.ptgt.low].forEach(function(v){if(v!=null){lo=Math.min(lo,v);hi=Math.max(hi,v);}});
+    var pd=(hi-lo)*0.06||1; lo-=pd; hi+=pd;
+    var X=function(i){return padL+i/(win.length-1)*(W-padL-padR);};
+    var Y=function(v){return padT+(1-(v-lo)/(hi-lo))*(H-padT-padB);};
+    function lvl(v,col,lab){if(v==null)return;var y=Y(v);g.strokeStyle=col;g.setLineDash([5,4]);g.globalAlpha=.85;g.beginPath();g.moveTo(padL,y);g.lineTo(W-padR,y);g.stroke();g.setLineDash([]);g.globalAlpha=1;g.fillStyle=col;g.font='10px sans-serif';g.fillText(lab+' '+v.toFixed(0),W-padR+3,y+3);}
+    // target band
+    if(n.ptgt&&n.ptgt.high!=null&&n.ptgt.low!=null){g.fillStyle='rgba(57,182,255,.07)';g.fillRect(padL,Y(n.ptgt.high),W-padL-padR,Y(n.ptgt.low)-Y(n.ptgt.high));}
+    lvl(n.dcf, MINT, 'DCF');
+    if(n.ptgt){lvl(n.ptgt.tgt, ACC, 'Tgt');}
+    // price sparkline
+    g.strokeStyle='#cfe0f0';g.lineWidth=1.4;g.beginPath();cls.forEach(function(c,i){var x=X(i),y=Y(c);i?g.lineTo(x,y):g.moveTo(x,y);});g.stroke();
+    // earnings vertical lines
+    var q=(n.earn&&n.earn.q)||[];
+    function idxOf(d){for(var i=0;i<dates.length;i++){if(dates[i]>=d)return i;}return -1;}
+    q.forEach(function(e,k){
+      if(!e.d) return; var i=idxOf(e.d); if(i<1) return;
+      var x=X(i), beat=(e.s||0)>=0, col=beat?UP:DN;
+      g.strokeStyle=col;g.globalAlpha=.55;g.beginPath();g.moveTo(x,padT);g.lineTo(x,H-padB);g.stroke();g.globalAlpha=1;
+      // P/E at report date
+      var ttm=ttmEps(q,k), pe=(ttm&&ttm>0)?(cls[i]/ttm):null;
+      g.fillStyle=col;g.font='9px sans-serif';
+      var qy='Q'+(e.q||'?')+" '"+String(e.y||'').slice(2);
+      g.fillText(qy, x+2, padT+9);
+      g.fillStyle=INK; g.fillText((e.a!=null?e.a:'?')+'/'+(e.e!=null?e.e:'?'), x+2, padT+20);
+      if(pe!=null){g.fillStyle=MUT; g.fillText('PE '+pe.toFixed(0), x+2, padT+31);}
+    });
+    // next pending earnings (6M emphasis): marker at right edge
+    if(n.earn&&n.earn.next&&n.earn.next.d){var nx=n.earn.next;g.strokeStyle=ACC;g.setLineDash([3,3]);g.globalAlpha=.7;g.beginPath();g.moveTo(W-padR-1,padT);g.lineTo(W-padR-1,H-padB);g.stroke();g.setLineDash([]);g.globalAlpha=1;g.fillStyle=ACC;g.font='9px sans-serif';g.fillText('next '+(nx.d||'').slice(5), W-padR-44, H-padB-2);if(nx.e!=null)g.fillText('est '+nx.e, W-padR-44, padT+9);}
+    g.fillStyle=MUT;g.font='10px sans-serif';g.fillText(dates[0]+' → '+dates[dates.length-1], padL, H-5);
+  }
+  function render(){
+    var box=document.getElementById('earntl'); if(!box) return;
+    var t=sym(), n=rec(t);
+    if(!n||!n.earn){box.style.display='none';return;}
+    box.style.display='';
+    document.getElementById('etlHdr').textContent='Earnings & valuation — '+t;
+    if(t!==lastT){lastT=t;
+      fetch('hist/'+t+'.json',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){
+        var rows=j&&j.rows?j.rows:null; box._rows=rows; draw(rows,n);
+      }).catch(function(){draw(null,n);});
+    } else { draw(box._rows||null,n); }
+  }
+  // build the panel container + toggle (once)
+  function ensure(){
+    if(document.getElementById('earntl')) return;
+    var host=document.getElementById('premcard')||document.getElementById('decision'); if(!host) return;
+    var d=document.createElement('div'); d.id='earntl'; d.style.cssText='display:none;margin:8px 0 0;padding:9px 12px;background:rgba(13,18,27,.6);border:1px solid '+LINE+';border-radius:10px';
+    d.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
+      +'<span id="etlHdr" style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:'+MINT+'">Earnings &amp; valuation</span>'
+      +'<span><button class="etlTf" data-tf="252" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1px solid '+LINE+';background:'+'#16202e'+';color:'+INK+';cursor:pointer">1Y</button>'
+      +'<button class="etlTf" data-tf="126" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1px solid '+LINE+';background:transparent;color:'+MUT+';cursor:pointer;margin-left:4px">6M</button></span></div>'
+      +'<canvas id="etlCv"></canvas>'
+      +'<div style="font-size:10px;color:'+MUT+';margin-top:4px">Vertical lines = earnings dates (EPS actual/est, P/E at report). <span style="color:'+MINT+'">DCF</span> &amp; <span style="color:'+ACC+'">analyst target</span> levels. Green=beat, red=miss.</div>';
+    host.parentNode.insertBefore(d, host.nextSibling);
+    Array.prototype.forEach.call(d.querySelectorAll('.etlTf'),function(b){b.addEventListener('click',function(){TF=+b.getAttribute('data-tf');Array.prototype.forEach.call(d.querySelectorAll('.etlTf'),function(x){x.style.background='transparent';x.style.color=MUT;});b.style.background='#16202e';b.style.color=INK;var n=rec(sym());if(n)draw(d._rows||null,n);});});
+  }
+  ensure();
+  var s=document.getElementById('sym'); if(s){s.addEventListener('change',function(){ensure();render();});s.addEventListener('input',function(){setTimeout(function(){ensure();render();},60);});}
+  var dec=document.getElementById('decision'); if(dec){try{new MutationObserver(function(){setTimeout(function(){ensure();render();},50);}).observe(dec,{childList:true,subtree:true});}catch(e){}}
+  var tries=0,iv=setInterval(function(){if(window.MMAP&&window.MMAP.names){ensure();render();if(++tries>2)clearInterval(iv);}else if(++tries>80)clearInterval(iv);},400);
+  window.addEventListener('resize',function(){var n=rec(sym());if(n&&document.getElementById('earntl'))draw((document.getElementById('earntl')._rows)||null,n);});
+})();
+</script>
+
 </body></html>

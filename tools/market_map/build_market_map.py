@@ -536,7 +536,14 @@ def build(names,mkt,ff,macro=None):
         mkt=mkt[-L:]; ff={k:(v[-L:] if len(v)>=L else v+[0.0]*(L-len(v))) for k,v in ff.items()}
         macro={k:(v[-L:] if len(v)>=L else v+[0.0]*(L-len(v))) for k,v in macro.items()}
         for n in names: n["wr"]=n["wr"][-L:]
-    MFAC=[f for f in ("DXY","RATE","VIX","OIL") if f in macro and len(macro[f])==len(mkt)]
+    # Commodity attribution set: ALL commodity driver series present in macro (FMP Ultimate
+    # surfaces ~30 via commodityKeys; the legacy proxy path supplies the named handful).
+    # Data-driven so every commodity flows into the Lasso candidates, the dependency factors,
+    # the macro3 top-3 pool, and the factor covariance — not a hardcoded subset.
+    _COMLAB=globals().get("_COMMODITY_LABELS") or {}
+    _LEGACY_COM=("OIL","BRENT","NATGAS","GOLD","SILVER","COPPER","PLATINUM","PALLADIUM","ALUMINUM","CORN","WHEAT","SOYBEAN","COFFEE","SUGAR")
+    _COMKEYS=[k for k in (list(_COMLAB.keys()) or list(_LEGACY_COM)) if k in macro and len(macro[k])==len(mkt)]
+    MFAC=[f for f in ("DXY","RATE","VIX") if f in macro and len(macro[f])==len(mkt)]+_COMKEYS
     _calib=[]
     for n in names:
         wr=[x if (x is not None and x==x) else 0.0 for x in n["wr"]]; n["wr"]=wr; n["ret"]=aggregate(wr)
@@ -683,9 +690,13 @@ def build(names,mkt,ff,macro=None):
     oi=cluster_order(M); osec=[osec[i] for i in oi]; M=[[M[i][j] for j in oi] for i in oi]
     # ---- directional dependency list: which macro deltas / sector the name moves WITH or AGAINST ----
     FACS=[("MKT",mkt,"S&P 500"),("RATE",macro.get("RATE"),"10Y yield"),("DXY",macro.get("DXY"),"US dollar"),
-          ("OIL",macro.get("OIL"),"WTI oil"),("VIX",macro.get("VIX"),"VIX"),("HYG",macro.get("HYG"),"credit (HYG)"),
-          ("GOLD",macro.get("GOLD"),"gold"),("COPPER",macro.get("COPPER"),"copper"),
-          ("NATGAS",macro.get("NATGAS"),"nat gas"),("SLOPE",macro.get("SLOPE"),"2s10s slope")]
+          ("VIX",macro.get("VIX"),"VIX"),("HYG",macro.get("HYG"),"credit (HYG)"),("SLOPE",macro.get("SLOPE"),"2s10s slope")]
+    _COMDISP={"OIL":"WTI oil","GOLD":"gold","COPPER":"copper","NATGAS":"nat gas","SILVER":"silver","BRENT":"Brent oil",
+              "PLATINUM":"platinum","PALLADIUM":"palladium","ALUMINUM":"aluminum","CORN":"corn","WHEAT":"wheat",
+              "SOYBEAN":"soybeans","COFFEE":"coffee","SUGAR":"sugar"}
+    def _comdisp(ck): return _COMLAB.get(ck) or _COMDISP.get(ck) or ck.replace("_"," ").title()
+    for _ck in _COMKEYS:                                 # EVERY commodity -> a dependency factor
+        if macro.get(_ck): FACS.append((_ck, macro.get(_ck), _comdisp(_ck)))
     _fcov=None
     try:
         if _lineage is not None:
@@ -721,8 +732,9 @@ def build(names,mkt,ff,macro=None):
         else: stab="stable"
         lg,lc=best_lag(wr,ser)                              # lead/lag: factor leads stock by lg weeks
         es=exp_sign(sec,fk); unexp=bool(es!=0 and ((1 if c>0 else -1)!=es))   # sign vs economic prior
+        pval=2.0*(1.0-0.5*(1.0+math.erf(abs(t)/math.sqrt(2.0))))              # two-sided p from the corr t-stat
         return {"f":lab,"corr":round(c,2),"pcorr":round(pc,2) if pc==pc else None,
-                "sens":round(sens*100,2),"sig":bool(sig),"stab":stab,"dir":("with" if c>0 else "against"),
+                "sens":round(sens*100,2),"sig":bool(sig),"p":round(pval,4),"stab":stab,"dir":("with" if c>0 else "against"),
                 "lag":lg,"unexp":unexp}
     for n in names:
         wr=n["wr"]; deps=[]
@@ -734,6 +746,15 @@ def build(names,mkt,ff,macro=None):
         if sc:
             d=_dep(wr,sc,n["sec"]+" sector",n["sec"],"SECTOR")
             if d: deps.append(d)
+        # Benjamini-Hochberg FDR (q=0.10) across the ~36 per-name factor tests — with 30 commodities
+        # in the candidate set, raw t>=1.96 over-claims; BH keeps the "significant driver" flag honest.
+        if deps:
+            _order=sorted(range(len(deps)), key=lambda i: deps[i].get("p",1.0))
+            _m=len(_order); _thr=0
+            for _rank,_i in enumerate(_order,1):
+                if deps[_i].get("p",1.0) <= 0.10*_rank/_m: _thr=_rank
+            _crit=deps[_order[_thr-1]].get("p",1.0) if _thr>0 else -1.0
+            for d in deps: d["sig"]=bool(d.get("p",1.0)<=_crit)
         keep=[d for d in deps if d["sig"]] or sorted(deps,key=lambda d:-abs(d["corr"]))[:1]
         keep.sort(key=lambda d:-(abs(d["pcorr"]) if d.get("pcorr") is not None else abs(d["corr"])))
         n["deps"]=keep[:7]
@@ -751,7 +772,7 @@ def build(names,mkt,ff,macro=None):
         if _rate is None:                                 # last resort: the name's own sector driver
             for d in deps:
                 if str(d.get("f","")).endswith(" sector"): _rate=d; break
-        _RC={"10Y yield","2s10s slope","WTI oil","gold","copper","nat gas"}
+        _RC={"10Y yield","2s10s slope"}|{_comdisp(_ck) for _ck in _COMKEYS}   # rate family + ALL commodities
         _pool=[d for d in deps if d["f"] in _RC]
         _pool.sort(key=lambda d:-(abs(d["pcorr"]) if d.get("pcorr") is not None else abs(d.get("corr") or 0)))
         n["macro3"]={"rate":(_slim(_rate) if _rate else None),
@@ -1231,9 +1252,11 @@ def real_universe():
                 if _cur.get("series"):                      # trim to recent points so marketmap.json stays lean
                     _cur=dict(_cur); _cur["series"]={lab:ser[-130:] for lab,ser in _cur["series"].items()}
                     _cur["slope2s10s"]=(_cur.get("slope2s10s") or [])[-130:]
+                _ckeys=(_mm.get("series") or {}).get("commodityKeys") or {}
+                globals()["_COMMODITY_LABELS"]=_ckeys           # label->name; build() wires ALL of these into attribution
                 globals()["_MACRO_SERIES"]={"source":"FMP Ultimate","asof":_cur.get("asof"),
                                             "treasury":_cur,"commodities":(_mm.get("series") or {}).get("commodities"),
-                                            "drivers":sorted(_mm["macro"].keys())}
+                                            "commodityKeys":_ckeys,"drivers":sorted(_mm["macro"].keys())}
                 sys.stderr.write("FMP Ultimate macro: %d real driver series (%s)\n"%(len(_mm["macro"]),", ".join(sorted(_mm["macro"].keys()))))
     except Exception as _e:
         sys.stderr.write("FMP history skip: %s\n"%str(_e)[:140])

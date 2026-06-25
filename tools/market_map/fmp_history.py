@@ -235,35 +235,31 @@ def macro_from_fmp(sess=None):
         if len(cur["slope2s10s"]) > 6:
             macro["SLOPE"] = _weekly_diff(cur["slope2s10s"])
 
-    # FULL commodity universe from real FMP history (all ~30 FMP tracks), plus the named
-    # subset that the per-name attribution actually conditions on.
-    comm_full = commodities_history(sess=s, cap=35) or {}
-    # make sure the named macro drivers are present even if outside the (capped) list pull
-    for sym in _DRIVER_SYMS.values():
+    # FULL commodity universe from real FMP history — EVERY commodity FMP tracks becomes a
+    # per-name attribution driver (not just a named subset). Canonical symbols keep semantic
+    # labels (OIL/GOLD/COPPER/...); all others are labeled from FMP's commodity name. The
+    # label->name map (commodityKeys) lets the build wire all of them into FACS / Lasso / macro3.
+    comm_full = commodities_history(sess=s, cap=45) or {}
+    for sym in _DRIVER_SYMS.values():                  # guarantee canonical names are present
         if sym not in comm_full:
             rows = eod_history(sym, sess=s, min_rows=20)
             if rows:
                 comm_full[sym] = {"name": sym, "rows": rows, "source": SOURCE_LABEL}
-    sym2wr = {}
-    for sym, rec in comm_full.items():
-        wr = _weekly_pct(rec.get("rows") or [])
-        if wr:
-            sym2wr[sym] = wr
-    # named drivers -> macro factor series (GOLD/OIL/COPPER/... used in FACS + lineage)
-    for label, sym in _DRIVER_SYMS.items():
-        if sym in sym2wr:
-            macro[label] = sym2wr[sym]
-    # full commodity output block (all available), flagged which are drivers
-    drv = set(_DRIVER_SYMS.values())
-    comm_out = {}
+    _sym2lab = {v: k for k, v in _DRIVER_SYMS.items()}   # symbol -> semantic label
+    comm_out = {}; comm_keys = {}
     for sym, rec in comm_full.items():
         rows = rec.get("rows") or []
-        if not rows:
+        wr = _weekly_pct(rows)
+        if not rows or not wr:
             continue
-        comm_out[sym] = {"name": rec.get("name", sym), "last": rows[-1][1],
-                         "wr": sym2wr.get(sym, []), "driver": sym in drv, "source": SOURCE_LABEL}
+        label = _sym2lab.get(sym) or (rec.get("name") or sym).upper().replace(" ", "_").replace("/", "_")
+        macro[label] = wr                              # <-- ALL commodities feed per-name attribution
+        comm_keys[label] = rec.get("name", label)
+        comm_out[sym] = {"name": rec.get("name", sym), "label": label, "last": rows[-1][1],
+                         "wr": wr, "driver": True, "source": SOURCE_LABEL}
     if comm_out:
         series["commodities"] = comm_out
+        series["commodityKeys"] = comm_keys            # label -> display name (drives build attribution)
 
     if not macro:
         return None

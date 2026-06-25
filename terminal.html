@@ -2756,7 +2756,34 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
  if(document.getElementById('tSig').checked){for(let i=h0;i<c.length;i++){if(CUR.bbU2[i]!=null){lo=Math.min(lo,CUR.bbL2[i]);hi=Math.max(hi,CUR.bbU2[i]);}}}
  if(CUR.ou&&CUR.ou.meanRev){lo=Math.min(lo,CUR.ou.muPrice);hi=Math.max(hi,CUR.ou.muPrice);}
  const pad=(hi-lo)*.06;lo-=pad;hi+=pad;const Yp=p=>yP0+(1-(p-lo)/(hi-lo))*Hp;const Ypc=p=>Math.max(yP0,Math.min(yP0+Hp,Yp(p)));
- if(document.getElementById('tReg').checked&&ic.breaks.length){const maxr=Math.max(...ic.rms);for(let i=0;i<ic.bounds.length-1;i++){const a0=ic.bounds[i]+1-h0,b0=ic.bounds[i+1]+1-h0;const x0=Math.max(X(Math.max(a0,0)),padL),x1=X(Math.min(b0,show-1));if(x1<=padL)continue;g.fillStyle=`rgba(192,57,43,${.04+.10*(ic.rms[i]/maxr)})`;g.fillRect(x0,yP0,x1-x0,Hp);}ic.breaks.forEach(bk=>{const x=X(bk+1-h0);if(x>padL){g.strokeStyle='rgba(192,57,43,.7)';g.lineWidth=1;g.setLineDash([3,3]);g.beginPath();g.moveTo(x,yP0);g.lineTo(x,yP0+Hp);g.stroke();g.setLineDash([]);}});}
+ if(document.getElementById('tReg').checked&&ic.breaks.length){const maxr=Math.max(...ic.rms);const _K=ic.bounds.length-1;
+  for(let i=0;i<_K;i++){const a0=ic.bounds[i]+1-h0,b0=ic.bounds[i+1]+1-h0;const x0=Math.max(X(Math.max(a0,0)),padL),x1=X(Math.min(b0,show-1));if(x1<=padL)continue;
+   const _cur=(i===_K-1),_ann=ic.rms[i]*Math.sqrt(252)*100;
+   g.fillStyle='rgba(192,57,43,'+(.04+.12*(ic.rms[i]/maxr)).toFixed(3)+')';g.fillRect(x0,yP0,x1-x0,Hp);
+   if(_cur){g.strokeStyle='rgba(255,120,110,.85)';g.lineWidth=1;g.strokeRect(x0+0.5,yP0+0.5,x1-x0-1,Hp-1);}        // outline the current regime
+   if(x1-x0>30){g.fillStyle=_cur?'rgba(255,160,150,.95)':'rgba(224,120,110,.72)';g.font=(_cur?'bold ':'')+'8px sans-serif';g.fillText('R'+(i+1)+' σ'+_ann.toFixed(0)+'%',x0+3,yP0+Hp-4);}
+  }
+  ic.breaks.forEach(bk=>{const x=X(bk+1-h0);if(x>padL){g.strokeStyle='rgba(192,57,43,.7)';g.lineWidth=1;g.setLineDash([3,3]);g.beginPath();g.moveTo(x,yP0);g.lineTo(x,yP0+Hp);g.stroke();g.setLineDash([]);}});
+  // ===== CURRENT-REGIME volatility-path readout: how volatile the regime is + where the stock sits =====
+  (function(){try{
+   var b0=ic.bounds[_K-1],b1=ic.bounds[_K],seg=(CUR.r||[]).slice(b0,b1);if(seg.length<3)return;
+   var mu=seg.reduce(function(s,x){return s+x;},0)/seg.length,up=0,dn=0;
+   seg.forEach(function(x){var dv=x-mu;if(dv>0)up+=dv*dv;else dn+=dv*dv;});
+   var ann=ic.rms[_K-1]*Math.sqrt(252)*100,dly=ic.rms[_K-1]*100;
+   var sUp=Math.sqrt(up/seg.length)*Math.sqrt(252)*100,sDn=Math.sqrt(dn/seg.length)*Math.sqrt(252)*100; // up / down (anti) semideviation
+   var z=(CUR.z&&CUR.z.length)?CUR.z[CUR.z.length-1]:null;
+   var bw=158,bh=48,xc=X(jx),bx=Math.min(xc-bw-6,W-padR-bw-4);if(bx<padL+120)bx=padL+120;var by=yP0+4;
+   g.fillStyle='rgba(24,9,9,.84)';g.fillRect(bx,by,bw,bh);g.strokeStyle='rgba(255,120,110,.55)';g.lineWidth=1;g.strokeRect(bx,by,bw,bh);
+   g.fillStyle='rgba(255,165,155,.97)';g.font='bold 9px sans-serif';g.fillText('REGIME #'+_K+' · current',bx+5,by+11);
+   g.fillStyle='#e6c0bb';g.font='8px sans-serif';g.fillText('vol '+ann.toFixed(0)+'% ann ('+dly.toFixed(1)+'%/day)',bx+5,by+22);
+   g.fillStyle='#7fd7a0';g.fillText('+dev '+sUp.toFixed(0)+'%',bx+5,by+32);g.fillStyle='#ef8a7e';g.fillText('-dev '+sDn.toFixed(0)+'%',bx+72,by+32);
+   if(z!=null){var pz=Math.max(-2.5,Math.min(2.5,z)),pbx=bx+5,pbw=bw-10,py=by+43;
+    g.strokeStyle='rgba(150,150,160,.45)';g.lineWidth=1;g.beginPath();g.moveTo(pbx,py);g.lineTo(pbx+pbw,py);g.stroke();
+    [-2,-1,0,1,2].forEach(function(t){var tx=pbx+pbw*((t+2.5)/5);g.strokeStyle=t===0?'rgba(180,180,190,.7)':'rgba(150,150,160,.3)';g.beginPath();g.moveTo(tx,py-2.5);g.lineTo(tx,py+2.5);g.stroke();});
+    var mx=pbx+pbw*((pz+2.5)/5);g.fillStyle=z>=0?'#7fd7a0':'#ef8a7e';g.beginPath();g.arc(mx,py,2.8,0,7);g.fill();
+    g.fillStyle='#cfd8e3';g.font='bold 8px sans-serif';g.fillText('stock '+(z>=0?'+':'')+z.toFixed(1)+'σ on vol path',pbx,py-4);}
+  }catch(_er){}})();
+ }
  g.font='10px sans-serif';for(let k=0;k<=4;k++){const p=lo+(hi-lo)*k/4,y=Yp(p);g.strokeStyle='#1d2530';g.lineWidth=1;g.beginPath();g.moveTo(padL,y);g.lineTo(W-padR,y);g.stroke();g.fillStyle='#69727f';g.fillText(p.toFixed(1),W-padR+5,y+3);}
  // INDEPENDENT calendar layer (month grid + bold labels) — drawn behind price, shared trading axis
  try{drawCalendarTimeline(g,{d:d,h0:h0,show:show,jx:jx,nP:nP,totX:totX,X:X,yP0:yP0,Hp:Hp,yBot:yD0+Hd,lastISO:(d&&d.length)?d[d.length-1]:null});}catch(_ctl){}

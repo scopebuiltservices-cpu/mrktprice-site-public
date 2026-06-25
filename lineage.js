@@ -126,13 +126,84 @@
     return out;
   }
 
+
+  // ---- Phase 3: proper scoring + split-conformal calibration ----
+  var SQRT2 = Math.sqrt(2), SQRT2PI = Math.sqrt(2*Math.PI), INV_SQRT_PI = 1/Math.sqrt(Math.PI);
+  function erf(x){ // Abramowitz-Stegun 7.1.26
+    var s = x<0?-1:1; x = Math.abs(x);
+    var t = 1/(1+0.3275911*x);
+    var y = 1 - (((((1.061405429*t - 1.453152027)*t) + 1.421413741)*t - 0.284496736)*t + 0.254829592)*t*Math.exp(-x*x);
+    return s*y;
+  }
+  function normCdf(x){ return 0.5*(1+erf(x/SQRT2)); }
+  function normPdf(x){ return Math.exp(-0.5*x*x)/SQRT2PI; }
+  function crpsGaussian(y, mu, sigma){
+    sigma = Math.max(sigma, 1e-12); var w = (y-mu)/sigma;
+    return sigma*(w*(2*normCdf(w)-1) + 2*normPdf(w) - INV_SQRT_PI);
+  }
+  function intervalScore(y, lo, hi, alpha){
+    var s = hi-lo;
+    if (y<lo) s += (2/alpha)*(lo-y); else if (y>hi) s += (2/alpha)*(y-hi);
+    return s;
+  }
+  function wilsonInterval(k, n, z){
+    z = z||1.959964; if (n<=0) return [0,1];
+    var p=k/n, d=1+z*z/n, c=(p+z*z/(2*n))/d, h=(z/d)*Math.sqrt(p*(1-p)/n + z*z/(4*n*n));
+    return [Math.max(0,c-h), Math.min(1,c+h)];
+  }
+  function pitKs(pits){
+    var n=pits.length; if(!n) return {D:null,p:null,n:0};
+    var s=pits.slice().sort(function(a,b){return a-b;}), D=0;
+    for(var i=0;i<n;i++){ D=Math.max(D, Math.abs((i+1)/n - s[i]), Math.abs(s[i]-i/n)); }
+    var lam=(Math.sqrt(n)+0.12+0.11/Math.sqrt(n))*D, p=0;
+    for(var j=1;j<50;j++) p += Math.pow(-1,j-1)*Math.exp(-2*j*j*lam*lam);
+    return {D:D, p:Math.max(0,Math.min(1,2*p)), n:n};
+  }
+  function dkwBand(n, alpha){ alpha=alpha||0.05; return n>0 ? Math.sqrt(Math.log(2/alpha)/(2*n)) : null; }
+  function _mean(a){ return a.length? a.reduce(function(s,x){return s+x;},0)/a.length : 0; }
+  function _var(a){ if(a.length<2) return 0; var m=_mean(a); return a.reduce(function(s,x){return s+(x-m)*(x-m);},0)/(a.length-1); }
+  function calibrateHorizon(returns, nSteps, regimes, window, alpha){
+    window = window||26; alpha = (alpha==null)?0.10:alpha;
+    var r = returns.filter(function(v){return v===v;}), T=r.length, n=Math.max(1, nSteps|0);
+    var z=1.6448536269514722;
+    if (T < window+n+5) return null;
+    var covs=[],crps=[],isc=[],pits=[],nonconf=[],regCov={};
+    for (var i=window;i<=T-n;i++){
+      var win=r.slice(i-window,i), mu=_mean(win), v=_var(win);
+      var muN=n*mu, sigN=Math.sqrt(Math.max(n*v,1e-12)), y=0;
+      for (var t2=i;t2<i+n;t2++) y+=r[t2];
+      var lo=muN-z*sigN, hi=muN+z*sigN, c=(lo<=y&&y<=hi)?1:0;
+      covs.push(c); crps.push(crpsGaussian(y,muN,sigN)); isc.push(intervalScore(y,lo,hi,alpha));
+      pits.push(normCdf((y-muN)/sigN)); nonconf.push(Math.max(lo-y,y-hi,0));
+      if (regimes && i<regimes.length){ (regCov[regimes[i]]=regCov[regimes[i]]||[]).push(c); }
+    }
+    var m=covs.length; if(!m) return null;
+    var k=covs.reduce(function(s,x){return s+x;},0), w=wilsonInterval(k,m), pad=conformalPad(nonconf,alpha), kp=0;
+    for (i=window;i<=T-n;i++){
+      var win2=r.slice(i-window,i), mu2=_mean(win2), v2=_var(win2);
+      var muN2=n*mu2, sigN2=Math.sqrt(Math.max(n*v2,1e-12)), y2=0;
+      for (t2=i;t2<i+n;t2++) y2+=r[t2];
+      if (muN2-z*sigN2-pad<=y2 && y2<=muN2+z*sigN2+pad) kp++;
+    }
+    var byReg={}; Object.keys(regCov).forEach(function(rg){ var cs=regCov[rg]; if(cs.length>=15) byReg[rg]={n:cs.length, coverage:Math.round(_mean(cs)*1000)/1000}; });
+    var ks=pitKs(pits);
+    return { n:m, nSteps:n, coverage:Math.round(k/m*1000)/1000, wilsonLo:Math.round(w[0]*1000)/1000,
+      wilsonHi:Math.round(w[1]*1000)/1000, target:Math.round((1-alpha)*1000)/1000,
+      crps:crps.length?_mean(crps):0, intervalScore:_mean(isc),
+      pitKS:ks.D!=null?Math.round(ks.D*1000)/1000:null, pitUniformP:ks.p!=null?Math.round(ks.p*1000)/1000:null,
+      conformalPad:pad, coveragePadded:Math.round(kp/m*1000)/1000, dkw:dkwBand(m), byRegime:byReg,
+      calibrated: Math.abs(k/m-(1-alpha))<=0.05 };
+  }
+
   var API = {
     HORIZONS: HORIZONS, viterbi: viterbi, topBranches: topBranches,
     branchDecomposition: branchDecomposition, bridgeTouchUpper: bridgeTouchUpper,
     bridgeTouchLower: bridgeTouchLower, sigmaVolumeMatrix: sigmaVolumeMatrix,
     conformalPad: conformalPad, hawkesExpectedCount: hawkesExpectedCount,
     straddleLabels: straddleLabels, eventVariance: eventVariance, houseBlend: houseBlend,
-    driverContributions: driverContributions, DRIVER_LABELS: DRIVER_LABELS
+    driverContributions: driverContributions, DRIVER_LABELS: DRIVER_LABELS,
+    crpsGaussian: crpsGaussian, intervalScore: intervalScore, wilsonInterval: wilsonInterval,
+    pitKs: pitKs, dkwBand: dkwBand, calibrateHorizon: calibrateHorizon, normCdf: normCdf
   };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   root.MrktLineage = API;

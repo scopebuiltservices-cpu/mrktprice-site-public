@@ -56,5 +56,31 @@ const drv = L.driverContributions([.7,.3], [2,-1,.5], [1,2,.1], ["10Y","WTI","VI
 ok("driver sum", approx(drv.reduce((a,b)=>a+b.contrib,0), 1));
 ok("driver coerce", drv.find(x=>x.name==="VIX").label === "associated");
 
+// ---- Phase 3 calibration ----
+// CRPS of N(0,1) at 0 ~ 0.233931 (erf approx -> loose tol)
+ok("crps N(0,1)@0", approx(L.crpsGaussian(0,0,1), 2*(1/Math.sqrt(2*Math.PI))-1/Math.sqrt(Math.PI), 1e-4));
+ok("crps grows sigma", L.crpsGaussian(0,0,2) > L.crpsGaussian(0,0,1));
+ok("crps grows |y-mu|", L.crpsGaussian(5,0,1) > L.crpsGaussian(0,0,1));
+// Wilson
+let [wl,wh] = L.wilsonInterval(50,100);
+ok("wilson centered .5", wl < .5 && .5 < wh && approx((wl+wh)/2,.5,.01));
+ok("wilson k=n<=1", L.wilsonInterval(100,100)[1] <= 1);
+// interval score
+ok("iscore inside", approx(L.intervalScore(0,-1,1,.10), 2));
+ok("iscore below", approx(L.intervalScore(-2,-1,1,.10), 2 + 20*1));
+// PIT uniform vs skewed
+const uni = Array.from({length:2000}, () => Math.random());
+const sk = Array.from({length:2000}, () => Math.pow(Math.random(),2));
+ok("pit uniform not rejected", L.pitKs(uni).p > 0.05);
+ok("pit skewed rejected", L.pitKs(sk).p < 0.05);
+// DKW
+ok("dkw shrinks", L.dkwBand(100) > L.dkwBand(10000));
+// calibrate: correct model -> coverage within Wilson CI of 0.90
+const rr = Array.from({length:700}, () => 0.0005 + 0.02*randn());
+const cal3 = L.calibrateHorizon(rr, 1, null, 40, 0.10);
+ok("calibrate target .9", cal3.target === 0.9);
+ok("calibrate coverage in CI", cal3.wilsonLo <= 0.90 && 0.90 <= cal3.wilsonHi);
+ok("calibrate crps>0", cal3.crps > 0 && cal3.intervalScore > 0);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

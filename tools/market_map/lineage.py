@@ -415,5 +415,172 @@ def lineage_object(returns: Sequence[float], horizons=PRIMARY_HORIZONS,
         "vols": [round(math.sqrt(max(v, 0)), 6) for v in vars],
         "branches": [{"regime": b["regime"], "p": round(b["p"], 4)} for b in branches],
         "horizons": hz,
+        "valid": validation_snapshot(returns, fit, HORIZONS, step_days_per_unit),
         "stepDays": step_days_per_unit,
     }
+
+
+# ============================================================================
+# Phase 3 — Calibration: proper scoring + split-conformal by regime x horizon
+# ============================================================================
+SQRT2 = math.sqrt(2.0)
+SQRT2PI = math.sqrt(2.0 * math.pi)
+INV_SQRT_PI = 1.0 / math.sqrt(math.pi)
+
+
+def norm_cdf(x: float) -> float:
+    return 0.5 * (1.0 + math.erf(x / SQRT2))
+
+
+def norm_pdf(x: float) -> float:
+    return math.exp(-0.5 * x * x) / SQRT2PI
+
+
+def crps_gaussian(y: float, mu: float, sigma: float) -> float:
+    """Closed-form CRPS for a Gaussian predictive (Gneiting & Raftery)."""
+    sigma = max(sigma, 1e-12)
+    w = (y - mu) / sigma
+    return sigma * (w * (2.0 * norm_cdf(w) - 1.0) + 2.0 * norm_pdf(w) - INV_SQRT_PI)
+
+
+def interval_score(y: float, lo: float, hi: float, alpha: float) -> float:
+    """Winkler/Gneiting interval score for a (1-alpha) central interval. Lower is better."""
+    s = (hi - lo)
+    if y < lo:
+        s += (2.0 / alpha) * (lo - y)
+    elif y > hi:
+        s += (2.0 / alpha) * (y - hi)
+    return s
+
+
+def wilson_interval(k: int, n: int, z: float = 1.959964) -> Tuple[float, float]:
+    """Wilson score CI for a binomial hit-rate (not the lazy Wald interval)."""
+    if n <= 0:
+        return (0.0, 1.0)
+    p = k / n
+    denom = 1.0 + z * z / n
+    center = (p + z * z / (2 * n)) / denom
+    half = (z / denom) * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
+    return (max(0.0, center - half), min(1.0, center + half))
+
+
+def pit_ks(pits: Sequence[float]) -> Dict:
+    """KS distance of PIT values from Uniform(0,1) + asymptotic p. Uniform == calibrated."""
+    n = len(pits)
+    if n == 0:
+        return {"D": None, "p": None, "n": 0}
+    s = sorted(pits)
+    D = 0.0
+    for i, u in enumerate(s):
+        D = max(D, abs((i + 1) / n - u), abs(u - i / n))
+    lam = (math.sqrt(n) + 0.12 + 0.11 / math.sqrt(n)) * D
+    # asymptotic Kolmogorov tail
+    p = 2.0 * sum((-1) ** (j - 1) * math.exp(-2.0 * j * j * lam * lam) for j in range(1, 50))
+    return {"D": D, "p": max(0.0, min(1.0, p)), "n": n}
+
+
+def dkw_band(n: int, alpha: float = 0.05) -> Optional[float]:
+    """Dvoretzky-Kiefer-Wolfowitz uniform band half-width for the empirical CDF."""
+    if n <= 0:
+        return None
+    return math.sqrt(math.log(2.0 / alpha) / (2.0 * n))
+
+
+def _mean(xs):
+    return sum(xs) / len(xs) if xs else 0.0
+
+
+def _var(xs):
+    if len(xs) < 2:
+        return 0.0
+    m = _mean(xs)
+    return sum((x - m) ** 2 for x in xs) / (len(xs) - 1)
+
+
+def calibrate_horizon(returns: Sequence[float], n_steps: int,
+                      regimes: Optional[Sequence[int]] = None,
+                      window: int = 26, alpha: float = 0.10) -> Optional[Dict]:
+    """Walk-forward (no-lookahead) calibration of an n-step Gaussian predictive built from a
+    trailing window. Reports coverage+Wilson CI, CRPS, interval score, PIT-KS, conformal pad
+    (and the post-pad coverage), DKW width — pooled and by regime. Target central coverage
+    for the band is (1-alpha)."""
+    r = [v for v in returns if v == v]
+    T = len(r)
+    n = max(1, int(n_steps))
+    z = 1.6448536269514722  # one-sided 95% -> 90% central
+    if T < window + n + 5:
+        return None
+    covs, crps_l, isc_l, pits, nonconf = [], [], [], [], []
+    reg_cov: Dict[int, List[int]] = {}
+    for i in range(window, T - n + 1):
+        win = r[i - window:i]
+        mu = _mean(win); var = _var(win)
+        mu_n = n * mu; sig_n = math.sqrt(max(n * var, 1e-12))
+        y = sum(r[i:i + n])
+        lo = mu_n - z * sig_n; hi = mu_n + z * sig_n
+        c = 1 if (lo <= y <= hi) else 0
+        covs.append(c)
+        crps_l.append(crps_gaussian(y, mu_n, sig_n))
+        isc_l.append(interval_score(y, lo, hi, alpha))
+        pits.append(norm_cdf((y - mu_n) / sig_n))
+        nonconf.append(max(lo - y, y - hi, 0.0))
+        if regimes is not None and i < len(regimes):
+            reg_cov.setdefault(regimes[i], []).append(c)
+    m = len(covs)
+    if m == 0:
+        return None
+    k = sum(covs)
+    wlo, whi = wilson_interval(k, m)
+    pad = conformal_pad(nonconf, alpha)
+    # post-pad coverage (re-walk with widened band)
+    kp = 0
+    idx = 0
+    for i in range(window, T - n + 1):
+        win = r[i - window:i]
+        mu = _mean(win); var = _var(win)
+        mu_n = n * mu; sig_n = math.sqrt(max(n * var, 1e-12))
+        y = sum(r[i:i + n])
+        lo = mu_n - z * sig_n - pad; hi = mu_n + z * sig_n + pad
+        if lo <= y <= hi:
+            kp += 1
+        idx += 1
+    by_reg = {}
+    for rg, cs in reg_cov.items():
+        if len(cs) >= 15:
+            by_reg[str(rg)] = {"n": len(cs), "coverage": round(sum(cs) / len(cs), 3)}
+    ks = pit_ks(pits)
+    return {
+        "n": m, "nSteps": n,
+        "coverage": round(k / m, 3), "wilsonLo": round(wlo, 3), "wilsonHi": round(whi, 3),
+        "target": round(1 - alpha, 3),
+        "crps": round(_mean(crps_l), 6), "intervalScore": round(_mean(isc_l), 6),
+        "pitKS": (round(ks["D"], 3) if ks["D"] is not None else None),
+        "pitUniformP": (round(ks["p"], 3) if ks["p"] is not None else None),
+        "conformalPad": round(pad, 6), "coveragePadded": round(kp / m, 3),
+        "dkw": (round(dkw_band(m), 4)),
+        "byRegime": by_reg,
+        "calibrated": bool(abs(k / m - (1 - alpha)) <= 0.05),
+    }
+
+
+def _decode_path(returns: Sequence[float], fit: Dict) -> List[int]:
+    """Viterbi MAP regime path under fitted params (for regime-conditioned calibration)."""
+    r = [v for v in returns if v == v]
+    K = fit["K"]; means = fit["means"]; vars = fit["vars"]
+    li = [math.log(max(p, 1e-300)) for p in fit["pi"]]
+    lt = [[math.log(max(fit["trans"][i][j], 1e-300)) for j in range(K)] for i in range(K)]
+    ll = [[_norm_logpdf(x, means[k], vars[k]) for k in range(K)] for x in r]
+    return viterbi(li, lt, ll)["path"]
+
+
+def validation_snapshot(returns: Sequence[float], fit: Dict, horizons=HORIZONS,
+                        step_days_per_unit: float = 5.0) -> Dict:
+    """Per-horizon (and per-regime) calibration ledger from walk-forward scoring."""
+    path = _decode_path(returns, fit) if fit.get("ok") else None
+    out = {}
+    for label, days, _primary in horizons:
+        n = max(1, round(days / step_days_per_unit))
+        c = calibrate_horizon(returns, n, regimes=path)
+        if c:
+            out[label] = c
+    return out

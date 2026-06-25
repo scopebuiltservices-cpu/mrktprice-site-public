@@ -73,7 +73,27 @@ forecasting into cinematic storytelling.
 
 - **Phase 1 — Foundation (this):** engine + payload schema + validation, server + browser, unit-tested. ✅
 - Phase 2 — Forecast core: emit regime posteriors + top-3 branches + branch decomposition into per-ticker payload.
-- Phase 3 — Calibration: split-conformal/CQR by regime×horizon; CRPS/interval-score/Wilson/PIT on-chart.
+- **Phase 3 — Calibration (this):** split-conformal by regime×horizon; CRPS/interval-score/Wilson/PIT/DKW per ticker. ✅
 - Phase 4 — Volume & impact: sigma-volume matrix + Hawkes RVOL + touch-before-finish per level.
 - Phase 5 — UI: lineage ribbon + node scatter + sigma-volume heatmap + node card; honest P/Q panels.
 - Phase 6 — Governance: FRTB/STANS/SPAN/SIMM/SR 11-7 cards + provenance + challenger backtests + release gate.
+
+
+## Validation snapshot (Phase 3) — `lineage.valid[horizon]`
+
+Walk-forward (no-lookahead) calibration of the per-horizon predictive, scored honestly and
+attached per ticker. Validation lives on the chart, not a hidden notebook.
+
+| field | meaning |
+|---|---|
+| `coverage`, `wilsonLo/Hi`, `target` | empirical band coverage + Wilson score CI vs the (1-α) target |
+| `crps` | mean CRPS of the Gaussian predictive (Gneiting–Raftery closed form) |
+| `intervalScore` | mean Winkler/Gneiting interval score (lower = sharper-given-calibrated) |
+| `pitKS`, `pitUniformP` | PIT KS distance from Uniform + p (uniform PIT ⇒ calibrated) |
+| `conformalPad`, `coveragePadded` | split-conformal pad needed + the coverage it restores |
+| `dkw` | Dvoretzky–Kiefer–Wolfowitz empirical-CDF band half-width |
+| `byRegime` | coverage split by the Viterbi-decoded regime (where n ≥ 15) |
+| `calibrated` | boolean: |coverage − target| ≤ 0.05 |
+
+Computed for all six horizons (intraday/1d/5d collapse to the 1-step bucket on weekly data;
+the browser recomputes short horizons on daily/intraday series via the `lineage.js` mirror).

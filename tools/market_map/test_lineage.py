@@ -165,6 +165,85 @@ def test_lineage_object_shape_and_decomposition():
     assert lo["horizons"]["5d"]["branching"] >= lo["horizons"]["intraday"]["branching"] - 1e-6
 
 
+def test_crps_gaussian_closed_form():
+    # CRPS of N(0,1) at y=0 == 2*phi(0) - 1/sqrt(pi) == 1/sqrt(pi)*(... ) known value ~0.2336
+    import math
+    c = L.crps_gaussian(0.0, 0.0, 1.0)
+    expected = 2 * (1 / math.sqrt(2 * math.pi)) - 1 / math.sqrt(math.pi)  # = 0.23369...
+    assert approx(c, expected, 1e-9), (c, expected)
+    # CRPS scales with sigma and is minimized at y=mu
+    assert L.crps_gaussian(0, 0, 2.0) > L.crps_gaussian(0, 0, 1.0)
+    assert L.crps_gaussian(5, 0, 1.0) > L.crps_gaussian(0, 0, 1.0)
+
+
+def test_wilson_interval_known():
+    lo, hi = L.wilson_interval(50, 100)        # p=0.5, n=100
+    assert lo < 0.5 < hi and approx((lo + hi) / 2, 0.5, 0.01)
+    # tighter than Wald would be near edges; for k=n it must not exceed 1
+    lo2, hi2 = L.wilson_interval(100, 100)
+    assert hi2 <= 1.0 and lo2 < 1.0
+    # wider with smaller n
+    lo3, hi3 = L.wilson_interval(5, 10)
+    assert (hi3 - lo3) > (hi - lo)
+
+
+def test_interval_score_penalties():
+    # inside interval -> just width; below -> width + (2/alpha)(lo-y)
+    a = 0.10
+    inside = L.interval_score(0.0, -1, 1, a)
+    below = L.interval_score(-2.0, -1, 1, a)
+    assert approx(inside, 2.0)
+    assert approx(below, 2.0 + (2 / a) * (-1 - (-2.0)))   # 2 + 20*1 = 22
+    assert below > inside
+
+
+def test_pit_uniform_vs_skewed():
+    import random
+    random.seed(3)
+    uni = [random.random() for _ in range(2000)]
+    sk = [random.random() ** 2 for _ in range(2000)]   # not uniform
+    ku = L.pit_ks(uni); ks = L.pit_ks(sk)
+    assert ku["p"] > 0.05            # uniform PIT not rejected
+    assert ks["p"] < 0.05            # skewed PIT rejected
+    assert ks["D"] > ku["D"]
+
+
+def test_dkw_shrinks_with_n():
+    assert L.dkw_band(100) > L.dkw_band(10000)
+    assert L.dkw_band(0) is None
+
+
+def test_calibrate_horizon_correct_model_hits_target():
+    # i.i.d. N(0, s) returns -> the rolling-Gaussian predictive is correctly specified,
+    # so empirical coverage of the 90% band should be ~0.90 (within Wilson CI of target).
+    import random
+    random.seed(5)
+    r = [random.gauss(0.0005, 0.02) for _ in range(700)]
+    c = L.calibrate_horizon(r, n_steps=1, window=40, alpha=0.10)
+    assert c is not None
+    assert c["target"] == 0.90
+    assert c["wilsonLo"] <= 0.90 <= c["wilsonHi"], (c["coverage"], c["wilsonLo"], c["wilsonHi"])
+    assert c["crps"] > 0 and c["intervalScore"] > 0
+    # conformal pad should be small for an already-calibrated model
+    assert c["coveragePadded"] >= c["coverage"] - 1e-9
+
+
+def test_validation_snapshot_per_horizon():
+    import random
+    random.seed(6)
+    z, x = 0, []
+    for _ in range(500):
+        z = z if random.random() < 0.9 else 1 - z
+        x.append(random.gauss(-0.01 if z == 0 else 0.01, 0.02))
+    fit = L.gaussian_hmm_fit(x, K=2)
+    vs = L.validation_snapshot(x, fit)
+    assert "5d" in vs and "20d" in vs
+    for label, c in vs.items():
+        assert 0.0 <= c["coverage"] <= 1.0
+        assert c["wilsonLo"] <= c["coverage"] <= c["wilsonHi"] + 1e-9
+        assert c["conformalPad"] >= 0
+
+
 if __name__ == "__main__":
     _fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for _f in _fns:

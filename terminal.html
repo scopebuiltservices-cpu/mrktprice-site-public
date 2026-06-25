@@ -191,6 +191,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
    <label><input type="checkbox" id="tEMA" checked>EMA</label>
    <label><input type="checkbox" id="tSig" checked>σ-bands</label>
    <label><input type="checkbox" id="tVP" checked>VolProfile</label>
+   <label><input type="checkbox" id="tEarn">earnings (1Y)</label>
    <label>A<select id="indA"><option value="signal">Signal/Noise</option><option value="ao">Awesome</option><option value="obv">OBV</option><option value="mfi">MFI</option><option value="rsi">RSI</option><option value="macd">MACD</option></select></label>
    <label>B<select id="indB"><option value="ao">Awesome</option><option value="signal">Signal/Noise</option><option value="obv">OBV</option><option value="mfi">MFI</option><option value="rsi">RSI</option><option value="macd">MACD</option></select></label>
    <label><input type="checkbox" id="tScen">scenarios</label>
@@ -2221,7 +2222,7 @@ function drawCone(){const cv=document.getElementById('cone');const {W,H,g}=fitCa
 let GEO=null;
 function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanvas(cv);
  const padL=6,padR=58,gap=7;const c=CUR.c,d=CUR.d,vol=CUR.vol,pj=CUR.pj,A=CUR.anchors,ic=CUR.icss;
- const show=Math.min(c.length,160),h0=c.length-show,jx=show-1,nP=pj.path.length,totX=show+nP;const X=i=>padL+(i/(totX-1))*(W-padL-padR);
+ const show=Math.min(c.length,(document.getElementById('tEarn')&&document.getElementById('tEarn').checked)?252:160),h0=c.length-show,jx=show-1,nP=pj.path.length,totX=show+nP;const X=i=>padL+(i/(totX-1))*(W-padL-padR);
  const avail=Ht-4*gap-8;const Hp=avail*.40,Hv=avail*.11,HiA=avail*.17,HiB=avail*.16,Hd=avail*.16;const yP0=4,yV0=yP0+Hp+gap,yIA0=yV0+Hv+gap,yIB0=yIA0+HiA+gap,yD0=yIB0+HiB+gap;
  let lo=1e18,hi=-1e18;for(let i=h0;i<c.length;i++){lo=Math.min(lo,c[i]);hi=Math.max(hi,c[i]);}pj.p95.forEach(b=>{lo=Math.min(lo,b.low);hi=Math.max(hi,b.high);});[A.low,A.mid,A.high].forEach(v=>{if(v){lo=Math.min(lo,v);hi=Math.max(hi,v);}});
  if(document.getElementById('tVwap').checked){for(let i=h0;i<c.length;i++){if(CUR.v20[i]!=null){lo=Math.min(lo,CUR.v20[i]);hi=Math.max(hi,CUR.v20[i]);}}}
@@ -2331,6 +2332,8 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
  g.fillStyle='rgba(224,90,78,.28)';g.beginPath();g.moveTo(X(0),yD0);for(let i=h0;i<dds.length;i++)g.lineTo(X(i-h0),Yd(dds[i]));g.lineTo(X(show-1),yD0);g.closePath();g.fill();
  g.strokeStyle='#e05a4e';g.lineWidth=1;g.beginPath();for(let i=h0;i<dds.length;i++){const x=X(i-h0),y=Yd(dds[i]);i===h0?g.moveTo(x,y):g.lineTo(x,y);}g.stroke();g.fillStyle='#69727f';g.fillText((dmin*100).toFixed(0)+'%',W-padR+5,yD0+Hd);
  g.fillStyle='#69727f';g.font='10px sans-serif';g.fillText(d[h0],padL,Ht-3);g.fillText('now',X(jx)-8,Ht-3);g.fillText('+'+nP+'d',X(totX-1)-18,Ht-3);
+
+ try{var _tE=document.getElementById('tEarn');if(_tE&&_tE.checked&&window.MMAP&&window.MMAP.names){var _t=(CUR.t||'').toUpperCase(),_er=null;for(var _ei=0;_ei<window.MMAP.names.length;_ei++){if((window.MMAP.names[_ei].t||'').toUpperCase()===_t){_er=window.MMAP.names[_ei];break;}}if(_er&&_er.earn){var _q=_er.earn.q||[];var _idxOf=function(ds){for(var k=h0;k<d.length;k++){if(d[k]>=ds)return k;}return -1;};var _ttm=function(qq,kk){var s=0,cc=0;for(var j=kk;j>=0&&cc<4;j--){if(qq[j]&&qq[j].a!=null){s+=qq[j].a;cc++;}}return cc>=4?s:null;};_q.forEach(function(e,k){if(!e.d)return;var idx=_idxOf(e.d);if(idx<0||idx-h0<0||idx-h0>show-1)return;var x=X(idx-h0),beat=(e.s||0)>=0,col=beat?'#15c26b':'#f0556b';g.strokeStyle=col;g.globalAlpha=.5;g.lineWidth=1;g.setLineDash([4,3]);g.beginPath();g.moveTo(x,yP0);g.lineTo(x,yP0+Hp);g.stroke();g.setLineDash([]);g.globalAlpha=1;g.fillStyle=col;g.font='9px sans-serif';g.fillText('Q'+(e.q||'?')+" '"+String(e.y||'').slice(2),x+2,yP0+9);g.fillStyle='#cfe0f0';g.fillText((e.a!=null?e.a:'?')+'/'+(e.e!=null?e.e:'?'),x+2,yP0+19);var tt=_ttm(_q,k),pe=(tt&&tt>0)?(c[idx]/tt):null;if(pe!=null){g.fillStyle='#8aa0b8';g.fillText('PE'+pe.toFixed(0),x+2,yP0+29);}});var _nx=_er.earn.next;if(_nx&&_nx.d){var _l=new Date(d[d.length-1]+'T00:00:00Z'),_tg=new Date(_nx.d+'T00:00:00Z'),_ms=_tg-_l;if(_ms>0){var _bd=Math.round(_ms/86400000*5/7),_xi=jx+Math.min(_bd,nP-1);if(_xi>jx){var _xu=X(_xi);g.strokeStyle='#39b6ff';g.globalAlpha=.85;g.setLineDash([3,3]);g.beginPath();g.moveTo(_xu,yP0);g.lineTo(_xu,yP0+Hp);g.stroke();g.setLineDash([]);g.globalAlpha=1;g.fillStyle='#39b6ff';g.font='9px sans-serif';g.fillText('next',_xu+2,yP0+9);g.fillText(_nx.d.slice(5),_xu+2,yP0+19);if(_nx.e!=null)g.fillText('est'+_nx.e,_xu+2,yP0+29);}}}}}}catch(_ee){}
  GEO={padL,padR,W,Ht,h0,jx,show,nP,totX,X,Yp,yP0,Hp};}
 const cv=document.getElementById('cv2'),ro=document.getElementById('ro');
 cv.addEventListener('mousemove',e=>{if(!GEO||!CUR.c)return;const rect=cv.getBoundingClientRect();const mx=e.clientX-rect.left;const i=Math.round((mx-GEO.padL)/(GEO.W-GEO.padL-GEO.padR)*(GEO.totX-1));if(i<0||i>=GEO.totX){ro.style.display='none';return;}

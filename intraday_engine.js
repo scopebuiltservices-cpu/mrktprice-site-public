@@ -140,7 +140,31 @@
     return res;
   }
 
-  var API = { median: median, mad: mad, todNormalizers: todNormalizers, abnormality: abnormality, gateA: gateA,
+  /* Realized-coverage audit. events: resolved triggers, each {lo,hi,center,realized,pT,gatePass,rwLo,rwHi}
+     (prices or log-prices, consistent units). Answers "is the band honest?" — coverage close to target
+     with NARROW bands is good; coverage only because the band is huge is not. */
+  function auditCoverage(events, alpha) {
+    if (alpha == null) alpha = 0.90;
+    if (!events || !events.length) return null;
+    function cov(evs) { if (!evs.length) return null; var h = 0; for (var i = 0; i < evs.length; i++) if (evs[i].lo <= evs[i].realized && evs[i].realized <= evs[i].hi) h++; return h / evs.length; }
+    var n = events.length, overall = cov(events);
+    var gated = events.filter(function (e) { return e.gatePass; });
+    var bias = 0, width = 0, da = 0;
+    for (var i = 0; i < n; i++) {
+      bias += events[i].realized - events[i].center;
+      width += events[i].hi - events[i].lo;
+      if ((events[i].center >= events[i].pT) === (events[i].realized >= events[i].pT)) da++;
+    }
+    var rw = events.filter(function (e) { return e.rwLo != null; });
+    var rwcov = rw.length ? (rw.filter(function (e) { return e.rwLo <= e.realized && e.realized <= e.rwHi; }).length / rw.length) : null;
+    return { n: n, target: alpha, coverage: round3(overall),
+             condCoverageGated: gated.length ? round3(cov(gated)) : null,
+             bias: +(bias / n).toFixed(6), avgBandWidth: +(width / n).toFixed(6),
+             directionalAccuracy: round3(da / n), rwBaselineCoverage: rwcov == null ? null : round3(rwcov) };
+  }
+  function round3(x) { return x == null ? null : Math.round(x * 1000) / 1000; }
+
+  var API = { median: median, mad: mad, todNormalizers: todNormalizers, abnormality: abnormality, gateA: gateA, auditCoverage: auditCoverage,
               ewmaDrift: ewmaDrift, rollingSE: rollingSE, signalQ: signalQ, highVolProb: highVolProb,
               regimeGate: regimeGate, confirmM: confirmM, consecutiveTrigger: consecutiveTrigger,
               projectLogpath: projectLogpath, parametricBand: parametricBand, conformalBand: conformalBand,

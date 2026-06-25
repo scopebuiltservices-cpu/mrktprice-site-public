@@ -61,6 +61,21 @@ if (out.triggered) {
   ok('band brackets center at h0', out.hi[0] >= out.center[0] && out.center[0] >= out.lo[0]);
 }
 
+// coverage audit: 9/10 inside band -> 0.9 ; bias/sharpness/directional/baseline
+const evs = [];
+for (let i = 0; i < 10; i++) {
+  const real = (i === 0) ? 1.30 : 1.0 + 0.01 * (i - 5);        // one miss (i=0), nine inside [0.95,1.05]
+  evs.push({ lo: 0.95, hi: 1.05, center: 1.0, realized: real, pT: 0.98, gatePass: i % 2 === 0,
+             rwLo: 0.80, rwHi: 1.20 });
+}
+const a = ie.auditCoverage(evs, 0.9);
+ok('coverage = 9/10', Math.abs(a.coverage - 0.9) < 1e-9, a.coverage);
+ok('conditional (gated) coverage computed', a.condCoverageGated != null);
+ok('random-walk baseline wider -> covers all', a.rwBaselineCoverage === 1.0, a.rwBaselineCoverage);
+ok('directional accuracy in [0,1]', a.directionalAccuracy >= 0 && a.directionalAccuracy <= 1);
+ok('avg band width = 0.10', Math.abs(a.avgBandWidth - 0.10) < 1e-9, a.avgBandWidth);
+ok('empty events -> null', ie.auditCoverage([], 0.9) === null);
+
 console.log('\n' + (fails ? (fails + ' FAILED') : 'ALL INTRADAY JS TESTS PASSED'));
 process.exit(fails ? 1 : 0);
 

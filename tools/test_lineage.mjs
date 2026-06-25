@@ -1,5 +1,10 @@
 // Node cross-check of lineage.js against the Python-verified decimals.
 import L from "../lineage.js";
+
+// deterministic RNG so statistical tests never flake in CI
+let _seed = 0x9e3779b9;
+function rand(){ _seed |= 0; _seed = (_seed + 0x6D2B79F5) | 0; let t = Math.imul(_seed ^ (_seed >>> 15), 1 | _seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
+
 let pass = 0, fail = 0;
 function ok(name, cond) { if (cond) { pass++; } else { fail++; console.log("FAIL", name); } }
 function approx(a, b, t = 1e-9) { return Math.abs(a - b) <= t; }
@@ -29,7 +34,7 @@ const m = L.sigmaVolumeMatrix(
 ok("sigvol bin", m["1d"]["1..2"].n === 2 && approx(m["1d"]["1..2"].meanCumVol, 400));
 
 // conformal coverage
-function randn(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+function randn(){let u=0,v=0;while(!u)u=rand();while(!v)v=rand();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
 const cal = Array.from({length:2000}, randn);
 const pad = L.conformalPad(cal.map(y => Math.max(-1-y, y-1, 0)), .10);
 const test = Array.from({length:20000}, randn);
@@ -69,8 +74,8 @@ ok("wilson k=n<=1", L.wilsonInterval(100,100)[1] <= 1);
 ok("iscore inside", approx(L.intervalScore(0,-1,1,.10), 2));
 ok("iscore below", approx(L.intervalScore(-2,-1,1,.10), 2 + 20*1));
 // PIT uniform vs skewed
-const uni = Array.from({length:2000}, () => Math.random());
-const sk = Array.from({length:2000}, () => Math.pow(Math.random(),2));
+const uni = Array.from({length:2000}, () => rand());
+const sk = Array.from({length:2000}, () => Math.pow(rand(),2));
 ok("pit uniform not rejected", L.pitKs(uni).p > 0.05);
 ok("pit skewed rejected", L.pitKs(sk).p < 0.05);
 // DKW

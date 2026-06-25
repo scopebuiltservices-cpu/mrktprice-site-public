@@ -102,8 +102,8 @@ jobs:
           [ -f CNAME ] && cp CNAME _site/CNAME || echo "mrktprice.com" > _site/CNAME
           touch _site/.nojekyll
 
-      - name: Emit static per-ticker cards (no network)
-        run: python tools/market_map/emit_static.py --universe _site/marketmap.json --out _site || echo "::warning::card emit skipped"
+      - name: Emit static per-ticker cards (no network) + augment from committed hist
+        run: python tools/market_map/emit_static.py --universe _site/marketmap.json --out _site --hist-dir _site/hist || echo "::warning::card emit skipped"
 
       - name: Integrity gate - inline scripts + JSON not truncated
         run: |

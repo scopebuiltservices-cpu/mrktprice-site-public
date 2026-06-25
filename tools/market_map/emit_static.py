@@ -50,7 +50,15 @@ def history(t):
         pass
     return _stooq(t)
 
-def emit(universe_path, out_dir, do_hist=False, cap=0):
+def _load_hist(hist_dir, t):
+    """Read committed daily rows [[date,close,vol],..] from <hist_dir>/<T>.json (no network)."""
+    try:
+        with open(os.path.join(hist_dir, t + ".json")) as f:
+            return (json.load(f) or {}).get("rows") or None
+    except Exception:
+        return None
+
+def emit(universe_path, out_dir, do_hist=False, cap=0, hist_dir=None):
     d = json.load(open(universe_path)); names = d.get("names", [])
     cdir = os.path.join(out_dir, "cards"); hdir = os.path.join(out_dir, "hist")
     os.makedirs(cdir, exist_ok=True); os.makedirs(hdir, exist_ok=True)
@@ -58,9 +66,10 @@ def emit(universe_path, out_dir, do_hist=False, cap=0):
     for n in names:
         t = n.get("t")
         if not t: continue
-        rows = history(t) if (do_hist and (not cap or nh < cap)) else None
+        fetched = history(t) if (do_hist and (not cap or nh < cap)) else None
+        rows = fetched if fetched else (_load_hist(hist_dir, t) if hist_dir else None)
         # Phase 4: augment the card with volume-ahead (sigma-volume matrix) + touch odds,
-        # computed from the daily history (the only place with per-name daily volume).
+        # computed from daily history (the only place with per-name daily volume).
         if rows and _lineage is not None and "FACTOR" not in (n.get("idx") or []):
             try:
                 va = _lineage.volume_ahead(rows)
@@ -75,9 +84,9 @@ def emit(universe_path, out_dir, do_hist=False, cap=0):
         with open(os.path.join(cdir, t + ".json"), "w") as f:
             json.dump(n, f, allow_nan=False)
         nc += 1
-        if rows:
+        if fetched:
             with open(os.path.join(hdir, t + ".json"), "w") as f:
-                json.dump({"ticker": t, "asof": rows[-1][0], "count": len(rows), "rows": rows}, f, allow_nan=False)
+                json.dump({"ticker": t, "asof": fetched[-1][0], "count": len(fetched), "rows": fetched}, f, allow_nan=False)
             nh += 1
     with open(os.path.join(out_dir, "cards_index.json"), "w") as f:
         json.dump({"asof": d.get("asof"), "source": d.get("source"),
@@ -90,8 +99,9 @@ def main():
     ap.add_argument("--out", default="_site")
     ap.add_argument("--hist", action="store_true", help="also emit price history (slower; needs network)")
     ap.add_argument("--cap", type=int, default=0, help="cap number of histories (0=all)")
+    ap.add_argument("--hist-dir", default=None, help="read committed daily rows from here to augment cards (no network)")
     a = ap.parse_args()
-    nc, nh = emit(a.universe, a.out, a.hist, a.cap)
+    nc, nh = emit(a.universe, a.out, a.hist, a.cap, a.hist_dir)
     sys.stderr.write("emit_static: %d cards, %d histories -> %s\n" % (nc, nh, a.out))
 
 if __name__ == "__main__":

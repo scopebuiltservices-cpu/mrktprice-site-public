@@ -770,16 +770,7 @@ function icss(rr,minSeg=10,mvr=1.5){const m=rr.reduce((a,b)=>a+b,0)/rr.length,y2
  const sv=(a,b)=>{let s=0;for(let i=a;i<b;i++)s+=y2[i];return b>a?s/(b-a):0;};ch=true;
  while(ch&&cps.length){ch=false;const b=[0,...cps,T];let weak=null;for(let i=1;i<b.length-1;i++){const vl=sv(b[i-1],b[i]),vrr=sv(b[i],b[i+1]),ra=Math.max(vl,vrr)/Math.max(Math.min(vl,vrr),1e-300);if(ra<mvr&&(!weak||ra<weak.r))weak={i:i-1,r:ra};}if(weak){cps.splice(weak.i,1);ch=true;}}
  const b=[0,...cps,T],rms=[];for(let i=0;i<b.length-1;i++){let s=0;for(let k=b[i];k<b[i+1];k++)s+=y2[k];rms.push(Math.sqrt(s/(b[i+1]-b[i])));}return{breaks:cps,crit,rms,bounds:b};}
-function ouFit(x){const n=x.length;if(n<30)return null;const Y=x.slice(1),Xl=x.slice(0,n-1),m=Y.length;
- const mxl=Xl.reduce((a,b)=>a+b,0)/m,myl=Y.reduce((a,b)=>a+b,0)/m;let sxx=0,sxy=0;for(let i=0;i<m;i++){sxx+=(Xl[i]-mxl)*(Xl[i]-mxl);sxy+=(Xl[i]-mxl)*(Y[i]-myl);}
- let phi=sxy/sxx;const c=myl-phi*mxl;let sse=0;for(let i=0;i<m;i++){const e=Y[i]-(c+phi*Xl[i]);sse+=e*e;}
- const s2=sse/(m-2),sePhi=Math.sqrt(s2/sxx);phi=Math.min(Math.max(phi,-0.9999),0.9999);
- const meanRev=phi<1&&(1-phi)>1.96*sePhi;const theta=(phi>0&&phi<1)?-Math.log(phi):(phi<=0?Infinity:0);
- const mu=Math.abs(1-phi)>1e-9?c/(1-phi):x.reduce((a,b)=>a+b,0)/n;
- const halfLife=(theta>0&&isFinite(theta))?Math.log(2)/theta:Infinity;
- const sigmaX2=Math.abs(phi)<1?s2/(1-phi*phi):Infinity;const last=x[n-1];
- const z=(sigmaX2>0&&isFinite(sigmaX2))?(last-mu)/Math.sqrt(sigmaX2):0;
- return{phi,sePhi,theta,mu,muPrice:Math.exp(mu),halfLife,sigmaX2,meanRev,z,last};}
+/* ouFit (OU / AR(1) mean-reversion) -> engine.js (single source of truth) */
 function _gaussSolve(A,b){var n=b.length,M=[];for(var i=0;i<n;i++)M.push(A[i].slice().concat([b[i]]));
  for(var col=0;col<n;col++){var piv=col;for(var r=col+1;r<n;r++)if(Math.abs(M[r][col])>Math.abs(M[piv][col]))piv=r;
   var tmp=M[col];M[col]=M[piv];M[piv]=tmp;if(Math.abs(M[col][col])<1e-12)return null;

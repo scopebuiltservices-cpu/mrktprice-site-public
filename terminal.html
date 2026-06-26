@@ -1117,6 +1117,42 @@ function _volRating(z){if(z==null||!isFinite(z))return {idx:10,col:_VOLCOLS[10],
 function _regHeat(f){f=Math.max(0,Math.min(1,f));var g=[46,204,143],y=[224,193,74],r=[239,95,78];
   var a,b,t;if(f<0.5){a=g;b=y;t=f/0.5;}else{a=y;b=r;t=(f-0.5)/0.5;}
   return 'rgb('+Math.round(a[0]+(b[0]-a[0])*t)+','+Math.round(a[1]+(b[1]-a[1])*t)+','+Math.round(a[2]+(b[2]-a[2])*t)+')';}
+function _tanh(x){if(x>=20)return 1;if(x<=-20)return -1;var e=Math.exp(2*x);return (e-1)/(e+1);}
+/* Lo-MacKinlay (1988) variance ratio VR(q) with unbiased estimators + homoskedastic z-stat.
+   VR>1 => positive serial correlation (trending / momentum); VR<1 => mean reversion. */
+function _varianceRatio(r,q){
+  var n=r.length;if(n<2*q||q<2)return {vr:1,z:0};
+  var mu=0,i,j;for(i=0;i<n;i++)mu+=r[i];mu/=n;
+  var va=0;for(i=0;i<n;i++){var d=r[i]-mu;va+=d*d;}va/=(n-1);if(va<=0)return {vr:1,z:0};
+  var m=q*(n-q+1)*(1-q/n);if(m<=0)return {vr:1,z:0};
+  var sc=0;for(i=q-1;i<n;i++){var s=0;for(j=0;j<q;j++)s+=(r[i-j]-mu);sc+=s*s;}
+  var vq=sc/m,vr=vq/va,phi=2*(2*q-1)*(q-1)/(3*q*n);
+  return {vr:vr,z:phi>0?(vr-1)/Math.sqrt(phi):0};
+}
+/* Per-regime momentum from a returns segment: drift t-stat (H0:mu=0), annualized risk-adjusted
+   Sharpe (signed momentum), and the variance-ratio persistence test. score in [-1,1]. */
+function _regimeMomentum(seg){
+  var n=seg?seg.length:0;
+  if(n<3)return {n:n,score:0,t:0,sharpe:0,drift:0,sigma:0,vr:1,vrz:0,sig:0,verdict:'thin sample'};
+  var mu=0,i;for(i=0;i<n;i++)mu+=seg[i];mu/=n;
+  var v=0;for(i=0;i<n;i++){var d=seg[i]-mu;v+=d*d;}v/=(n-1);var sd=Math.sqrt(v);
+  var t=sd>0?mu/(sd/Math.sqrt(n)):0;                       // drift significance
+  var sharpe=sd>0?(mu/sd)*Math.sqrt(252):0;                // annualized risk-adjusted momentum
+  var q=Math.max(2,Math.min(5,Math.floor(n/4))),V=_varianceRatio(seg,q);
+  var sig=Math.min(1,Math.abs(t)/2);                       // |t|>=2 (95%) => fully significant
+  var score=_tanh(sharpe/2);                               // signed, bounded momentum for color
+  var rev=V.vr<0.95,trd=V.vr>1.05;
+  var verdict=Math.abs(t)<1.0?'choppy · no momentum edge'
+    :(rev?(mu>0?'up but mean-reverting (fade)':'down but mean-reverting (fade)')
+    :(mu>0?(trd?'persistent uptrend':'uptrend'):(trd?'persistent downtrend':'downtrend')));
+  return {n:n,score:score,t:t,sharpe:sharpe,drift:mu*252,sigma:sd*Math.sqrt(252),vr:V.vr,vrz:V.z,sig:sig,verdict:verdict};
+}
+/* Diverging MOMENTUM color: red(down) — gray(flat) — green(up); alpha = significance. */
+function _momHeat(score,alpha){
+  score=Math.max(-1,Math.min(1,score||0));var a=(alpha==null?1:Math.max(0.05,Math.min(1,alpha)));
+  var neut=[120,128,140],tg=score>=0?[46,204,143]:[239,95,78],k=Math.abs(score);
+  return 'rgba('+Math.round(neut[0]+(tg[0]-neut[0])*k)+','+Math.round(neut[1]+(tg[1]-neut[1])*k)+','+Math.round(neut[2]+(tg[2]-neut[2])*k)+','+a.toFixed(3)+')';
+}
 function _regimeValue(ic){try{
   if(!ic||!ic.bounds||ic.bounds.length<2||!ic.rms||!ic.rms.length)return null;
   var K=ic.bounds.length-1, cur=ic.rms[K-1];

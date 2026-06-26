@@ -657,7 +657,7 @@ function rvolSeries(v,N){return v.map((x,i)=>{if(i<N-1)return null;let s=0;for(l
 function smaAt(a,n,i){if(i<n-1)return null;let s=0;for(let k=i-n+1;k<=i;k++)s+=a[k];return s/n;}
 function aoSeries(c){return c.map((_,i)=>{const a=smaAt(c,5,i),b=smaAt(c,34,i);return(a!=null&&b!=null)?a-b:null;});}
 function hvWin(r,w){if(r.length<Math.max(w,2))return null;const s=r.slice(-w);if(s.length<2)return Math.abs(r[r.length-1])*Math.sqrt(252);return sd(s)*Math.sqrt(252);}
-function hvRollSeries(r,w){const o=[];for(let i=w;i<=r.length;i++){o.push(sd(r.slice(i-w,i))*Math.sqrt(252));}return o;}
+/* hvRollSeries -> engine.js (single source of truth) */
 function pctl(sorted,p){if(!sorted.length)return null;return sorted[Math.min(sorted.length-1,Math.max(0,Math.floor(p*sorted.length)))];}
 function obvSeries(c,v){const o=[0];for(let i=1;i<c.length;i++)o.push(o[i-1]+Math.sign(c[i]-c[i-1])*(v[i]||0));return o;}
 function mfiSeries(c,v,N=14){const o=Array(c.length).fill(null);for(let i=N;i<c.length;i++){let pos=0,neg=0;for(let k=i-N+1;k<=i;k++){const mf=c[k]*(v[k]||0);if(c[k]>c[k-1])pos+=mf;else if(c[k]<c[k-1])neg+=mf;}o[i]=neg===0?100:100-100/(1+pos/neg);}return o;}
@@ -675,13 +675,13 @@ function realVsNoise(z,rvol,retSign){const az=Math.abs(z||0);rvol=rvol||0;
  return{label:'DEVELOPING',sev:'info',why:`${az.toFixed(1)}σ ${z>0?'above':'below'} fair value on RVOL ${rvol.toFixed(1)}x — watch for volume confirmation before trusting the move.`};}
 const EMAP=[5,8,13,21],EMACOL={5:'#56b1ac',8:'#6f93c4',13:'#e0a13c',21:'#d2654e'};
 const SL_FEATURES=['logret','rvol','zsig','flow','emamom'];const SL_FWD=['fwd1','fwd5','fwd10','fwd20'];/* predictive search space: features × forward horizons → multiple-testing trial count */
-function ema(c,N){const a=2/(N+1);let e=c[0];const o=[e];for(let i=1;i<c.length;i++){e=a*c[i]+(1-a)*e;o.push(e);}return o;}
+/* ema -> engine.js (single source of truth) */
 function emaMetrics(c,N){const e=ema(c,N),n=c.length;const L=Math.min(21,n-1),xs=[],ys=[];for(let i=n-L;i<n;i++){xs.push(i);ys.push(e[i]);}
  const mx=xs.reduce((a,b)=>a+b,0)/L,my=ys.reduce((a,b)=>a+b,0)/L;let num=0,den=0;for(let i=0;i<L;i++){num+=(xs[i]-mx)*(ys[i]-my);den+=(xs[i]-mx)**2;}const slope=den?num/den:0;
  let sst=0,sse=0;for(let i=0;i<L;i++){const pr=my+slope*(xs[i]-mx);sse+=(ys[i]-pr)**2;sst+=(ys[i]-my)**2;}const r2=sst?1-sse/sst:0;
  const W=Math.min(60,n-2);let se=0,cnt=0,hit=0;for(let i=n-W;i<n-1;i++){const v=e[i]-e[i-1],pred=e[i]+v;se+=(c[i+1]-pred)**2;cnt++;if(Math.sign(v)===Math.sign(c[i+1]-c[i]))hit++;}
  return{N,e,last:e[n-1],slope,r2,rmse:cnt?Math.sqrt(se/cnt):0,dir:cnt?hit/cnt:0,vel:e[n-1]-e[n-2]};}
-function emaProjPath(slope,P0,H,phi){const path=[];let cum=0;for(let h=1;h<=H;h++){cum+=Math.pow(phi,h-1);path.push({t:h,price:P0+slope*cum});}return path;}
+/* emaProjPath -> engine.js (single source of truth) */
 // ---- Phase-3 conditioning integrity (ADF/KPSS verified vs the Python reference tools/market_map/stats_ref.py
 //      via the golden-fixture test tools/test_stats_parity.mjs — JS == Python; coverage, outliers) ----
 /* _ols · _mackinnonCV · adfTest · _nwlrv · kpssTest now live in the shared engine.js (single source of
@@ -760,24 +760,7 @@ function conditioningGate(c,d,recentBreak){const n=c.length,r=lr(c);const a=adfT
  if(conformal&&conformal.ce>0.05&&grade==='Greenbar'){grade='Blueline';reasons.push('conformal 90% interval under-covers ('+(conformal.cov*100).toFixed(0)+'%) — wider intervals needed');checks.release='AMBER';checks.lifecycle='research-only';}
  return{grade,checks,reasons};}
 // GARCH(1,1) QMLE (cross-checked vs simulation) + ICSS (verified vs planted variance breaks)
-function _inv3(A){const a=A[0][0],b=A[0][1],c=A[0][2],d=A[1][0],e=A[1][1],f=A[1][2],g=A[2][0],h=A[2][1],i=A[2][2];
- const det=a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g);if(!isFinite(det)||Math.abs(det)<1e-300)return null;const id=1/det;
- return[[(e*i-f*h)*id,(c*h-b*i)*id,(b*f-c*e)*id],[(f*g-d*i)*id,(a*i-c*g)*id,(c*d-a*f)*id],[(d*h-e*g)*id,(b*g-a*h)*id,(a*e-b*d)*id]];}
-function garch(r){const uv=vr(r),n=r.length;function nll(w,a,b){let h=uv,ll=0;for(let t=0;t<n;t++){if(t>0)h=w+a*r[t-1]*r[t-1]+b*h;if(h<=1e-16)return 1e12;ll+=Math.log(h)+r[t]*r[t]/h;}return .5*ll;}
- let best={w:.05*uv,a:.05,b:.9,ll:1e18};const grid=[];const tp=(w,a,b)=>{if(w<=0||a<0||b<=0||a+b>=.9999)return;const v=nll(w,a,b);grid.push({k:a+b,ll:v});if(v<best.ll)best={w,a,b,ll:v};};
- for(let k=.5;k<=.995;k+=.005)for(let a=0;a<=Math.min(.3,k);a+=.01){const b=k-a;for(const f of[.3,1,3,10])tp(f*(1-k)*uv,a,b);}
- for(let it=0;it<6;it++){const s=.004/(it+1),sf=Math.max(best.w*.4/(it+1),1e-12);for(const dw of[-sf,0,sf])for(const da of[-s,0,s])for(const db of[-s,0,s])tp(best.w+dw,best.a+da,best.b+db);}
- const tol=best.ll+1,within=grid.filter(g=>g.ll<=tol).map(g=>g.k);const kLo=Math.min(...within),kHi=Math.max(...within),kappa=best.a+best.b;
- // numerical-Hessian standard errors at the QMLE optimum (observed information). M-stat1: the
- // conditional likelihood seeds h0 = sample unconditional variance, held FIXED, so these are
- // CONDITIONAL QMLE SEs — SE(omega) omits omega's effect through the stationary variance and is a
- // lower bound. The robust persistence uncertainty is the kappa band (kLo..kHi), reported alongside.
- const xo=[best.w,best.a,best.b],hs=[Math.max(best.w*1e-3,1e-9),1e-4,1e-4],_f=p=>nll(p[0],p[1],p[2]),Hn=[[0,0,0],[0,0,0],[0,0,0]];
- for(let i=0;i<3;i++)for(let j=0;j<3;j++){const pp=xo.slice(),pm=xo.slice(),mp=xo.slice(),mm=xo.slice();pp[i]+=hs[i];pp[j]+=hs[j];pm[i]+=hs[i];pm[j]-=hs[j];mp[i]-=hs[i];mp[j]+=hs[j];mm[i]-=hs[i];mm[j]-=hs[j];Hn[i][j]=(_f(pp)-_f(pm)-_f(mp)+_f(mm))/(4*hs[i]*hs[j]);}
- const cov=_inv3(Hn);const se={w:cov&&cov[0][0]>0?Math.sqrt(cov[0][0]):null,a:cov&&cov[1][1]>0?Math.sqrt(cov[1][1]):null,b:cov&&cov[2][2]>0?Math.sqrt(cov[2][2]):null};
- const tA=se.a?best.a/se.a:null,tB=se.b?best.b/se.b:null;const weak=(kHi-kLo)>.25||tA==null||tB==null||Math.abs(tA)<2;
- let h=uv;for(let t=1;t<n;t++)h=best.w+best.a*r[t-1]*r[t-1]+best.b*h;
- return{kappa,kLo,kHi,weak,w:best.w,a:best.a,b:best.b,se,tA,tB,annVol:Math.sqrt(h*252),halflife:kappa<1?Math.log(.5)/Math.log(kappa):Infinity,halflifeHi:kHi<1?Math.log(.5)/Math.log(kHi):Infinity};}
+/* _inv3 + garch (GARCH(1,1) QMLE) -> engine.js (single source of truth; seed option + M-stat1 notes there) */
 function icssCrit(T){return Math.max(1.358,1.3466+.0171*Math.sqrt(Math.log(Math.max(T,2))));}
 function icss(rr,minSeg=10,mvr=1.5){const m=rr.reduce((a,b)=>a+b,0)/rr.length,y2=rr.map(x=>(x-m)*(x-m)),T=y2.length,crit=icssCrit(T);let cps=[];
  const cs=(lo,hi)=>{const n=hi-lo;let C=0,Ck=[];for(let i=lo;i<hi;i++){C+=y2[i];Ck.push(C);}if(C<=0)return null;let j=0,mx=0;for(let k=0;k<n;k++){const D=Ck[k]/C-(k+1)/n;if(Math.abs(D)>Math.abs(mx)){mx=D;j=k;}}return{stat:Math.sqrt(n/2)*Math.abs(mx),j};};

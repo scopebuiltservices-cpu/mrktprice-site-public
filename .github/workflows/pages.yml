@@ -103,6 +103,9 @@ jobs:
             # KEYLESS: refresh cik.json (ticker->CIK) from SEC's free company_tickers.json so the
             # terminal can pull CONFIRMED quarterly report dates client-side for the whole universe.
             python tools/market_map/emit_cik.py --out cik.json --marketmap marketmap.json --cards cards || echo "::warning::cik.json refresh skipped"
+            # KEYLESS feedback loop: log today's Bull/Bear α + attach matured realized returns + refit
+            # so the board reads α as an empirically-calibrated expected return % (accumulates nightly).
+            python tools/market_map/alpha_calib.py --mm marketmap.json --hist hist --log data/alpha_log.jsonl --out alpha_calib.json --horizon 21 || echo "::warning::alpha calibration skipped"
             # GUARD: loud signal if the engine ran but the FMP history layer produced nothing
             # (catches "new code committed but didn't execute / connect").
             FMP_API_KEY="$FMP_API_KEY" python tools/market_map/verify_history.py marketmap.json || true

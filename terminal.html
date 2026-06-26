@@ -2024,7 +2024,8 @@ function buildBullBearBoard(){
   var zt=z(S.map(function(s){return s.tilt;})),zse=z(S.map(function(s){return s.sector;})),zsh=z(S.map(function(s){return s.short;})),
       zop=z(S.map(function(s){return s.opp;})),zem=z(S.map(function(s){return s.ema;})),zr=z(S.map(function(s){return s.r1m;})),zf=z(S.map(function(s){return s.flow;}));
   var sigR=Math.sqrt(S.map(function(s){return s.r1m*s.r1m;}).reduce(function(x,y){return x+y;},0)/S.length)||1;   // realized 1m dispersion (calibration scale)
-  S.forEach(function(s,i){s.alpha=0.35*zt[i]+0.25*zse[i]+0.15*zsh[i]+0.15*zop[i]+0.07*((zem[i]+zr[i])/2)+0.03*zf[i];s.exp=s.alpha*sigR;});
+  var _cal=window.ALPHACALIB||null,_fit=!!(_cal&&_cal.mode==='fitted'&&_cal.coef!=null);
+  S.forEach(function(s,i){s.alpha=0.35*zt[i]+0.25*zse[i]+0.15*zsh[i]+0.15*zop[i]+0.07*((zem[i]+zr[i])/2)+0.03*zf[i];s.exp=_fit?(_cal.intercept+_cal.coef*s.alpha):(s.alpha*sigR);});
   var TH=0.5,bull=S.filter(function(s){return s.alpha>=TH;}).sort(function(a,b){return b.alpha-a.alpha;}),
       bear=S.filter(function(s){return s.alpha<=-TH;}).sort(function(a,b){return a.alpha-b.alpha;}),
       neut=S.filter(function(s){return Math.abs(s.alpha)<TH;}).sort(function(a,b){return b.alpha-a.alpha;});
@@ -2046,13 +2047,17 @@ function buildBullBearBoard(){
     '#bullBearBoard .bbdrag{font-size:9px;color:#8a93a3}#bullBearBoard .bba{font-size:9px;color:#69727f;margin-left:auto}'+
     '#bullBearBoard .bbtiles{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}#bullBearBoard .bt{font-size:9px;border:1px solid var(--line);border-radius:4px;padding:0 4px;color:#cfd8e3}'+
     '#bullBearBoard .bbh{font-weight:800;font-size:12px;padding:4px 6px;border-radius:6px;margin:8px 0 2px;display:flex;justify-content:space-between}</style>';
-  var h=css+'<div class="note" style="margin:4px 0"><b style="color:var(--gold)">BULL / BEAR — α (market‑neutral edge)</b> · today: 10Y '+(DIR.RATE>=0?'+':'')+DIR.RATE.toFixed(1)+' · Oil '+(DIR.OIL>=0?'+':'')+DIR.OIL.toFixed(1)+'% · USD '+(DIR.DXY>=0?'+':'')+DIR.DXY.toFixed(1)+'% · Risk '+(DIR.VIX>0?'OFF':'ON')+' · exp% = α × realized 1m dispersion ('+sigR.toFixed(1)+'%). Self‑recomputed from live data; ETFs excluded. Research only.</div>';
+  var h=css+'<div class="note" style="margin:4px 0"><b style="color:var(--gold)">BULL / BEAR — α (market‑neutral edge)</b> · today: 10Y '+(DIR.RATE>=0?'+':'')+DIR.RATE.toFixed(1)+' · Oil '+(DIR.OIL>=0?'+':'')+DIR.OIL.toFixed(1)+'% · USD '+(DIR.DXY>=0?'+':'')+DIR.DXY.toFixed(1)+'% · Risk '+(DIR.VIX>0?'OFF':'ON')+' · exp% = '+(_fit?('empirically fitted (coef '+_cal.coef+' · IC '+_cal.ic+' · n='+_cal.n+')'):('α × realized 1m dispersion '+sigR.toFixed(1)+'% · calibrating, n='+((_cal&&_cal.n)||0)))+'. Self‑recomputed from live data; ETFs excluded. Research only.</div>';
   h+='<div class="bbh" style="background:rgba(239,95,78,.12);color:#ef5f4e"><span>▼ BEAR — real headwind (α≤−0.5σ)</span><span>'+bear.length+'</span></div>';bear.forEach(function(s){h+=rowH(s,false);});
   h+='<div class="bbh" style="background:rgba(46,204,143,.12);color:#2ecc8f"><span>▲ BULL — real tailwind (α≥+0.5σ)</span><span>'+bull.length+'</span></div>';bull.forEach(function(s){h+=rowH(s,true);});
   h+='<div class="bbh" style="background:rgba(138,147,163,.12);color:#9aa7b4"><span>◆ NO‑EDGE — beta‑driven (down only with the tape)</span><span>'+neut.length+'</span></div>';
   h+='<div style="font-size:10px;color:#69727f;padding:3px 2px;line-height:1.5">'+neut.map(function(s){return '<b style="color:#9aa7b4">'+s.t+'</b> '+(s.exp>=0?'+':'')+s.exp.toFixed(1)+'%';}).join(' · ')+'</div>';
   el.innerHTML=h;}
-(function(){var n=0;function go(){if(window.MMAP&&window.MMAP.names&&window.MMAP.names.length){try{buildBullBearBoard();}catch(e){}return;}if(n++<50)setTimeout(go,400);}if(document.readyState!=='loading')go();else document.addEventListener('DOMContentLoaded',go);})();
+(function(){var n=0,fetched=false;function build(){try{buildBullBearBoard();}catch(e){}}
+  function go(){if(window.MMAP&&window.MMAP.names&&window.MMAP.names.length){
+    if(!fetched){fetched=true;fetch('alpha_calib.json',{cache:'no-cache'}).then(function(r){return r.ok?r.json():null;}).then(function(c){if(c)window.ALPHACALIB=c;}).catch(function(){}).then(build);}else build();return;}
+    if(n++<50)setTimeout(go,400);}
+  if(document.readyState!=='loading')go();else document.addEventListener('DOMContentLoaded',go);})();
 function buildAlerts(){const A=[];const c=CUR.c,r=CUR.r,ic=CUR.icss,last=CUR.last,n=c.length;
  const rvolNow=CUR.rvolS[CUR.rvolS.length-1],v20=CUR.v20[CUR.v20.length-1],v20p=CUR.v20[CUR.v20.length-2];
  const ao=CUR.ao[CUR.ao.length-1],aop=CUR.ao[CUR.ao.length-2];const rvolTh=+document.getElementById('rvolTh').value||2,ddTh=(+document.getElementById('ddTh').value||-15)/100;

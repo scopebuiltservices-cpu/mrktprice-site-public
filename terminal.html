@@ -1136,8 +1136,9 @@ function _regimeMomentum(seg){
   if(n<3)return {n:n,score:0,t:0,sharpe:0,drift:0,sigma:0,vr:1,vrz:0,sig:0,verdict:'thin sample'};
   var mu=0,i;for(i=0;i<n;i++)mu+=seg[i];mu/=n;
   var v=0;for(i=0;i<n;i++){var d=seg[i]-mu;v+=d*d;}v/=(n-1);var sd=Math.sqrt(v);
-  var t=sd>0?mu/(sd/Math.sqrt(n)):0;                       // drift significance
-  var sharpe=sd>0?(mu/sd)*Math.sqrt(252):0;                // annualized risk-adjusted momentum
+  var t=sd>1e-9?mu/(sd/Math.sqrt(n)):0;                    // drift significance (variance floor guards degenerate segments)
+  var sharpe=sd>1e-9?(mu/sd)*Math.sqrt(252):0;             // annualized risk-adjusted momentum
+  t=Math.max(-50,Math.min(50,t));sharpe=Math.max(-50,Math.min(50,sharpe));   // clamp to sane econometric range
   var q=Math.max(2,Math.min(5,Math.floor(n/4))),V=_varianceRatio(seg,q);
   var sig=Math.min(1,Math.abs(t)/2);                       // |t|>=2 (95%) => fully significant
   var score=_tanh(sharpe/2);                               // signed, bounded momentum for color

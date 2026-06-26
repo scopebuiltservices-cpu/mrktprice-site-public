@@ -768,7 +768,10 @@ function garch(r){const uv=vr(r),n=r.length;function nll(w,a,b){let h=uv,ll=0;fo
  for(let k=.5;k<=.995;k+=.005)for(let a=0;a<=Math.min(.3,k);a+=.01){const b=k-a;for(const f of[.3,1,3,10])tp(f*(1-k)*uv,a,b);}
  for(let it=0;it<6;it++){const s=.004/(it+1),sf=Math.max(best.w*.4/(it+1),1e-12);for(const dw of[-sf,0,sf])for(const da of[-s,0,s])for(const db of[-s,0,s])tp(best.w+dw,best.a+da,best.b+db);}
  const tol=best.ll+1,within=grid.filter(g=>g.ll<=tol).map(g=>g.k);const kLo=Math.min(...within),kHi=Math.max(...within),kappa=best.a+best.b;
- // numerical-Hessian standard errors at the QMLE optimum (observed information)
+ // numerical-Hessian standard errors at the QMLE optimum (observed information). M-stat1: the
+ // conditional likelihood seeds h0 = sample unconditional variance, held FIXED, so these are
+ // CONDITIONAL QMLE SEs — SE(omega) omits omega's effect through the stationary variance and is a
+ // lower bound. The robust persistence uncertainty is the kappa band (kLo..kHi), reported alongside.
  const xo=[best.w,best.a,best.b],hs=[Math.max(best.w*1e-3,1e-9),1e-4,1e-4],_f=p=>nll(p[0],p[1],p[2]),Hn=[[0,0,0],[0,0,0],[0,0,0]];
  for(let i=0;i<3;i++)for(let j=0;j<3;j++){const pp=xo.slice(),pm=xo.slice(),mp=xo.slice(),mm=xo.slice();pp[i]+=hs[i];pp[j]+=hs[j];pm[i]+=hs[i];pm[j]-=hs[j];mp[i]-=hs[i];mp[j]+=hs[j];mm[i]-=hs[i];mm[j]-=hs[j];Hn[i][j]=(_f(pp)-_f(pm)-_f(mp)+_f(mm))/(4*hs[i]*hs[j]);}
  const cov=_inv3(Hn);const se={w:cov&&cov[0][0]>0?Math.sqrt(cov[0][0]):null,a:cov&&cov[1][1]>0?Math.sqrt(cov[1][1]):null,b:cov&&cov[2][2]>0?Math.sqrt(cov[2][2]):null};

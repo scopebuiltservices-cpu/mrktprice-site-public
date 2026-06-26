@@ -1129,6 +1129,24 @@ function _qReportDates(d,sym){var out=[],seen={},n=_mmName(sym);
   out.forEach(function(o){o.idx=-1;for(var k=0;k<d.length;k++){if(d[k]>=o.iso){o.idx=k;break;}}});
   out=out.filter(function(o){return o.idx>=0;});
   out.sort(function(a,b){return a.iso<b.iso?1:-1;});out=out.slice(0,4);out.sort(function(a,b){return a.iso<b.iso?-1:1;});return out;}
+/* ===== VALUATION SUMMARY — the stock's multiple + PEG for the cards =====
+   Prefers the payload val block (pe trailing, fpe forward, peg, evb EV/EBITDA, sector comps, verdict);
+   falls back to computing trailing P/E and PEG from FUND fundamentals when val is absent. */
+function _valSummary(sym,price){var n=_mmName(sym),v=(n&&n.val)?n.val:null,o={};
+  if(v){o.pe=v.pe;o.fpe=v.fpe;o.peg=v.peg;o.evb=v.evb;o.verdict=v.overall;o.peSec=v.peSec;}
+  if((o.pe==null||o.peg==null)&&price!=null){try{var C=(typeof FUND==='object'&&FUND)?FUND[sym]:null;
+    if(C&&C.years){var yk=Object.keys(C.years).sort(),ry=C.years[yk[yk.length-1]]||{},py=yk.length>1?C.years[yk[yk.length-2]]:null;
+      if(o.pe==null&&ry.eps>0)o.pe=price/ry.eps;
+      var g=(C.summary&&C.summary.revCAGR2!=null)?C.summary.revCAGR2:((py&&py.eps>0&&ry.eps!=null)?(ry.eps/py.eps-1):null);
+      if(o.peg==null&&o.pe!=null&&g!=null&&g>0)o.peg=o.pe/(g*100);}}catch(_e){}}
+  return o;}
+function _valLine(sym,price){var o=_valSummary(sym,price);if(o.pe==null&&o.peg==null)return '';
+  var vc=o.verdict==='supported'?'var(--pass)':o.verdict==='rejected'?'var(--fail)':o.verdict?'var(--caution)':'var(--muted)',p=[];
+  if(o.pe!=null)p.push('P/E <b style="color:var(--ink)">'+o.pe.toFixed(1)+'x</b>'+(o.fpe!=null?' <span style="color:var(--muted)">fwd '+o.fpe.toFixed(1)+'x</span>':''));
+  if(o.peg!=null)p.push('PEG <b style="color:'+(o.peg<=1?'var(--pass)':o.peg<=2?'var(--caution)':'var(--fail)')+'">'+o.peg.toFixed(2)+'</b>');
+  if(o.evb!=null)p.push('EV/EBITDA '+o.evb.toFixed(1)+'x');
+  if(o.peSec!=null)p.push('<span style="color:var(--muted)">sector P/E '+o.peSec.toFixed(1)+'x</span>');
+  return '<div style="font-size:10px;color:var(--muted);margin-top:2px"><b style="color:var(--gold)">MULTIPLE</b> '+p.join(' · ')+(o.verdict?' · <b style="color:'+vc+'">'+o.verdict+'</b>':'')+'</div>';}
 function _qBuildExpTile(sym,fut,past){var el=document.getElementById('qExpTile');if(!el)return;
   if(!fut){el.innerHTML='';el.style.display='none';return;}el.style.display='block';
   var days=Math.round((Date.parse(fut.iso+'T00:00:00Z')-Date.now())/86400000);
@@ -1140,6 +1158,7 @@ function _qBuildExpTile(sym,fut,past){var el=document.getElementById('qExpTile')
     +'<div style="font-size:13px;color:var(--ink);font-weight:700;margin:1px 0">'+fut.iso+' <span style="font-size:10px;color:var(--muted);font-weight:400">('+(days>=0?'in '+days+'d':Math.abs(days)+'d ago')+')</span></div>'
     +'<div style="font-size:9px;color:var(--caution);font-weight:700;margin:1px 0">⚠ '+((fut.status==="scheduled")?"SCHEDULED estimate":"CADENCE estimate")+' — NOT a confirmed report date'+(fut.window?' · window '+fut.window[0]+' → '+fut.window[1]:'')+'</div>'
     +'<div style="font-size:10px;color:var(--muted)">'+(fut.est!=null?'consensus EPS est <b style="color:#cfe0f0">'+fut.est+'</b>':'no consensus EPS embedded')+(beat?' · hist '+beat:'')+'</div>'
+    +_valLine(sym,(typeof CUR==='object'&&CUR)?CUR.last:null)
     +(trend?'<div style="font-size:9px;color:var(--muted);margin-top:1px">mechanical FY-trend (not consensus): '+trend+'</div>':'')
     +'</div>';}
 /* ===== TRADING-CALENDAR (independent of the analysis layer) =====
@@ -1952,12 +1971,20 @@ function buildForecastCard(sym){var el=document.getElementById('forecastCard');i
  if(rel==='RED'||grade==='Stop'){act='STAND DOWN — a hard gate failed; research-only, no position.';actc='var(--fail)';}
  else if(dir==='two-sided'){act='WAIT — projection is two-sided ('+(pUp*100).toFixed(0)+'% up); no directional edge at '+nP+'d.';actc='var(--caution)';}
  else {act=(dir==='up'?'LEAN LONG':'LEAN SHORT')+' (research) — '+(pUp*100).toFixed(0)+'% '+dir+' over '+nP+'d, size '+(sz!=null?(Math.abs(sz)*100).toFixed(1)+'% of budget':'capped')+(rel!=='GREEN'?' · '+rel+', conservative':'')+'.';actc=dir==='up'?'var(--pass)':'var(--fail)';}
+ // VALUE — the stock's multiple + PEG + next report position
+ var _v=_valSummary(sym,last),_vt=[];
+ if(_v.pe!=null)_vt.push('P/E <b>'+_v.pe.toFixed(1)+'x</b>'+(_v.fpe!=null?' (fwd '+_v.fpe.toFixed(1)+'x)':''));
+ if(_v.peg!=null)_vt.push('PEG <b style="color:'+(_v.peg<=1?'var(--pass)':_v.peg<=2?'var(--caution)':'var(--fail)')+'">'+_v.peg.toFixed(2)+'</b>');
+ if(_v.evb!=null)_vt.push('EV/EBITDA '+_v.evb.toFixed(1)+'x');
+ var _vc=_v.verdict==='supported'?'var(--pass)':_v.verdict==='rejected'?'var(--fail)':_v.verdict?'var(--caution)':'#9aa7b4';
+ var _nr='';try{var _nf=_qNextReportFull(CUR.d,sym);if(_nf)_nr=' · next report '+_nf.iso+(_nf.label?' '+_nf.label:'');}catch(_e){}
  var sec=function(tag,col,body){return '<div style="display:flex;gap:6px;padding:4px 0;border-top:1px solid var(--line)"><div style="flex:0 0 42px;font-size:9px;font-weight:700;color:'+col+';letter-spacing:.5px;padding-top:1px">'+tag+'</div><div style="flex:1;font-size:10px;color:var(--ink);line-height:1.35">'+body+'</div></div>';};
  var html='<div class="card" style="padding:8px 10px">'
   +'<div style="display:flex;justify-content:space-between;align-items:baseline"><h3 style="margin:0">Forecast — '+sym+'</h3><span style="font-size:9px;color:var(--muted)">'+nP+'d · to '+hd+'</span></div>'
   +sec('WHAT','var(--accent)','<b style="color:'+dCol+'">'+(dir==='up'?'▲':dir==='down'?'▼':'◆')+' '+(retPct>=0?'+':'')+retPct.toFixed(1)+'%</b> to <b>$'+target.toFixed(2)+'</b> from $'+last.toFixed(2)+' · <b style="color:'+dCol+'">P(up) '+(pUp*100).toFixed(0)+'%</b>')
   +sec('WHY','#7bb3f0',why.join(' · '))
   +sec('RISK','var(--caution)','95%σ band <b>'+(loPct>=0?'+':'')+loPct.toFixed(1)+'% / '+(hiPct>=0?'+':'')+hiPct.toFixed(1)+'%</b> ($'+eLo.toFixed(2)+'–$'+eHi.toFixed(2)+')'+(sk!=null?' · skew '+sk.toFixed(2):'')+(dd!=null?' · drawdown '+dd.toFixed(0)+'%':'')+(floor!=null?' · P6 floor $'+floor.toFixed(2):''))
+  +sec('VALUE',_vc,(_vt.length?_vt.join(' · '):'multiple n/a')+(_v.verdict?' · <b style="color:'+_vc+'">'+_v.verdict+'</b>':'')+_nr)
   +sec('TRUST','#9aa7b4','grade <b style="color:'+gc+'">'+grade+'</b> · coverage '+cov+' · conformal '+conf+' · release <b style="color:'+relc+'">'+rel+'</b>')
   +sec('ACTION',actc,'<b>'+act+'</b>')
   +'<div style="font-size:8px;color:var(--muted);margin-top:3px">Research reference, not advice. Action follows the calibrated band, not the point estimate.</div>'

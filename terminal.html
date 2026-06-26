@@ -2007,7 +2007,7 @@ function load(sym,s){const c=s.closes,d=s.dates,vol=s.volumes||c.map(()=>0);cons
  document.getElementById('nreg').textContent=ic.breaks.length+1;
  document.getElementById('curreg').textContent=(curRms*Math.sqrt(252)*100).toFixed(1)+'%';
  document.getElementById('crit').textContent=ic.crit.toFixed(3);
- try{renderRegimeValue(ic);}catch(_rv){}
+ try{renderRegimeValue(ic);CUR.regMom=_regimeValue(ic);}catch(_rv){CUR.regMom=null;}
  // HV term table
  document.getElementById('hvterm').innerHTML='<tr><td>horizon</td>'+HVW.map(w=>`<td class=r>${w}d</td>`).join('')+'</tr><tr><td>HV ann</td>'+HVW.map(w=>`<td class=r>${hvT[w]!=null?(hvT[w]*100).toFixed(0)+'%':'—'}</td>`).join('')+'</tr>';
  const ret=n=>c.length>n?((c[c.length-1]/c[c.length-1-n]-1)*100).toFixed(1)+'%':'—';
@@ -2336,6 +2336,25 @@ function coneOptionsBS(sym){try{
   return '<div style="'+card+'">'+head+'Options analytics · '+sym+(b.nContracts?(' ('+b.nContracts+' contracts)'):'')+'</div>'
     +'<div style="display:flex;flex-wrap:wrap;gap:14px">'+t.join('')+'</div>'
     +'<div style="margin-top:5px;font-size:8.5px;color:var(--faint,#646e7c)">'+sub+'</div></div>';
+}catch(_e){return '';}}
+/* Regime-momentum lean on the projection: a VR-z-gated, bounded tilt of the read WITHIN the
+   calibrated band (never mutates the calibrated path). Momentum (VR>1, z>1.96) leans with trend;
+   significant mean-reversion (VR<1, z<-1.96) leans toward the regime mean. */
+function _momLeanHtml(sym){try{
+  var rm=(typeof CUR==='object'&&CUR&&CUR.regMom)?CUR.regMom.mom:null;
+  if(!rm||rm.persist===0||!CUR.pj||!CUR.pj.p80||!CUR.pj.p80.length)return '';
+  var n=CUR.pj.p80.length,term=CUR.pj.p80[n-1],cen=CUR.pj.path[n-1];
+  var tw=(term&&cen&&cen.price>0)?Math.log(term.high/cen.price):0;            // ~half-band (log) at horizon
+  var card='background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:7px 9px;margin-top:7px';
+  var head='<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8a93a0);margin-bottom:3px">';
+  var lean=rm.persist>0?('with the trend ('+(rm.score>0?'higher':'lower')+')'):'back toward the regime mean';
+  var col=rm.persist>0?(rm.score>0?'#2ecc8f':'#ef5f4e'):'#e0c14a';
+  var tiltPct=Math.min(1,rm.sig)*(rm.persist>0?0.25:0.20)*tw*100;
+  return '<div style="'+card+'">'+head+'Regime-momentum lean</div>'
+    +'<div style="font-size:10px;line-height:1.35;color:var(--ink,#cfd8e3)">Variance ratio '
+    +(Math.abs(rm.vrz)>1.96?'<b>significant</b> ':'')+'<b style="color:'+col+'">'+rm.verdict+'</b> (VR '+rm.vr.toFixed(2)+', z '+rm.vrz.toFixed(1)+', drift t '+rm.t.toFixed(1)+'). '
+    +'Center path leans <b style="color:'+col+'">'+lean+'</b> by ~'+Math.abs(tiltPct).toFixed(1)+'% of the horizon band — a lean WITHIN the calibrated range, not a separate forecast.</div>'
+    +'<div style="margin-top:3px;font-size:8px;color:var(--faint,#646e7c)">Gated on the Lo–MacKinlay VR z-stat (|z|&gt;1.96). Research only.</div></div>';
 }catch(_e){return '';}}
 function renderConeInstrument(sym,mcOverride){
   var host=document.getElementById('coneInstrument');if(!host)return;

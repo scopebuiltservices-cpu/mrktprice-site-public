@@ -1055,6 +1055,20 @@ var _ETFSET={};("BNO,CANE,CEW,CORN,CPER,DBA,DBB,DBC,DIA,EEM,EFA,EMB,EWJ,EWZ,FXA,
 function _isETF(sym){sym=(sym||'').toUpperCase();if(_ETFSET[sym])return true;
   try{var n=_mmName(sym);if(n&&(n.etf||n.isFund))return true;}catch(_e){}
   return false;}
+/* ===== 21-STEP VOLATILITY-PATH RATING =====
+   Maps σ-displacement (price vs fair value, in σ) to a labelled diverging scale so the price trace
+   reads as a rating: index 10 = WHITE (neutral, 0σ); 0-9 = RED (red10 brightest/most stretched-down
+   at idx 0 .. red1 near white at idx 9); 11-20 = GREEN (green1 near white at idx 11 .. green10
+   brightest/most stretched-up at idx 20). Step = 0.25σ, clamped to ±2.5σ. */
+var _VOLCOLS=[],_VOLLABELS=[];(function(){var W=[245,247,250],R=[255,42,42],G=[26,210,110];
+  function mix(a,b,t){return 'rgb('+Math.round(a[0]+(b[0]-a[0])*t)+','+Math.round(a[1]+(b[1]-a[1])*t)+','+Math.round(a[2]+(b[2]-a[2])*t)+')';}
+  for(var i=0;i<=20;i++){if(i===10){_VOLCOLS.push('rgb(245,247,250)');_VOLLABELS.push('0');}
+    else if(i<10){_VOLCOLS.push(mix(W,R,(10-i)/10));_VOLLABELS.push('red'+(10-i));}
+    else{_VOLCOLS.push(mix(W,G,(i-10)/10));_VOLLABELS.push('green'+(i-10));}}
+})();
+function _volRating(z){if(z==null||!isFinite(z))return {idx:10,col:_VOLCOLS[10],label:'n/a'};
+  var idx=Math.round(10+Math.max(-2.5,Math.min(2.5,z))/0.25);idx=Math.max(0,Math.min(20,idx));
+  return {idx:idx,col:_VOLCOLS[idx],label:_VOLLABELS[idx]};}
 /* ===== EARNINGS LAYER (drawn LAST, on top of every pane) =====
    The single owner of the bold calendar grid + the 5 quarterly report-date verticals. Drawing it
    last guarantees the lines sit ABOVE the price/volume/indicator/drawdown panes instead of being
@@ -2807,16 +2821,16 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
    var ann=ic.rms[_K-1]*Math.sqrt(252)*100,dly=ic.rms[_K-1]*100;
    var sUp=Math.sqrt(up/seg.length)*Math.sqrt(252)*100,sDn=Math.sqrt(dn/seg.length)*Math.sqrt(252)*100; // up / down (anti) semideviation
    var z=(CUR.z&&CUR.z.length)?CUR.z[CUR.z.length-1]:null;
-   var bw=158,bh=48,xc=X(jx),bx=Math.min(xc-bw-6,W-padR-bw-4);if(bx<padL+120)bx=padL+120;var by=yP0+4;
-   g.fillStyle='rgba(24,9,9,.84)';g.fillRect(bx,by,bw,bh);g.strokeStyle='rgba(255,120,110,.55)';g.lineWidth=1;g.strokeRect(bx,by,bw,bh);
+   var bw=170,bh=64,xc=X(jx),bx=Math.min(xc-bw-6,W-padR-bw-4);if(bx<padL+120)bx=padL+120;var by=yP0+4;
+   g.fillStyle='rgba(24,9,9,.86)';g.fillRect(bx,by,bw,bh);g.strokeStyle='rgba(255,120,110,.55)';g.lineWidth=1;g.strokeRect(bx,by,bw,bh);
    g.fillStyle='rgba(255,165,155,.97)';g.font='bold 9px sans-serif';g.fillText('REGIME #'+_K+' · current',bx+5,by+11);
    g.fillStyle='#e6c0bb';g.font='8px sans-serif';g.fillText('vol '+ann.toFixed(0)+'% ann ('+dly.toFixed(1)+'%/day)',bx+5,by+22);
    g.fillStyle='#7fd7a0';g.fillText('+dev '+sUp.toFixed(0)+'%',bx+5,by+32);g.fillStyle='#ef8a7e';g.fillText('-dev '+sDn.toFixed(0)+'%',bx+72,by+32);
-   if(z!=null){var pz=Math.max(-2.5,Math.min(2.5,z)),pbx=bx+5,pbw=bw-10,py=by+43;
-    g.strokeStyle='rgba(150,150,160,.45)';g.lineWidth=1;g.beginPath();g.moveTo(pbx,py);g.lineTo(pbx+pbw,py);g.stroke();
-    [-2,-1,0,1,2].forEach(function(t){var tx=pbx+pbw*((t+2.5)/5);g.strokeStyle=t===0?'rgba(180,180,190,.7)':'rgba(150,150,160,.3)';g.beginPath();g.moveTo(tx,py-2.5);g.lineTo(tx,py+2.5);g.stroke();});
-    var mx=pbx+pbw*((pz+2.5)/5);g.fillStyle=z>=0?'#7fd7a0':'#ef8a7e';g.beginPath();g.arc(mx,py,2.8,0,7);g.fill();
-    g.fillStyle='#cfd8e3';g.font='bold 8px sans-serif';g.fillText('stock '+(z>=0?'+':'')+z.toFixed(1)+'σ on vol path',pbx,py-4);}
+   if(z!=null){var rt=_volRating(z),pbx=bx+5,pbw=bw-10,cw=pbw/21,py=by+46;
+    g.textAlign='left';g.fillStyle='#cfd8e3';g.font='bold 8px sans-serif';g.fillText('vol-path rating: '+(z>=0?'+':'')+z.toFixed(1)+'σ → '+rt.label.toUpperCase(),pbx,by+42);
+    for(var ci=0;ci<21;ci++){g.fillStyle=_VOLCOLS[ci];g.fillRect(pbx+ci*cw,py,Math.ceil(cw)+0.5,7);}     // 21-hue scale red10..0..green10
+    g.strokeStyle='#0b0e13';g.lineWidth=1;g.strokeRect(pbx+rt.idx*cw,py-1,Math.ceil(cw)+0.5,9);g.strokeStyle='#fff';g.strokeRect(pbx+rt.idx*cw-1,py-2,Math.ceil(cw)+2.5,11); // mark current
+    g.fillStyle='#9aa7b4';g.font='6px sans-serif';g.fillText('red10',pbx-1,py+15);g.fillText('0',pbx+pbw/2-2,py+15);g.textAlign='right';g.fillText('green10',pbx+pbw,py+15);g.textAlign='left';}
   }catch(_er){}})();
  }
  g.font='10px sans-serif';for(let k=0;k<=4;k++){const p=lo+(hi-lo)*k/4,y=Yp(p);g.strokeStyle='#1d2530';g.lineWidth=1;g.beginPath();g.moveTo(padL,y);g.lineTo(W-padR,y);g.stroke();g.fillStyle='#69727f';g.fillText(p.toFixed(1),W-padR+5,y+3);}
@@ -2837,8 +2851,7 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
  // fair value, brighter = more stretched) so "where the stock is on the vol path" reads off the trace.
  if(document.getElementById('tReg').checked&&ic.bounds&&ic.bounds.length>=2){
   const _rs=(ic.bounds[ic.bounds.length-2]||0)+1;
-  const _zc=function(z){if(z==null)return css('--hist');var a=Math.min(Math.abs(z)/2,1);return (z>=0?'rgba(63,183,107,':'rgba(224,90,78,')+(0.45+0.55*a).toFixed(2)+')';};
-  g.lineWidth=1.5;for(let i=h0+1;i<c.length;i++){g.strokeStyle=(i>=_rs)?_zc(CUR.z[i]):css('--hist');g.beginPath();g.moveTo(X(i-1-h0),Yp(c[i-1]));g.lineTo(X(i-h0),Yp(c[i]));g.stroke();}
+  g.lineWidth=1.6;for(let i=h0+1;i<c.length;i++){g.strokeStyle=(i>=_rs)?_volRating(CUR.z[i]).col:css('--hist');g.beginPath();g.moveTo(X(i-1-h0),Yp(c[i-1]));g.lineTo(X(i-h0),Yp(c[i]));g.stroke();}
  } else {g.strokeStyle=css('--hist');g.lineWidth=1.4;g.beginPath();for(let i=h0;i<c.length;i++){const x=X(i-h0),y=Yp(c[i]);i===h0?g.moveTo(x,y):g.lineTo(x,y);}g.stroke();}
 
   if(document.getElementById('tEMA').checked){(CUR.emaShow||[]).forEach(N=>{const e=CUR.emaM[N].e;g.strokeStyle=EMACOL[N];g.lineWidth=1;g.beginPath();let st=false;for(let i=h0;i<c.length;i++){const x=X(i-h0),y=Yp(e[i]);st?g.lineTo(x,y):g.moveTo(x,y);st=true;}g.stroke();});
@@ -2937,7 +2950,7 @@ cv.addEventListener('mousemove',e=>{if(!GEO||!CUR.c)return;const rect=cv.getBoun
  const g=cv.getContext('2d');draw();g.setTransform((window.devicePixelRatio||1),0,0,(window.devicePixelRatio||1),0,0);const x=GEO.X(i);g.strokeStyle='rgba(255,255,255,.25)';g.lineWidth=1;g.setLineDash([3,3]);g.beginPath();g.moveTo(x,GEO.yP0);g.lineTo(x,GEO.Ht-12);g.stroke();g.setLineDash([]);
  let html='';const ci=GEO.h0+i;
  if(i<=GEO.jx&&ci<CUR.c.length){const pr=CUR.c[ci];g.fillStyle=css('--accent');g.beginPath();g.arc(x,GEO.Yp(pr),3,0,7);g.fill();let rid=0;for(let s=0;s<CUR.icss.breaks.length;s++)if(ci-1>=CUR.icss.breaks[s])rid=s+1;
-  html=`<div><span class=lbl>date</span><span>${CUR.d[ci]}</span></div><div><span class=lbl>close</span><span>${pr.toFixed(2)}</span></div><div><span class=lbl>RVOL</span><span>${CUR.rvolS[ci]?CUR.rvolS[ci].toFixed(2)+'x':'—'}</span></div><div><span class=lbl>σ-displ</span><span>${CUR.z[ci]!=null?(CUR.z[ci]>=0?'+':'')+CUR.z[ci].toFixed(2)+'σ':'—'}</span></div><div><span class=lbl>MFI</span><span>${CUR.mfi[ci]!=null?CUR.mfi[ci].toFixed(0):'—'}</span></div><div><span class=lbl>VWAP20</span><span>${CUR.v20[ci]?CUR.v20[ci].toFixed(2):'—'}</span></div><div><span class=lbl>AO</span><span>${CUR.ao[ci]!=null?CUR.ao[ci].toFixed(2):'—'}</span></div><div><span class=lbl>regime</span><span>#${rid} σ${(CUR.icss.rms[rid]*Math.sqrt(252)*100).toFixed(0)}%</span></div><div><span class=lbl>drawdown</span><span>${(CUR.dds[ci]*100).toFixed(0)}%</span></div>`;
+  html=`<div><span class=lbl>date</span><span>${CUR.d[ci]}</span></div><div><span class=lbl>close</span><span>${pr.toFixed(2)}</span></div><div><span class=lbl>RVOL</span><span>${CUR.rvolS[ci]?CUR.rvolS[ci].toFixed(2)+'x':'—'}</span></div><div><span class=lbl>σ-displ</span><span>${CUR.z[ci]!=null?(CUR.z[ci]>=0?'+':'')+CUR.z[ci].toFixed(2)+'σ':'—'}</span></div><div><span class=lbl>vol-rating</span><span>${CUR.z[ci]!=null?_volRating(CUR.z[ci]).label.toUpperCase():'—'}</span></div><div><span class=lbl>MFI</span><span>${CUR.mfi[ci]!=null?CUR.mfi[ci].toFixed(0):'—'}</span></div><div><span class=lbl>VWAP20</span><span>${CUR.v20[ci]?CUR.v20[ci].toFixed(2):'—'}</span></div><div><span class=lbl>AO</span><span>${CUR.ao[ci]!=null?CUR.ao[ci].toFixed(2):'—'}</span></div><div><span class=lbl>regime</span><span>#${rid} σ${(CUR.icss.rms[rid]*Math.sqrt(252)*100).toFixed(0)}%</span></div><div><span class=lbl>drawdown</span><span>${(CUR.dds[ci]*100).toFixed(0)}%</span></div>`;
  } else {const k=i-GEO.jx-1;if(k>=0&&k<CUR.pj.path.length){const p=CUR.pj.path[k],b8=CUR.pj.p80[k],b9=CUR.pj.p95[k];g.fillStyle=css('--accent');g.beginPath();g.arc(x,GEO.Yp(p.price),3,0,7);g.fill();
   var _hd=(CUR.d&&CUR.d.length)?_mdd(_addBizDays(CUR.d[CUR.d.length-1],k+1)):"";var _mu=Math.log(p.price/CUR.last),_su=Math.log(b9.high/p.price)/Z[95],_sd=Math.log(p.price/b9.low)/Z[95],_pu=1-normCDF((0-_mu)/Math.max((_mu>=0?_sd:_su),1e-9));html=`<div><span class=lbl>horizon</span><span>+${k+1}d · ${_hd}</span></div><div><span class=lbl>path</span><span>${p.price.toFixed(2)}</span></div><div><span class=lbl>P(up)</span><span>${(_pu*100).toFixed(0)}%</span></div><div><span class=lbl>80%</span><span>${b8.low.toFixed(1)}–${b8.high.toFixed(1)}</span></div><div><span class=lbl>95%</span><span>${b9.low.toFixed(1)}–${b9.high.toFixed(1)}</span></div>`;}}
  if(html){ro.innerHTML=html;ro.style.display='block';ro.style.left=Math.min(mx+14,GEO.W-160)+'px';ro.style.top=(GEO.yP0+8)+'px';

@@ -350,6 +350,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
     ['LIT','Lithium'],['DBC','Broad Cmdty'],['GSG','Cmdty Index']];
   var RATE_ETF=[['SHY','1-3y UST'],['IEF','7-10y UST'],['TLT','20y+ UST'],['TIP','TIPS'],['HYG','High Yield'],['LQD','IG Credit']];
   function col(v){return v==null?'var(--muted,#8a93a0)':(v>=0?'var(--up,#3fb27f)':'var(--down,#e0556b)');}
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   function pct(v){return v==null?'&mdash;':((v>=0?'+':'')+v.toFixed(2)+'%');}
   /* Momentum vs mean-reversion read: the NUMBER color = sign of the latest period; the SPARKLINE
      color = sign of the window's net move. AGREE => the latest move continues the trend (momentum);
@@ -410,7 +411,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
       cnote='FMP Ultimate · '+Object.keys(comm).length+' commodity futures (last + weekly)';
       comHtml=Object.keys(comm).map(function(sy){var c=comm[sy],wr=c.wr||[];return {sy:sy,c:c,wr:wr,w1:wr.length?wr[wr.length-1]*100:null};})
         .sort(function(a,b){return Math.abs(b.w1||0)-Math.abs(a.w1||0);})   // biggest movers first
-        .map(function(o){return tile(o.c.name||o.sy,(o.c.last!=null?(''+o.c.last):'&mdash;'),pct(o.w1)+' wk',spark(o.wr,120,22),col(o.w1),momTag(o.w1,o.wr));}).join('');
+        .map(function(o){return tile(esc(o.c.name||o.sy),(o.c.last!=null?(''+o.c.last):'&mdash;'),pct(o.w1)+' wk',spark(o.wr,120,22),col(o.w1),momTag(o.w1,o.wr));}).join('');
     }else{
       cnote='ETF proxy (1-week / 1-month) — upgrades to FMP futures on next rebuild';
       comHtml=CO_ETF.map(function(x){var n=byT[x[0]];if(!n)return null;

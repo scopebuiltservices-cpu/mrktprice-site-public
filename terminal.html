@@ -197,10 +197,12 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
    <label>A<select id="indA"><option value="signal">Signal/Noise</option><option value="ao">Awesome</option><option value="obv">OBV</option><option value="mfi">MFI</option><option value="rsi">RSI</option><option value="macd">MACD</option></select></label>
    <label>B<select id="indB"><option value="ao">Awesome</option><option value="signal">Signal/Noise</option><option value="obv">OBV</option><option value="mfi">MFI</option><option value="rsi">RSI</option><option value="macd">MACD</option></select></label>
    <label><input type="checkbox" id="tScen">scenarios</label>
+   <label><input type="checkbox" id="tHARQ" onchange="renderHARQ()">HARQ+regime RV forecast</label>
    <span class="note" id="asym" style="margin:0"></span></div></div>
  <canvas id="cv2"></canvas><div class="readout" id="ro"></div>
  <div id="coneInstrument"></div>
  <div id="coneContext"></div>
+ <div id="harqPanel"></div>
  <div id="intradayStrip"></div>
  <div id="lineagePanel"></div>
  <div id="xsectionPanel"></div>
@@ -1212,6 +1214,53 @@ function renderRegimeValue(ic){var host=document.getElementById('regimeValue');i
     +'<div style="margin-top:5px;font-size:10px;line-height:1.35;color:var(--ink,#cfd8e3)">'+verdict+' <b style="color:'+_momHeat(R.mom.score,1)+'">Momentum: '+R.mom.verdict+'</b> (ann Sharpe '+(R.mom.sharpe>=0?'+':'')+R.mom.sharpe.toFixed(2)+', drift t '+R.mom.t.toFixed(1)+', variance-ratio '+R.mom.vr.toFixed(2)+(Math.abs(R.mom.vrz)>1.96?' — significant':'')+').</div>'
     +'<div style="margin-top:3px;font-size:8px;color:var(--faint,#646e7c)">Shading = signed momentum (Sharpe), opacity = drift significance · Lo–MacKinlay variance ratio separates momentum (VR&gt;1) from mean-reversion (VR&lt;1) · research only</div>';
 }
+/* ===== HARQ + REGIME REALIZED-VOLATILITY FORECAST (free, no-GPU, browser-side) =====
+   Corsi HAR-RV + Bollerslev-Patton-Quaedvlieg realized-quarticity term + Fang-Slepaczuk high-vol
+   regime probability, OLS on log realized variance. Daily-RV approximation: RV=r^2 from the daily
+   closes we already pull; RQ is a rolling r^4 proxy; p^HV a robust-z logistic on trailing log-RV.
+   Mirrors tools/market_map/harq_regime.py (unit-tested). No look-ahead. Research only. */
+function _harqMed(a){var z=a.slice().sort(function(x,y){return x-y;}),n=z.length;return n?(n%2?z[(n-1)/2]:0.5*(z[n/2-1]+z[n/2])):0;}
+function _harqMad(a,m){if(!a.length)return 0;return 1.4826*_harqMed(a.map(function(x){return Math.abs(x-m);}));}
+function harqRegimeForecast(closes,ann){ann=ann||252;var FL=1e-12,i,j;
+  if(!closes||closes.length<61)return null;
+  var r=[];for(i=1;i<closes.length;i++)r.push((closes[i-1]>0&&closes[i]>0)?Math.log(closes[i]/closes[i-1]):0);
+  var rv=r.map(function(x){return Math.max(x*x,FL);}),n=rv.length,lrv=rv.map(Math.log);
+  function rqp(t){var w=r.slice(Math.max(0,t-4),t+1),m=w.length,s=0;for(var k=0;k<m;k++)s+=w[k]*w[k]*w[k]*w[k];return Math.max((m/3)*s,FL);}
+  function phv(t){var h=lrv.slice(Math.max(0,t-120),t);if(h.length<20)return 0.5;var m=_harqMed(h),sd=_harqMad(h,m)||1e-9;return 1/(1+Math.exp(-(lrv[t]-m)/sd));}
+  var X=[],Y=[];
+  for(var t=22;t<n;t++){var rvd=rv[t-1],rvw=0,rvm=0;for(j=t-5;j<t;j++)rvw+=rv[j];rvw/=5;for(j=t-22;j<t;j++)rvm+=rv[j];rvm/=22;
+    X.push([1,Math.log(rvd),Math.log(Math.max(rvw,FL)),Math.log(Math.max(rvm,FL)),Math.log(rqp(t-1)),phv(t-1)]);Y.push(lrv[t]);}
+  if(X.length<30)return null;
+  var o=_ols(X,Y);if(!o)return null;var beta=o.beta;
+  var ybar=0;for(i=0;i<Y.length;i++)ybar+=Y[i];ybar/=Y.length;var sse=0,sst=0;
+  for(i=0;i<Y.length;i++){var yh=0;for(j=0;j<beta.length;j++)yh+=X[i][j]*beta[j];sse+=(Y[i]-yh)*(Y[i]-yh);sst+=(Y[i]-ybar)*(Y[i]-ybar);}
+  var r2=1-sse/(sst||1e-300);
+  var rvdN=rv[n-1],rvwN=0,rvmN=0;for(j=n-5;j<n;j++)rvwN+=rv[j];rvwN/=5;for(j=n-22;j<n;j++)rvmN+=rv[j];rvmN/=22;
+  var xf=[1,Math.log(rvdN),Math.log(Math.max(rvwN,FL)),Math.log(Math.max(rvmN,FL)),Math.log(rqp(n-1)),phv(n-1)];
+  var logf=0;for(j=0;j<beta.length;j++)logf+=xf[j]*beta[j];var rvF=Math.exp(logf),volD=Math.sqrt(rvF);
+  var c20=0;for(j=n-20;j<n;j++)c20+=rv[j];c20=Math.sqrt(c20/20)*Math.sqrt(ann)*100;
+  return {rvForecast:rvF,volForecastAnn:volD*Math.sqrt(ann)*100,volDaily:volD,
+    curVolAnn:Math.sqrt(rv[n-1])*Math.sqrt(ann)*100,cur20VolAnn:c20,r2:r2,n:X.length,beta:beta,phvNow:xf[5],
+    labels:["const","log RVd","log RVw","log RVm","log RQ","p(high-vol)"]};
+}
+function renderHARQ(){var host=document.getElementById('harqPanel');if(!host)return;
+  var on=document.getElementById('tHARQ');if(!on||!on.checked){host.innerHTML='';return;}
+  var res=(typeof CUR==='object'&&CUR&&CUR.c)?harqRegimeForecast(CUR.c):null;
+  if(!res){host.innerHTML='<div style="font-size:10px;color:var(--faint,#646e7c);margin-top:7px">HARQ+regime RV forecast — needs ~80+ daily bars.</div>';return;}
+  var card='background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:7px 9px;margin-top:7px';
+  var head='<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8a93a0);margin-bottom:3px">';
+  var f=res.volForecastAnn,c=res.cur20VolAnn,dir=f>c*1.05?{t:'rising',c:'#ef5f4e'}:(f<c*0.95?{t:'easing',c:'#2ecc8f'}:{t:'steady',c:'#9aa7b4'});
+  function chip(k,v,col){return '<div class="chip"><span class="k">'+k+'</span><span class="v"'+(col?' style="color:'+col+'"':'')+'>'+v+'</span></div>';}
+  var coef='';for(var i=0;i<res.beta.length;i++)coef+='<tr><td style="color:var(--muted,#8a93a0)">'+res.labels[i]+'</td><td class=r>'+res.beta[i].toFixed(3)+'</td></tr>';
+  host.innerHTML='<div style="'+card+'">'+head+'HARQ+regime RV forecast</div>'
+    +'<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:3px"><span style="font-size:17px;font-weight:800;color:'+dir.c+'">'+f.toFixed(0)+'%</span>'
+    +'<span style="font-size:10px;color:var(--faint,#646e7c)">annualized vol forecast (next session) · <b style="color:'+dir.c+'">'+dir.t+'</b> vs '+c.toFixed(0)+'% (20d realized)</span></div>'
+    +chip('next-day vol','daily '+(res.volDaily*100).toFixed(2)+'%')
+    +chip('p(high-vol regime)',(res.phvNow*100).toFixed(0)+'%',res.phvNow>0.5?'#e0c14a':'#9ab4e0')
+    +chip('fit R² (in-sample)',res.r2.toFixed(2)+' · n='+res.n)
+    +'<table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:4px"><tr><td style="color:var(--faint,#646e7c)">coefficient</td><td class=r style="color:var(--faint,#646e7c)">β</td></tr>'+coef+'</table>'
+    +'<div style="margin-top:3px;font-size:8px;color:var(--faint,#646e7c)">Corsi HAR-RV + Bollerslev–Patton–Quaedvlieg quarticity + Fang–Ślepaczuk regime probability, OLS on log realized variance. Daily-RV approximation (RV=r²; RQ rolling r⁴ proxy) — free, no intraday feed required. Research only, not advice.</div></div>';
+}
 /* ===== EARNINGS LAYER (drawn LAST, on top of every pane) =====
    The single owner of the bold calendar grid + the 5 quarterly report-date verticals. Drawing it
    last guarantees the lines sit ABOVE the price/volume/indicator/drawdown panes instead of being
@@ -2013,7 +2062,7 @@ function load(sym,s){const c=s.closes,d=s.dates,vol=s.volumes||c.map(()=>0);cons
  const ret=n=>c.length>n?((c[c.length-1]/c[c.length-1-n]-1)*100).toFixed(1)+'%':'—';
  document.getElementById('trail').innerHTML=`<tr><td>1W</td><td class=r>${ret(5)}</td></tr><tr><td>1M</td><td class=r>${ret(21)}</td></tr><tr><td>3M</td><td class=r>${ret(63)}</td></tr><tr><td>Realized σ</td><td class=r>${(rvAnn*100).toFixed(0)}%</td></tr>`;
  if(!document.getElementById('mid').value||document.getElementById('mid').dataset.sym!==sym){document.getElementById('mid').value=last.toFixed(2);document.getElementById('low').value=(last*.90).toFixed(2);document.getElementById('high').value=(last*1.10).toFixed(2);document.getElementById('mid').dataset.sym=sym;}
- redraw();drawCone();buildCadence(sym,c,d);try{buildQLedger(sym,c,d);}catch(_e){}}
+ redraw();drawCone();buildCadence(sym,c,d);try{buildQLedger(sym,c,d);}catch(_e){}try{renderHARQ();}catch(_hq){}}
 function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementById('mid').value,low=+document.getElementById('low').value,high=+document.getElementById('high').value,H=+document.getElementById('hz').value,cf=(+document.getElementById('cf').value)/100,lev=document.getElementById('lev').checked;
  const vs=document.getElementById('volsrc').value;const sig=vs==='regime'?CUR.curRms:(vs==='garch'?CUR.garch.annVol/Math.sqrt(252):0.6*CUR.garch.annVol/Math.sqrt(252)+0.4*CUR.rvDaily);
  const am=document.getElementById('anchorSel').value;let pj;

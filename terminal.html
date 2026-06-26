@@ -176,7 +176,8 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
  <div class="card"><h3>Variance regimes · ICSS</h3>
   <div class="chip"><span class="k">Regimes (window)</span><span class="v" id="nreg">—</span></div>
   <div class="chip"><span class="k">Current σ (ann)</span><span class="v" id="curreg">—</span></div>
-  <div class="chip"><span class="k">Break crit</span><span class="v" id="crit">—</span></div></div>
+  <div class="chip"><span class="k">Break crit</span><span class="v" id="crit">—</span></div>
+  <div id="regimeValue" style="margin-top:6px"></div></div>
  <div class="card"><h3>Risk geometry · 91–96</h3>
   <div class="chip"><span class="k">95% CVaR (1d)</span><span class="v"><span id="cv">—</span> <span class="pill" id="cvp">—</span></span></div>
   <div class="chip"><span class="k">Max drawdown</span><span class="v" id="dd">—</span></div>
@@ -1108,6 +1109,65 @@ var _VOLCOLS=[],_VOLLABELS=[];(function(){var W=[245,247,250],R=[255,42,42],G=[2
 function _volRating(z){if(z==null||!isFinite(z))return {idx:10,col:_VOLCOLS[10],label:'n/a'};
   var idx=Math.round(10+Math.max(-2.5,Math.min(2.5,z))/0.25);idx=Math.max(0,Math.min(20,idx));
   return {idx:idx,col:_VOLCOLS[idx],label:_VOLLABELS[idx]};}
+/* ===== REGIME VALUATION =====
+   Turns the raw ICSS variance regimes into a VALUED read: where today's regime sits on the
+   stock's OWN regime-vol distribution (calm/normal/elevated/stressed), how old/stable it is,
+   which way vol is trending, where the price sits inside it (sigma-displacement), and the
+   up/down (anti-)deviation. Shared by the dashboard panel AND the on-chart readout box. */
+function _regHeat(f){f=Math.max(0,Math.min(1,f));var g=[46,204,143],y=[224,193,74],r=[239,95,78];
+  var a,b,t;if(f<0.5){a=g;b=y;t=f/0.5;}else{a=y;b=r;t=(f-0.5)/0.5;}
+  return 'rgb('+Math.round(a[0]+(b[0]-a[0])*t)+','+Math.round(a[1]+(b[1]-a[1])*t)+','+Math.round(a[2]+(b[2]-a[2])*t)+')';}
+function _regimeValue(ic){try{
+  if(!ic||!ic.bounds||ic.bounds.length<2||!ic.rms||!ic.rms.length)return null;
+  var K=ic.bounds.length-1, cur=ic.rms[K-1];
+  var annCur=cur*Math.sqrt(252)*100, dlyCur=cur*100;
+  var sorted=ic.rms.slice().sort(function(a,b){return a-b;});
+  var below=0;for(var i=0;i<sorted.length;i++)if(sorted[i]<=cur)below++;
+  var pct=sorted.length>1?(below-1)/(sorted.length-1):0.5;pct=Math.max(0,Math.min(1,pct));
+  var med=sorted[Math.floor((sorted.length-1)/2)]||cur, ratio=med>0?cur/med:1;
+  var cls=pct>=0.80?{t:'STRESSED',c:'#ef5f4e',hint:'risk-off · bands wide → size down'}
+        :pct>=0.55?{t:'ELEVATED',c:'#e0c14a',hint:'vol building · widen stops'}
+        :pct>=0.25?{t:'NORMAL',c:'#9ab4e0',hint:'baseline vol'}
+        :{t:'CALM',c:'#2ecc8f',hint:'tight bands · trend-friendly'};
+  var age=ic.bounds[K]-ic.bounds[K-1], fresh=age<10;
+  var prev=K>1?ic.rms[K-2]:cur;
+  var trend=cur>prev*1.10?{t:'rising',c:'#ef5f4e'}:(cur<prev*0.90?{t:'easing',c:'#2ecc8f'}:{t:'steady',c:'#9aa7b4'});
+  var z=(typeof CUR==='object'&&CUR&&CUR.z&&CUR.z.length)?CUR.z[CUR.z.length-1]:null;
+  var rt=(z!=null&&typeof _volRating==='function')?_volRating(z):null;
+  var seg=((typeof CUR==='object'&&CUR&&CUR.r)?CUR.r:[]).slice(ic.bounds[K-1],ic.bounds[K]);
+  var sUp=null,sDn=null;
+  if(seg.length>=3){var mu=0;seg.forEach(function(x){mu+=x;});mu/=seg.length;var u=0,dn=0;
+    seg.forEach(function(x){var dv=x-mu;if(dv>0)u+=dv*dv;else dn+=dv*dv;});
+    sUp=Math.sqrt(u/seg.length)*Math.sqrt(252)*100;sDn=Math.sqrt(dn/seg.length)*Math.sqrt(252)*100;}
+  return {K:K,cur:cur,annCur:annCur,dlyCur:dlyCur,pct:pct,ratio:ratio,cls:cls,age:age,fresh:fresh,
+          trend:trend,z:z,rt:rt,sUp:sUp,sDn:sDn,rms:ic.rms,bounds:ic.bounds};
+}catch(e){return null;}}
+function renderRegimeValue(ic){var host=document.getElementById('regimeValue');if(!host)return;
+  var R=_regimeValue(ic);if(!R){host.innerHTML='';return;}
+  var maxv=Math.max.apply(null,R.rms)||1,minv=Math.min.apply(null,R.rms);
+  var span=(R.bounds[R.bounds.length-1]-R.bounds[0])||1,cells='';
+  for(var i=0;i<R.K;i++){var w=(R.bounds[i+1]-R.bounds[i])/span*100;
+    var frac=(R.rms[i]-minv)/((maxv-minv)||1),mark=(i===R.K-1)?'box-shadow:inset 0 0 0 2px #fff':'';
+    cells+='<div title="R'+(i+1)+' σ'+(R.rms[i]*Math.sqrt(252)*100).toFixed(0)+'% ann" style="flex:'+w.toFixed(2)+' 0 0;height:14px;background:'+_regHeat(frac)+';'+mark+'"></div>';}
+  var gp=(R.pct*100).toFixed(0);
+  var posTxt=(R.z!=null)?((R.z>=0?'+':'')+R.z.toFixed(1)+'σ '+(R.rt?R.rt.label:'')):'—';
+  var asym=(R.sUp!=null)?('+dev '+R.sUp.toFixed(0)+'% / −dev '+R.sDn.toFixed(0)+'%'):'—';
+  var verdict='Regime '+R.K+' is <b style="color:'+R.cls.c+'">'+R.cls.t+'</b> for this name ('+gp+'th pct of its own '+R.K+' regimes, '+R.ratio.toFixed(2)+'× median). '
+            +'Vol <b style="color:'+R.trend.c+'">'+R.trend.t+'</b>, '+R.age+' bars old'+(R.fresh?' — fresh, not yet re-stabilized':' — matured')+'. '
+            +(R.z!=null?('Price '+posTxt+' inside it. '):'')+R.cls.hint+'.';
+  host.innerHTML=
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">'
+    +'<span style="font-size:15px;font-weight:800;color:'+R.cls.c+'">'+R.cls.t+'</span>'
+    +'<span style="font-size:11px;color:var(--faint,#646e7c)">'+R.annCur.toFixed(0)+'% ann · '+R.dlyCur.toFixed(2)+'%/day</span></div>'
+    +'<div style="display:flex;height:14px;border-radius:3px;overflow:hidden;border:1px solid var(--line,#2a2f3a)">'+cells+'</div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:8px;color:var(--faint,#646e7c);margin:2px 0 5px">'
+      +'<span>calm</span><span>regime timeline · width = duration · ▢ = now</span><span>stressed</span></div>'
+    +'<div class="chip"><span class="k">vs own history</span><span class="v" style="color:'+R.cls.c+'">'+gp+'th pct · '+R.ratio.toFixed(2)+'×med</span></div>'
+    +'<div class="chip"><span class="k">stock in regime</span><span class="v" style="color:'+(R.rt?R.rt.col:'inherit')+'">'+posTxt+'</span></div>'
+    +'<div class="chip"><span class="k">up / down vol</span><span class="v">'+asym+'</span></div>'
+    +'<div class="chip"><span class="k">age · vol trend</span><span class="v" style="color:'+R.trend.c+'">'+R.age+' bars · '+R.trend.t+'</span></div>'
+    +'<div style="margin-top:5px;font-size:10px;line-height:1.35;color:var(--ink,#cfd8e3)">'+verdict+'</div>';
+}
 /* ===== EARNINGS LAYER (drawn LAST, on top of every pane) =====
    The single owner of the bold calendar grid + the 5 quarterly report-date verticals. Drawing it
    last guarantees the lines sit ABOVE the price/volume/indicator/drawdown panes instead of being
@@ -1903,6 +1963,7 @@ function load(sym,s){const c=s.closes,d=s.dates,vol=s.volumes||c.map(()=>0);cons
  document.getElementById('nreg').textContent=ic.breaks.length+1;
  document.getElementById('curreg').textContent=(curRms*Math.sqrt(252)*100).toFixed(1)+'%';
  document.getElementById('crit').textContent=ic.crit.toFixed(3);
+ try{renderRegimeValue(ic);}catch(_rv){}
  // HV term table
  document.getElementById('hvterm').innerHTML='<tr><td>horizon</td>'+HVW.map(w=>`<td class=r>${w}d</td>`).join('')+'</tr><tr><td>HV ann</td>'+HVW.map(w=>`<td class=r>${hvT[w]!=null?(hvT[w]*100).toFixed(0)+'%':'—'}</td>`).join('')+'</tr>';
  const ret=n=>c.length>n?((c[c.length-1]/c[c.length-1-n]-1)*100).toFixed(1)+'%':'—';
@@ -2977,8 +3038,9 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
    var z=(CUR.z&&CUR.z.length)?CUR.z[CUR.z.length-1]:null;
    var bw=170,bh=64,xc=X(jx),bx=Math.min(xc-bw-6,W-padR-bw-4);if(bx<padL+120)bx=padL+120;var by=yP0+4;
    g.fillStyle='rgba(24,9,9,.86)';g.fillRect(bx,by,bw,bh);g.strokeStyle='rgba(255,120,110,.55)';g.lineWidth=1;g.strokeRect(bx,by,bw,bh);
-   g.fillStyle='rgba(255,165,155,.97)';g.font='bold 9px sans-serif';g.fillText('REGIME #'+_K+' · current',bx+5,by+11);
-   g.fillStyle='#e6c0bb';g.font='8px sans-serif';g.fillText('vol '+ann.toFixed(0)+'% ann ('+dly.toFixed(1)+'%/day)',bx+5,by+22);
+   var _RV=(typeof _regimeValue==='function')?_regimeValue(ic):null;
+   g.fillStyle=_RV?_RV.cls.c:'rgba(255,165,155,.97)';g.font='bold 9px sans-serif';g.fillText('REGIME #'+_K+' · '+(_RV?_RV.cls.t:'current'),bx+5,by+11);
+   g.fillStyle='#e6c0bb';g.font='8px sans-serif';g.fillText('vol '+ann.toFixed(0)+'% ('+dly.toFixed(1)+'%/d)'+(_RV?' · '+(_RV.pct*100).toFixed(0)+'th own · '+_RV.age+'b'+(_RV.fresh?'•':''):''),bx+5,by+22);
    g.fillStyle='#7fd7a0';g.fillText('+dev '+sUp.toFixed(0)+'%',bx+5,by+32);g.fillStyle='#ef8a7e';g.fillText('-dev '+sDn.toFixed(0)+'%',bx+72,by+32);
    if(z!=null){var rt=_volRating(z),pbx=bx+5,pbw=bw-10,cw=pbw/21,py=by+46;
     g.textAlign='left';g.fillStyle='#cfd8e3';g.font='bold 8px sans-serif';g.fillText('vol-path rating: '+(z>=0?'+':'')+z.toFixed(1)+'σ → '+rt.label.toUpperCase(),pbx,by+42);

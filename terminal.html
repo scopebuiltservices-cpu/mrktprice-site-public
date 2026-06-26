@@ -682,7 +682,8 @@ function emaMetrics(c,N){const e=ema(c,N),n=c.length;const L=Math.min(21,n-1),xs
  const W=Math.min(60,n-2);let se=0,cnt=0,hit=0;for(let i=n-W;i<n-1;i++){const v=e[i]-e[i-1],pred=e[i]+v;se+=(c[i+1]-pred)**2;cnt++;if(Math.sign(v)===Math.sign(c[i+1]-c[i]))hit++;}
  return{N,e,last:e[n-1],slope,r2,rmse:cnt?Math.sqrt(se/cnt):0,dir:cnt?hit/cnt:0,vel:e[n-1]-e[n-2]};}
 function emaProjPath(slope,P0,H,phi){const path=[];let cum=0;for(let h=1;h<=H;h++){cum+=Math.pow(phi,h-1);path.push({t:h,price:P0+slope*cum});}return path;}
-// ---- Phase-3 conditioning integrity (ADF/KPSS verified vs Python, coverage, outliers) ----
+// ---- Phase-3 conditioning integrity (ADF/KPSS verified vs the Python reference tools/market_map/stats_ref.py
+//      via the golden-fixture test tools/test_stats_parity.mjs — JS == Python; coverage, outliers) ----
 function _ols(X,y){const n=X.length,p=X[0].length;const XtX=Array.from({length:p},()=>new Array(p).fill(0)),Xty=new Array(p).fill(0);
  for(let i=0;i<n;i++){for(let a=0;a<p;a++){Xty[a]+=X[i][a]*y[i];for(let b=0;b<p;b++)XtX[a][b]+=X[i][a]*X[i][b];}}
  const A=XtX.map((row,i)=>row.concat(Array.from({length:p},(_,j)=>i===j?1:0)));
@@ -769,7 +770,7 @@ function conditioningGate(c,d,recentBreak){const n=c.length,r=lr(c);const a=adfT
  checks.release=release;checks.lifecycle=lifecycle;checks.objOK=objOK;checks.sizing=sizing;checks.manifest=releaseManifest(c,grade,conformal?conformal.q:0);
  if(conformal&&conformal.ce>0.05&&grade==='Greenbar'){grade='Blueline';reasons.push('conformal 90% interval under-covers ('+(conformal.cov*100).toFixed(0)+'%) — wider intervals needed');checks.release='AMBER';checks.lifecycle='research-only';}
  return{grade,checks,reasons};}
-// GARCH + ICSS (verified)
+// GARCH(1,1) QMLE (cross-checked vs simulation) + ICSS (verified vs planted variance breaks)
 function _inv3(A){const a=A[0][0],b=A[0][1],c=A[0][2],d=A[1][0],e=A[1][1],f=A[1][2],g=A[2][0],h=A[2][1],i=A[2][2];
  const det=a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g);if(!isFinite(det)||Math.abs(det)<1e-300)return null;const id=1/det;
  return[[(e*i-f*h)*id,(c*h-b*i)*id,(b*f-c*e)*id],[(f*g-d*i)*id,(a*i-c*g)*id,(c*d-a*f)*id],[(d*h-e*g)*id,(b*g-a*h)*id,(a*e-b*d)*id]];}

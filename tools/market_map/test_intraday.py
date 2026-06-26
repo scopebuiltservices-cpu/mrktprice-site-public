@@ -92,5 +92,21 @@ ok("audit RW baseline wider -> covers all", _a["rwBaselineCoverage"] == 1.0, _a[
 ok("audit avg band width 0.10", abs(_a["avgBandWidth"] - 0.10) < 1e-9, _a["avgBandWidth"])
 ok("audit empty -> None", ie.audit_coverage([]) is None)
 
+# 10) Liao conservative SE + realized quarticity (Frontier paper improvements)
+ok("realized quarticity >= 0", ie.realized_quarticity([0.01, -0.008, 0.012, -0.005]) >= 0)
+ok("realized quarticity 0 on empty", ie.realized_quarticity([]) == 0.0)
+_rng = random.Random(3); _ar = []; _prev = 0.0
+for _ in range(40):
+    _r = 0.5 * _prev + 0.01 * _rng.gauss(0, 1); _ar.append(_r); _prev = _r       # AR(1): serial dependence
+_mu = sum(_ar) / len(_ar)
+_roll = ie.rolling_se(_ar, _mu); _boot = ie.block_bootstrap_se(_ar); _cons = ie.conservative_se(_ar, _mu)
+ok("bootstrap SE inflates under serial dependence", _boot > _roll, (_boot, _roll))
+ok("conservative SE = max(rolling, bootstrap)", abs(_cons - max(_roll, _boot)) < 1e-12, _cons)
+ok("conservative SE never below rolling", _cons >= _roll - 1e-12)
+_rng2 = random.Random(5); _iid = [0.01 * _rng2.gauss(0, 1) for _ in range(40)]   # independent returns
+_mu2 = sum(_iid) / len(_iid)
+ok("bootstrap ~ rolling on iid (no false inflation)", ie.block_bootstrap_se(_iid) / ie.rolling_se(_iid, _mu2) < 1.4)
+ok("bootstrap SE deterministic (seeded)", ie.block_bootstrap_se(_ar) == ie.block_bootstrap_se(_ar))
+
 print("\n" + ("ALL INTRADAY ENGINE TESTS PASSED" if not FAILS else "%d FAILED: %s" % (len(FAILS), FAILS)))
 raise SystemExit(1 if FAILS else 0)

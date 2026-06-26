@@ -88,6 +88,46 @@ def rolling_se(rets, mu):
     var = sum((r - mu) ** 2 for r in rets) / (n - 1)
     return math.sqrt(var / n)
 
+def realized_quarticity(subrets):
+    """RQ_k = (M/3) * sum r^4 (Barndorff-Nielsen-Shephard). The asymptotic variance of RV is
+    proportional to RQ, so a high RQ/RV^2 ratio means RV (and any vol-scaled band) is itself
+    noisily measured -> the band should widen. Returns 0 when sub-window returns are unavailable."""
+    m = len(subrets)
+    if m < 1:
+        return 0.0
+    return (m / 3.0) * sum(r ** 4 for r in subrets)
+
+def block_bootstrap_se(rets, block=4, B=200, seed=12345):
+    """Moving-block bootstrap SE of the drift (mean) estimate. Unlike the iid rolling SE, it
+    resamples contiguous blocks, so SERIAL DEPENDENCE in the 15-min returns inflates the SE
+    instead of being ignored. Deterministic (seeded) so it is unit-testable."""
+    import random
+    n = len(rets)
+    if n < 4:
+        return float("inf")
+    block = max(1, min(block, n))
+    rng = random.Random(seed)
+    means = []
+    for _ in range(B):
+        s = []
+        while len(s) < n:
+            start = rng.randrange(0, n)
+            for j in range(block):
+                s.append(rets[(start + j) % n])
+        s = s[:n]
+        means.append(sum(s) / n)
+    mbar = sum(means) / B
+    return math.sqrt(sum((mm - mbar) ** 2 for mm in means) / (B - 1))
+
+def conservative_se(rets, mu, block=4, B=200, seed=12345):
+    """Liao et al. robustness: a forecast SE should not be the naive in-sample/iid residual SE,
+    which is too narrow for serially dependent or flexible estimators. Use the MORE CONSERVATIVE
+    of the iid rolling SE and a moving-block bootstrap SE."""
+    a = rolling_se(rets, mu)
+    b = block_bootstrap_se(rets, block, B, seed)
+    fin = [x for x in (a, b) if math.isfinite(x)]
+    return max(fin) if fin else float("inf")
+
 def signal_q(mu, se):
     return abs(mu) / se if (se and se > 0 and math.isfinite(se)) else 0.0
 
@@ -264,7 +304,12 @@ def evaluate(bars, hist_bars, params=None):
     # per-window dispersion for the parametric band (recent realized 15-min vol)
     rr = [b["ret"] for b in bars[max(0, T - 20):T + 1]]
     sig1 = (sum((r - muT) ** 2 for r in rr) / max(len(rr) - 1, 1)) ** 0.5 if len(rr) > 2 else abs(muT) + 1e-6
-    sigmas = [sig1] * P["H"]; ses = [seT] * P["H"]
+    # Liao conservative SE for the band: the more conservative of iid-rolling and block-bootstrap SE,
+    # so the parametric fallback band is honestly wide under serial dependence (never falsely narrow).
+    seCons = conservative_se(rr, muT)
+    if not math.isfinite(seCons):
+        seCons = seT
+    sigmas = [sig1] * P["H"]; ses = [seCons] * P["H"]
     plo, phi = parametric_band(logpath, sigmas, ses)
     clo, chi = conformal_band(logpath, (params or {}).get("resid_by_h", {}), P["alpha"])
     # prefer conformal where available, else parametric (more-conservative spirit)
@@ -272,7 +317,7 @@ def evaluate(bars, hist_bars, params=None):
     hi = [chi[h] if chi[h] == chi[h] else phi[h] for h in range(len(logpath))]
     dec = decision(p_T, hi, lo, P["H"] - 1, P["cost"], gates[T]["G"])
     res.update({
-        "T_bucket": bars[T]["bucket"], "muT": muT, "seT": seT,
+        "T_bucket": bars[T]["bucket"], "muT": muT, "seT": seT, "seConsT": seCons,
         "centerLog": logpath, "center": [math.exp(x) for x in logpath],
         "loLog": lo, "hiLog": hi, "lo": [math.exp(x) for x in lo], "hi": [math.exp(x) for x in hi],
         "bandSource": ["conformal" if clo[h] == clo[h] else "parametric" for h in range(len(logpath))],

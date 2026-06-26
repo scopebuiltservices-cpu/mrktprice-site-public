@@ -49,6 +49,20 @@
     var v = 0; for (var i = 0; i < n; i++) v += (rets[i] - mu) * (rets[i] - mu);
     return Math.sqrt((v / (n - 1)) / n);
   }
+  function realizedQuarticity(sr) { var m = sr ? sr.length : 0; if (m < 1) return 0; var s = 0; for (var i = 0; i < m; i++) s += sr[i] * sr[i] * sr[i] * sr[i]; return (m / 3) * s; }
+  function _lcg(seed) { var s = seed >>> 0; return function () { s = (Math.imul(s, 1103515245) + 12345) >>> 0; return s / 4294967296; }; }
+  function blockBootstrapSE(rets, block, B, seed) {   // moving-block bootstrap SE of the drift (mirrors Python)
+    block = block || 4; B = B || 200; var n = rets.length; if (n < 4) return Infinity;
+    block = Math.max(1, Math.min(block, n)); var rnd = _lcg(seed || 12345), means = [];
+    for (var b = 0; b < B; b++) { var s = []; while (s.length < n) { var st = Math.floor(rnd() * n); for (var j = 0; j < block; j++) s.push(rets[(st + j) % n]); } s = s.slice(0, n);
+      var mm = 0; for (var i = 0; i < n; i++) mm += s[i]; means.push(mm / n); }
+    var mbar = 0; for (i = 0; i < B; i++) mbar += means[i]; mbar /= B;
+    var v = 0; for (i = 0; i < B; i++) v += (means[i] - mbar) * (means[i] - mbar); return Math.sqrt(v / (B - 1));
+  }
+  function conservativeSE(rets, mu, block, B, seed) {  // Liao robustness: max(iid rolling, block bootstrap)
+    var a = rollingSE(rets, mu), bb = blockBootstrapSE(rets, block, B, seed), f = [];
+    if (isFinite(a)) f.push(a); if (isFinite(bb)) f.push(bb); return f.length ? Math.max.apply(null, f) : Infinity;
+  }
   function signalQ(mu, se) { return (se && se > 0 && isFinite(se)) ? Math.abs(mu) / se : 0; }
   function highVolProb(rv, rvHist) {
     if (!rvHist.length || !rv) return 0;
@@ -126,14 +140,15 @@
     var rr = []; for (var j3 = Math.max(0, T - 20); j3 <= T; j3++) rr.push(bars[j3].ret);
     var s2 = 0; for (var i2 = 0; i2 < rr.length; i2++) s2 += (rr[i2] - muT) * (rr[i2] - muT);
     var sig1 = rr.length > 2 ? Math.sqrt(s2 / (rr.length - 1)) : Math.abs(muT) + 1e-6;
-    var sig = [], ses = []; for (var h2 = 0; h2 < P.H; h2++) { sig.push(sig1); ses.push(seT); }
+    var seCons = conservativeSE(rr, muT); if (!isFinite(seCons)) seCons = seT;   // Liao conservative band SE
+    var sig = [], ses = []; for (var h2 = 0; h2 < P.H; h2++) { sig.push(sig1); ses.push(seCons); }
     var pb = parametricBand(lp, sig, ses, 1.6448536), cb = conformalBand(lp, (params && params.resid_by_h) || {}, P.alpha);
     var lo = [], hi = [], src = [];
     for (var h3 = 0; h3 < lp.length; h3++) {
       var useC = cb[0][h3] === cb[0][h3];
       lo.push(useC ? cb[0][h3] : pb[0][h3]); hi.push(useC ? cb[1][h3] : pb[1][h3]); src.push(useC ? 'conformal' : 'parametric');
     }
-    res.T_bucket = bars[T].bucket; res.muT = muT; res.seT = seT;
+    res.T_bucket = bars[T].bucket; res.muT = muT; res.seT = seT; res.seConsT = seCons;
     res.centerLog = lp; res.center = lp.map(Math.exp);
     res.loLog = lo; res.hiLog = hi; res.lo = lo.map(Math.exp); res.hi = hi.map(Math.exp);
     res.bandSource = src; res.decision = decision(pT, hi, lo, P.H - 1, P.cost, gates[T].G);
@@ -165,7 +180,8 @@
   function round3(x) { return x == null ? null : Math.round(x * 1000) / 1000; }
 
   var API = { median: median, mad: mad, todNormalizers: todNormalizers, abnormality: abnormality, gateA: gateA, auditCoverage: auditCoverage,
-              ewmaDrift: ewmaDrift, rollingSE: rollingSE, signalQ: signalQ, highVolProb: highVolProb,
+              ewmaDrift: ewmaDrift, rollingSE: rollingSE, blockBootstrapSE: blockBootstrapSE, conservativeSE: conservativeSE,
+              realizedQuarticity: realizedQuarticity, signalQ: signalQ, highVolProb: highVolProb,
               regimeGate: regimeGate, confirmM: confirmM, consecutiveTrigger: consecutiveTrigger,
               projectLogpath: projectLogpath, parametricBand: parametricBand, conformalBand: conformalBand,
               decision: decision, evaluate: evaluate };

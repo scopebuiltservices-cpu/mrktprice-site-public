@@ -2414,7 +2414,7 @@ function renderConeInstrument(sym,mcOverride){
         +'<div style="margin-top:5px;padding:3px 6px;border-radius:6px;font-size:10px;background:rgba(120,140,170,.08);border-left:3px solid '+calCol+';color:'+calCol+'">'+calTxt+'</div></div>'
       +'<div style="'+card+'">'+head+'Path probabilities</div><div style="font-size:11px;display:flex;flex-direction:column;gap:2px">'+probHtml+'</div></div>'
       +'</div>'
-      +_authLine+coneOptionsBS(sym)+'<div style="'+card+';margin-top:7px">'+head+'Cone layers</div><div style="font-size:10px;display:flex;flex-wrap:wrap;gap:12px">'+L.join('')+'</div>'
+      +_authLine+coneOptionsBS(sym)+_momLeanHtml(sym)+'<div style="'+card+';margin-top:7px">'+head+'Cone layers</div><div style="font-size:10px;display:flex;flex-wrap:wrap;gap:12px">'+L.join('')+'</div>'
         +(alerts.length?'<div style="margin-top:5px;font-size:10px;color:var(--caution,#e0c14a);display:flex;flex-direction:column;gap:2px">'+alerts.map(function(a){return '<div>'+a+'</div>';}).join('')+'</div>':'')
         +'<div style="margin-top:4px;font-size:8.5px;color:var(--faint,#646e7c)">Quantiles are asymmetric (skew-aware), read off the same fan drawn above. Path odds are Monte-Carlo ('+pp.N+' paths) on the displayed cone. Calibration is walk-forward coverage of this name&rsquo;s own history. IV annualized 252-day (trading). Research only; not advice.</div></div>';
   }catch(e){host.innerHTML='<div style="font-size:10px;color:var(--faint,#646e7c);margin-top:6px">cone instrument unavailable: '+(e&&e.message||e)+'</div>';CUR.coneExtra=null;}

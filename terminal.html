@@ -351,6 +351,20 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
   var RATE_ETF=[['SHY','1-3y UST'],['IEF','7-10y UST'],['TLT','20y+ UST'],['TIP','TIPS'],['HYG','High Yield'],['LQD','IG Credit']];
   function col(v){return v==null?'var(--muted,#8a93a0)':(v>=0?'var(--up,#3fb27f)':'var(--down,#e0556b)');}
   function pct(v){return v==null?'&mdash;':((v>=0?'+':'')+v.toFixed(2)+'%');}
+  /* Momentum vs mean-reversion read: the NUMBER color = sign of the latest period; the SPARKLINE
+     color = sign of the window's net move. AGREE => the latest move continues the trend (momentum);
+     DISAGREE (the colors are opposite) => the latest move is counter to the trend (mean-reversion /
+     snap-back). This is exactly what the eye sees when the % is green but the line is red, or vice versa. */
+  function momTag(latest,wr){
+    if(latest==null||!wr||wr.length<3)return '';
+    var net=0,i;for(i=0;i<wr.length;i++)net+=(wr[i]||0);
+    var sl=latest>0?1:(latest<0?-1:0),sn=net>0?1:(net<0?-1:0);
+    if(!sl||!sn)return '';
+    var agree=(sl===sn),c=agree?'var(--up,#3fb27f)':'var(--caution,#e0c14a)';
+    return '<div style="margin-top:3px;font-size:8.5px;font-weight:700;letter-spacing:.02em;color:'+c+'">'
+      +(agree?'▲ MOMENTUM':'⤺ MEAN-REVERT')+' <span style="color:var(--faint,#646e7c);font-weight:400">'
+      +(agree?'latest follows trend':'latest counter to trend')+'</span></div>';
+  }
   function spark(wr,w,h){
     if(!wr||wr.length<3)return '';
     var cum=[0],i;for(i=0;i<wr.length;i++)cum.push(cum[cum.length-1]+(wr[i]||0));
@@ -359,12 +373,12 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
     var up=cum[cum.length-1]>=cum[0];
     return '<svg width="'+w+'" height="'+h+'" style="display:block"><polyline points="'+pts+'" fill="none" stroke="'+(up?'var(--up,#3fb27f)':'var(--down,#e0556b)')+'" stroke-width="1.5"/></svg>';
   }
-  function tile(label,value,sub,sp,vcol){
+  function tile(label,value,sub,sp,vcol,tag){
     return '<div style="min-width:142px;flex:1;background:var(--panel2,#161a22);border:1px solid var(--line,#2a2f3a);border-radius:9px;padding:9px 11px">'
       +'<div style="font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--faint,#646e7c)">'+label+'</div>'
       +'<div style="font-size:19px;font-weight:800;color:'+(vcol||'var(--ink,#eef3f8)')+';margin-top:2px">'+value+'</div>'
       +(sub?'<div style="font-size:11px;margin-top:1px;color:'+(vcol||'var(--muted,#8a93a0)')+'">'+sub+'</div>':'')
-      +(sp?'<div style="margin-top:4px">'+sp+'</div>':'')+'</div>';
+      +(sp?'<div style="margin-top:4px">'+sp+'</div>':'')+(tag||'')+'</div>';
   }
   function section(title,note,tiles){
     return '<div style="margin-top:9px"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">'
@@ -394,13 +408,15 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
     var comHtml='',cnote='',comm=ms.commodities;
     if(comm&&Object.keys(comm).length){
       cnote='FMP Ultimate · '+Object.keys(comm).length+' commodity futures (last + weekly)';
-      comHtml=Object.keys(comm).map(function(sy){var c=comm[sy],wr=c.wr||[],w1=wr.length?wr[wr.length-1]*100:null;
-        return tile(c.name||sy,(c.last!=null?(''+c.last):'&mdash;'),pct(w1)+' wk',spark(wr,120,22),col(w1));}).join('');
+      comHtml=Object.keys(comm).map(function(sy){var c=comm[sy],wr=c.wr||[];return {sy:sy,c:c,wr:wr,w1:wr.length?wr[wr.length-1]*100:null};})
+        .sort(function(a,b){return Math.abs(b.w1||0)-Math.abs(a.w1||0);})   // biggest movers first
+        .map(function(o){return tile(o.c.name||o.sy,(o.c.last!=null?(''+o.c.last):'&mdash;'),pct(o.w1)+' wk',spark(o.wr,120,22),col(o.w1),momTag(o.w1,o.wr));}).join('');
     }else{
       cnote='ETF proxy (1-week / 1-month) — upgrades to FMP futures on next rebuild';
-      comHtml=CO_ETF.map(function(x){var n=byT[x[0]];if(!n)return '';
-        var w1=(n.ret&&n.ret['1w']!=null)?n.ret['1w']:null,m1=(n.ret&&n.ret['1m']!=null)?n.ret['1m']:null;
-        return tile(x[1],pct(w1),('1m '+pct(m1)+' · '+x[0]),spark(n.wr,120,22),col(w1));}).filter(Boolean).join('');
+      comHtml=CO_ETF.map(function(x){var n=byT[x[0]];if(!n)return null;
+        var w1=(n.ret&&n.ret['1w']!=null)?n.ret['1w']:null,m1=(n.ret&&n.ret['1m']!=null)?n.ret['1m']:null;return {x:x,n:n,w1:w1,m1:m1};}).filter(Boolean)
+        .sort(function(a,b){return Math.abs(b.w1||0)-Math.abs(a.w1||0);})   // biggest movers first
+        .map(function(o){return tile(o.x[1],pct(o.w1),('1m '+pct(o.m1)+' · '+o.x[0]),spark(o.n.wr,120,22),col(o.w1),momTag(o.w1,o.n.wr));}).join('');
     }
     var board=document.getElementById('macroComplexBoard');
     if(!board){board=document.createElement('div');board.id='macroComplexBoard';
@@ -409,6 +425,11 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
     board.innerHTML='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">'
       +'<span style="font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--ink,#eef3f8)">Macro Complex — Interest Rates &amp; Commodities</span>'
       +'<span style="font-size:9px;color:var(--faint,#646e7c)">'+(d.asof||'')+' · research only</span></div>'
+      +'<div style="margin-top:5px;font-size:9px;color:var(--faint,#646e7c);line-height:1.55">'
+        +'<b style="color:var(--muted,#8a93a0)">How to read the colours:</b> the big <b>number</b> = the latest period (<b style="color:var(--up,#3fb27f)">green up</b> / <b style="color:var(--down,#e0556b)">red down</b>); the <b>sparkline</b> = the window trend (green net-up / red net-down). '
+        +'<b style="color:var(--up,#3fb27f)">Same colour → ▲ MOMENTUM</b> — the latest move continues the trend. '
+        +'<b style="color:var(--caution,#e0c14a)">Opposite colour → ⤺ MEAN-REVERT</b> — the latest move snaps back against the trend (counter-trend). '
+        +'Note: Treasury <b>yield</b> tiles move inverse to bond price, so for those the number and line can differ by construction, not as a signal. Commodities are sorted biggest-mover first.</div>'
       +section('Interest rates · Treasury curve',rnote,rateHtml)
       +section('Commodities',cnote,comHtml);
   }
@@ -674,7 +695,7 @@ function adfTest(y){const n=y.length;if(n<25)return{tstat:null,reject:null,lag:n
  for(let lag=0;lag<=pmax;lag++){const X=[],t=[];for(let k=pmax+1;k<dy.length;k++){const row=[1,y[k]];for(let i=1;i<=lag;i++)row.push(dy[k-i]);X.push(row);t.push(dy[k]);}
   if(t.length<10)continue;const o=_ols(X,t);if(!o)continue;let ssr=0;for(let i=0;i<t.length;i++){let yh=0;for(let j=0;j<X[i].length;j++)yh+=X[i][j]*o.beta[j];ssr+=(t[i]-yh)*(t[i]-yh);}
   const mm=t.length,kk=X[0].length,aic=mm*Math.log(ssr/mm+1e-300)+2*kk;if(!best||aic<best.aic)best={aic,o,lag};}
- if(!best)return{tstat:null,reject:null,lag:null,cv5:null};const ts=best.o.se[1]>0?best.o.beta[1]/best.o.se[1]:0;const cv5=_mackinnonCV(n,'5');
+ if(!best)return{tstat:null,reject:null,lag:null,cv5:null};const ts=best.o.se[1]>0?best.o.beta[1]/best.o.se[1]:0;const _T=Math.max(dy.length-(pmax+1),10);const cv5=_mackinnonCV(_T,'5');
  return{tstat:ts,lag:best.lag,cv5,reject:ts<cv5};}
 function _nwlrv(u){const n=u.length;const L=Math.floor(4*Math.pow(n/100,2/9));let g0=0;for(let i=0;i<n;i++)g0+=u[i]*u[i];g0/=n;let s=g0;for(let j=1;j<=L;j++){let gj=0;for(let i=j;i<n;i++)gj+=u[i]*u[i-j];gj/=n;s+=2*(1-j/(L+1))*gj;}return s;}
 function kpssTest(y){const n=y.length;if(n<25)return{eta:null,reject:null};const m=y.reduce((a,b)=>a+b,0)/n,e=y.map(v=>v-m);let S=0,ss=0;for(const v of e){S+=v;ss+=S*S;}const lrv=Math.max(1e-300,_nwlrv(e));const eta=ss/(n*n*lrv);return{eta,reject:eta>0.463};}
@@ -701,7 +722,9 @@ function psiDrift(r,trainFrac,bins){const k=Math.floor(trainFrac*r.length);if(k<
  const ts=[...tr].sort((a,b)=>a-b);let edges=[];for(let i=0;i<=bins;i++)edges.push(_quantile(ts,i/bins));edges[0]=-Infinity;edges[edges.length-1]=Infinity;edges=edges.filter((v,i)=>i===0||v>edges[i-1]);
  const nb=edges.length-1;const pc=new Array(nb).fill(0),qc=new Array(nb).fill(0);const binOf=x=>{for(let b=0;b<nb;b++){if(x>=edges[b]&&(b===nb-1?x<=edges[b+1]:x<edges[b+1]))return b;}return nb-1;};
  for(const x of tr)pc[binOf(x)]++;for(const x of rc)qc[binOf(x)]++;let sm=0;for(let b=0;b<nb;b++){const p=Math.max(pc[b]/tr.length,1e-4),q=Math.max(qc[b]/rc.length,1e-4);sm+=(q-p)*Math.log(q/p);}return sm;}
-function ewmaSig(r,lam){let s2=0;{const w=r.slice(0,20),m=w.reduce((a,b)=>a+b,0)/w.length;for(const x of w)s2+=(x-m)*(x-m);s2/=Math.max(w.length,1);}const sig=[];for(let t=0;t<r.length;t++){sig.push(Math.sqrt(Math.max(s2,1e-300)));s2=lam*s2+(1-lam)*r[t]*r[t];}return sig;}
+function ewmaSig(r,lam){const sig=[];let s2=0;for(let t=0;t<r.length;t++){
+  if(t<20){const w=r.slice(0,Math.max(t,1)),m=w.reduce((a,b)=>a+b,0)/w.length;s2=w.reduce((a,x)=>a+(x-m)*(x-m),0)/Math.max(w.length,1);} // causal warm-up: variance of returns STRICTLY before t (no look-ahead seed leaking into conformal calibration)
+  sig.push(Math.sqrt(Math.max(s2,1e-300)));s2=lam*s2+(1-lam)*r[t]*r[t];}return sig;}
 function ksP(u){const a=[...u].sort((x,y)=>x-y),n=a.length;let D=0;for(let i=0;i<n;i++)D=Math.max(D,(i+1)/n-a[i],a[i]-i/n);const lam=(Math.sqrt(n)+0.12+0.11/Math.sqrt(n))*D;let sm=0;for(let k=1;k<=100;k++)sm+=Math.pow(-1,k-1)*Math.exp(-2*k*k*lam*lam);return Math.max(0,Math.min(1,2*sm));}
 function kupiec(x,n,a){const pi=x/n;let lr;if(x===0||x===n)lr=-2*((n-x)*Math.log(1-a)+x*Math.log(a));else lr=-2*((n-x)*Math.log(1-a)+x*Math.log(a)-(n-x)*Math.log(1-pi)-x*Math.log(pi));return chi2sf(lr,1);}
 const DECOMM={SOLS:'29% coverage / corrupted — kill-switch retired'};function ACTIVE(){return Object.keys(DATA).filter(k=>!DECOMM[k]);}
@@ -2004,7 +2027,7 @@ function updateStrip(){const rows=ACTIVE().map(tk=>scanTicker(tk,DATA[tk])).filt
 let CUR={};
 function load(sym,s){const c=s.closes,d=s.dates,vol=s.volumes||c.map(()=>0);const r=lr(c);renderHorizonTrend(c);
  const rvAnn=sd(r)*Math.sqrt(252),g=garch(r),ic=icss(r);const curRms=ic.rms[ic.rms.length-1];
- const sk=skew(r),cv=cvar(r),dd=maxDD(c),last=c[c.length-1],prev=c[c.length-2],chg=last/prev-1;
+ const sk=skew(r),cv=cvar(r),dd=maxDD(c),last=c[c.length-1],prev=c.length>1?c[c.length-2]:last,chg=(prev&&isFinite(prev))?last/prev-1:0;
  const va=vwapAnchored(c,vol),v20=vwapRoll(c,vol,20),rvolS=rvolSeries(vol,20),ao=aoSeries(c);
  const vwStd=(()=>{let pv=0,vv=0,pv2=0;return c.map((pp,i)=>{pv+=pp*vol[i];vv+=vol[i];pv2+=pp*pp*vol[i];const mn=vv?pv/vv:pp;return Math.sqrt(Math.max(vv?pv2/vv-mn*mn:0,0));});})();
  const ou=ouFit(c.map(x=>Math.log(x)));

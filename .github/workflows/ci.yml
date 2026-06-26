@@ -39,3 +39,12 @@ jobs:
 
       - name: Run offline gate (tools/run-checks.sh)
         run: sh tools/run-checks.sh
+
+      - name: HTML tail-check (no truncated page can ship — code-review C1/C2 guard)
+        run: |
+          fail=0
+          for f in *.html; do
+            [ -e "$f" ] || continue
+            python3 tools/verify_artifact.py guard "$f" --min-bytes 200 --ends-with '</html>' || fail=1
+          done
+          [ "$fail" -eq 0 ] || { echo "::error::a served HTML file does not end in </html> — truncated build"; exit 1; }

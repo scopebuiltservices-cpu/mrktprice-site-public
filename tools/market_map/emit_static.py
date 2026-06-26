@@ -15,6 +15,21 @@ try:
     import lineage as _lineage   # Phase 4 volume-ahead + touch (same dir)
 except Exception:
     _lineage = None
+try:                            # hardened writer: tools/verify_artifact.py (one dir up)
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+    import verify_artifact as _va
+except Exception:
+    _va = None
+
+def _write_json(path, obj):
+    """Durable + self-verified write: atomic temp -> fsync -> os.replace -> re-read + sha256 check.
+    Falls back to a plain write if the hardened writer is unavailable, so emit always succeeds."""
+    data = json.dumps(obj, allow_nan=False)
+    if _va is not None:
+        _va.write_atomic(path, data)
+    else:
+        with open(path, "w") as f:
+            f.write(data)
 
 def _stooq(t):
     import requests
@@ -132,16 +147,15 @@ def emit(universe_path, out_dir, do_hist=False, cap=0, hist_dir=None):
                 if linerr <= 8:
                     import sys as _s
                     _s.stderr.write("::warning:: emit_static: lineage augment failed for %s: %s\n" % (t, str(_le)[:120]))
-        with open(os.path.join(cdir, t + ".json"), "w") as f:
-            json.dump(n, f, allow_nan=False)
+        _write_json(os.path.join(cdir, t + ".json"), n)
         nc += 1
         if fetched:
-            with open(os.path.join(hdir, t + ".json"), "w") as f:
-                json.dump({"ticker": t, "asof": fetched[-1][0], "count": len(fetched), "rows": fetched, "source": fsrc}, f, allow_nan=False)
+            _write_json(os.path.join(hdir, t + ".json"),
+                        {"ticker": t, "asof": fetched[-1][0], "count": len(fetched), "rows": fetched, "source": fsrc})
             nh += 1
-    with open(os.path.join(out_dir, "cards_index.json"), "w") as f:
-        json.dump({"asof": d.get("asof"), "source": d.get("source"), "histSources": srccount,
-                   "cards": [n["t"] for n in names if n.get("t")], "count": nc, "hist": nh}, f)
+    _write_json(os.path.join(out_dir, "cards_index.json"),
+                {"asof": d.get("asof"), "source": d.get("source"), "histSources": srccount,
+                 "cards": [n["t"] for n in names if n.get("t")], "count": nc, "hist": nh})
     return nc, nh
 
 def main():

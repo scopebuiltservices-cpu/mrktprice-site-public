@@ -501,7 +501,40 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
   }
   if(document.readyState!=='loading')init();else document.addEventListener('DOMContentLoaded',init);
 })();
-</script><script src="intraday_engine.js"></script>
+</script><script src="intraday_engine.js"></script><script src="intraday_eod.js"></script>
+<script>
+/* ===== Intraday → END-OF-DAY panel (self-contained; polls the live 15-min buffer) =====
+   Reads mrkt.intra.<sym>.<today> + the daily-history context (HV) and renders projected EOD close,
+   day-%, EOD volume (RVOL), intraday realized volatility vs HV, and VWAP. Research only; market-hours. */
+(function(){
+  function today(){return new Date().toISOString().slice(0,10);}
+  function buf(sym){try{return JSON.parse(localStorage.getItem('mrkt.intra.'+sym+'.'+today())||'[]');}catch(e){return [];}}
+  function panel(){var p=document.getElementById('intradayEodPanel');if(!p){p=document.createElement('div');p.id='intradayEodPanel';p.style.marginTop='6px';
+    var host=document.getElementById('intradayProjPanel')||document.getElementById('intradayStrip');
+    if(host&&host.parentNode)host.parentNode.insertBefore(p,host.nextSibling);else return null;}return p;}
+  function tile(lab,val,col,sub){return '<div style="flex:1;min-width:86px;background:var(--panel2,#111721);border:1px solid var(--line);border-radius:6px;padding:5px 7px"><div style="font-size:8px;letter-spacing:.4px;color:var(--muted);text-transform:uppercase">'+lab+'</div><div style="font-size:13px;font-weight:700;color:'+(col||'var(--ink)')+'">'+val+'</div>'+(sub?'<div style="font-size:8px;color:var(--muted)">'+sub+'</div>':'')+'</div>';}
+  function render(){try{
+    if(!window.MrktIntradayEOD||typeof CUR!=='object'||!CUR||!CUR.sym)return;
+    var p=panel();if(!p)return;var sym=(CUR.sym||'').toUpperCase(),b=buf(sym);
+    if(b.length<2){p.innerHTML='<div class="note" style="font-size:10px"><b style="color:var(--gold)">INTRADAY → EOD</b> — waiting for live 15-min bars (market hours).</div>';return;}
+    var bars=b.map(function(rec,i){var pr=(rec.price>0?rec.price:1);return {bucket:i,ret:(rec.r||0),vol:(rec.rvol>0?rec.rvol:1),price:pr,p:Math.log(pr)};});
+    var hv=null;try{hv=(CUR.garch&&CUR.garch.annVol)||CUR.rvAnn||null;}catch(e){}
+    var o=window.MrktIntradayEOD.eodOutlook(bars,{avgDailyVol:26,dailyHV:hv,openPx:bars[0].price,totalBuckets:26});
+    if(!o){p.innerHTML='';return;}
+    var pc=function(x){return x>=0?'#2ecc8f':'#ef5f4e';},tot=o.elapsed+o.remaining;
+    p.innerHTML='<div style="font-size:10px;color:var(--muted);margin:4px 0"><b style="color:var(--gold)">INTRADAY → END‑OF‑DAY</b> · '+o.elapsed+'/'+tot+' bars · '+o.remaining+' left · research only</div>'
+     +'<div style="display:flex;gap:5px;flex-wrap:wrap">'
+     +tile('Proj close','$'+o.projClose.toFixed(2),pc(o.projPct||0),'$'+o.projLo.toFixed(2)+'–$'+o.projHi.toFixed(2))
+     +tile('Proj day %',((o.projPct||0)>=0?'+':'')+((o.projPct||0)*100).toFixed(2)+'%',pc(o.projPct||0),'now '+((o.pctNow||0)>=0?'+':'')+((o.pctNow||0)*100).toFixed(2)+'%')
+     +tile('Proj EOD vol',(o.projRVOL!=null?o.projRVOL.toFixed(2)+'× RVOL':'—'),(o.projRVOL>1.2?'#e0a13c':'var(--ink)'),'pace '+(o.volPace!=null?o.volPace.toFixed(2)+'×':'—'))
+     +tile('Intraday vol',(o.intradayRVann*100).toFixed(0)+'% ann',(o.volRegime==='elevated'?'#ef5f4e':o.volRegime==='compressed'?'#2ecc8f':'var(--ink)'),'vs HV '+(o.rvVsHv!=null?o.rvVsHv.toFixed(2)+'×':'—')+' · '+o.volRegime)
+     +tile('VWAP','$'+o.vwap.toFixed(2),(o.priceNow>=o.vwap?'#2ecc8f':'#ef5f4e'),(o.priceNow>=o.vwap?'above':'below'))
+     +'</div>';
+  }catch(e){}}
+  if(document.readyState!=='loading')setTimeout(render,1500);else document.addEventListener('DOMContentLoaded',function(){setTimeout(render,1500);});
+  setInterval(render,20000);
+})();
+</script>
 <script>
 /* ===== Intraday trigger->projection LIVE hookup (Frontier engine) =====
    Feeds the 15-min bar buffer (localStorage mrkt.intra.<sym>.<date>, filled by the live client) +

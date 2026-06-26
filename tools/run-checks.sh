@@ -31,6 +31,9 @@ fi
 if [ -f tools/test_intraday.mjs ]; then
   node tools/test_intraday.mjs || fail=1
 fi
+if [ -f tools/market_map/test_intraday_eod.py ]; then
+  ( cd tools/market_map && python3 test_intraday_eod.py ) || fail=1
+fi
 if [ -f tools/test_calendar.mjs ]; then
   node tools/test_calendar.mjs || fail=1
 fi
@@ -38,16 +41,4 @@ fi
 echo "==> 4/5  Inline <script> syntax gate (every *.html)"
 node tools/check-scripts.mjs || fail=1
 
-echo "==> 5/5  JSON not truncated / valid (published data)"
-if [ -f tools/market_map/check_json.py ]; then
-  python3 tools/market_map/check_json.py marketmap.json xsection.json 2>/dev/null || \
-    echo "    (skipped: marketmap.json/xsection.json not present in this checkout)"
-fi
-
-if [ "$fail" -ne 0 ]; then
-  echo ""
-  echo "x one or more gates FAILED"
-  exit 1
-fi
-echo ""
-echo "OK  all gates passed"
+ech

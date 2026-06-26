@@ -698,9 +698,9 @@ function adfTest(y){const n=y.length;if(n<25)return{tstat:null,reject:null,lag:n
   if(t.length<10)continue;const o=_ols(X,t);if(!o)continue;let ssr=0;for(let i=0;i<t.length;i++){let yh=0;for(let j=0;j<X[i].length;j++)yh+=X[i][j]*o.beta[j];ssr+=(t[i]-yh)*(t[i]-yh);}
   const mm=t.length,kk=X[0].length,aic=mm*Math.log(ssr/mm+1e-300)+2*kk;if(!best||aic<best.aic)best={aic,o,lag};}
  if(!best)return{tstat:null,reject:null,lag:null,cv5:null};const ts=best.o.se[1]>0?best.o.beta[1]/best.o.se[1]:0;const _T=Math.max(dy.length-(pmax+1),10);const cv5=_mackinnonCV(_T,'5');
- return{tstat:ts,lag:best.lag,cv5,reject:ts<cv5};}
+ return{tstat:ts,lag:best.lag,cv5,reject:ts<cv5,n:_T,small:_T<80};}   // small: asymptotic CV unreliable below ~80 obs (code-review H4)
 function _nwlrv(u){const n=u.length;const L=Math.floor(4*Math.pow(n/100,2/9));let g0=0;for(let i=0;i<n;i++)g0+=u[i]*u[i];g0/=n;let s=g0;for(let j=1;j<=L;j++){let gj=0;for(let i=j;i<n;i++)gj+=u[i]*u[i-j];gj/=n;s+=2*(1-j/(L+1))*gj;}return s;}
-function kpssTest(y){const n=y.length;if(n<25)return{eta:null,reject:null};const m=y.reduce((a,b)=>a+b,0)/n,e=y.map(v=>v-m);let S=0,ss=0;for(const v of e){S+=v;ss+=S*S;}const lrv=Math.max(1e-300,_nwlrv(e));const eta=ss/(n*n*lrv);return{eta,reject:eta>0.463};}
+function kpssTest(y){const n=y.length;if(n<25)return{eta:null,reject:null};const m=y.reduce((a,b)=>a+b,0)/n,e=y.map(v=>v-m);let S=0,ss=0;for(const v of e){S+=v;ss+=S*S;}const lrv=Math.max(1e-300,_nwlrv(e));const eta=ss/(n*n*lrv);return{eta,reject:eta>0.463,n,small:n<80};}   // small: KPSS over-rejects below ~80 obs (code-review H4)
 function _median(a){const z=[...a].sort((x,y)=>x-y),n=z.length;return n?(n%2?z[(n-1)/2]:(z[n/2-1]+z[n/2])/2):0;}
 function madOutlierRate(r){const m=_median(r),mad=_median(r.map(x=>Math.abs(x-m)))||1e-12;let cnt=0;for(const x of r)if(Math.abs(0.6745*(x-m)/mad)>5)cnt++;return cnt/r.length;}
 function coverageGaps(dates){if(dates.length<2)return{coverage:1,maxgap:0};const day=86400000,t=dates.map(d=>Date.parse(d));let expected=0,maxgap=0;
@@ -747,15 +747,16 @@ function densityCalibration(r){const n=r.length;if(n<60)return null;const sig=ew
  let verdict,grade;if(kup>=0.05&&ksG>=0.05){verdict='Gaussian calibrated';grade='pass';}else if(ksT>=0.05){verdict='Student-t df='+df.toFixed(1);grade='caution';}else{verdict='miscalibrated';grade='fail';}
  return {cov2,kup,ksG,ksT,df,verdict,grade};}
 function conditioningGate(c,d,recentBreak){const n=c.length,r=lr(c);const a=adfTest(r),k=kpssTest(r);
+ const smallS=(a&&a.small)||(k&&k.small)||(n<80);   // code-review H4: 40<=n<80 -> asymptotic ADF/KPSS cutoffs over-reject; label as unreliable, don't hard-fail on them
  const statPair=(a.reject===true)&&(k.reject===false);const outl=madOutlierRate(r);const cov=coverageGaps(d);const dups=new Set(d).size!==d.length;const audit=modelAudit(c,r);const drift=psiDrift(r,0.7,10);const calib=densityCalibration(r);const conformal=conformalNorm(r,0.10,0.6);
- const checks={stationary:statPair,adf_t:a.tstat,kpss_eta:k.eta,outlier_rate:outl,coverage:cov.coverage,max_gap:cov.maxgap,n,recent_break:!!recentBreak,hash:dataHash(c),audit,drift,calib,conformal};
+ const checks={stationary:statPair,stationaritySmallSample:smallS,adf_t:a.tstat,kpss_eta:k.eta,outlier_rate:outl,coverage:cov.coverage,max_gap:cov.maxgap,n,recent_break:!!recentBreak,hash:dataHash(c),audit,drift,calib,conformal};
  let grade='Greenbar';const reasons=[];
  if(dups){grade='Stop';reasons.push('duplicate dates');}
  if(n<40){grade='Stop';reasons.push('insufficient sample (n<40)');}
  if(cov.coverage<0.88){grade='Stop';reasons.push('coverage '+(cov.coverage*100).toFixed(0)+'% < 88%');}
- if(a.reject===false&&k.reject===true){grade='Stop';reasons.push('returns non-stationary (ADF fail + KPSS reject)');}
+ if(a.reject===false&&k.reject===true){if(smallS){if(grade!=='Stop')grade='Blueline';reasons.push('non-stationary signal but small-sample (n<80) — ADF/KPSS unreliable, not a hard stop');}else{grade='Stop';reasons.push('returns non-stationary (ADF fail + KPSS reject)');}}
  if(grade!=='Stop'){
-  if(!statPair){grade='Blueline';reasons.push('ADF/KPSS stationarity not jointly confirmed');}
+  if(!statPair){grade='Blueline';reasons.push('ADF/KPSS stationarity not jointly confirmed'+(smallS?' (small-sample n<80 — tests unreliable)':''));}
   if(outl>0.02){grade='Blueline';reasons.push('outlier rate '+(outl*100).toFixed(1)+'%');}
   if(cov.coverage<0.95||cov.maxgap>3){grade='Blueline';reasons.push('coverage '+(cov.coverage*100).toFixed(0)+'%/gap '+cov.maxgap+'d');}
   if(n<60){grade='Blueline';reasons.push('short sample (n<60)');}

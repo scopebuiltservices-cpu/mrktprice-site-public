@@ -1,44 +1,50 @@
 #!/bin/sh
 # One command to run every offline gate the CI + pre-commit hook rely on.
-# Usage:  sh tools/run-checks.sh
+#   Usage:  sh tools/run-checks.sh
 # Exit non-zero if any gate fails. No network, no API keys required.
-set -e
+#
+# Tests are DISCOVERED from the filesystem (not a hard-coded list) so a newly
+# added tools/**/test_*.py or test_*.mjs is gated automatically and the list can
+# never silently drift out of sync with reality.
+set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 fail=0
 
-echo "==> 1/5  Python: compile every tracked module"
-for f in $(git ls-files '*.py'); do
+echo "==> 1/5  Python: compile every module"
+for f in $(find . -path ./.git -prune -o -name '*.py' -print); do
   python3 -m py_compile "$f" || { echo "   COMPILE FAIL: $f"; fail=1; }
 done
 echo "    ok"
 
-echo "==> 2/5  Python unit tests (lineage engine)"
-if [ -f tools/market_map/test_lineage.py ]; then
-  ( cd tools/market_map && python3 test_lineage.py ) || fail=1
-fi
-if [ -f tools/market_map/test_payload.py ]; then
-  ( cd tools/market_map && python3 test_payload.py ) || fail=1
-fi
-if [ -f tools/market_map/test_earnings.py ]; then
-  ( cd tools/market_map && python3 test_earnings.py ) || fail=1
-fi
+echo "==> 2/5  Python unit tests (auto-discovered)"
+for t in $(find tools -name 'test_*.py' | sort); do
+  echo "    - $t"
+  ( cd "$(dirname "$t")" && python3 "$(basename "$t")" ) || { echo "   TEST FAIL: $t"; fail=1; }
+done
 
-echo "==> 3/5  Node unit tests (lineage parity)"
-if [ -f tools/test_lineage.mjs ]; then
-  node tools/test_lineage.mjs || fail=1
-fi
-if [ -f tools/test_intraday.mjs ]; then
-  node tools/test_intraday.mjs || fail=1
-fi
-if [ -f tools/market_map/test_intraday_eod.py ]; then
-  ( cd tools/market_map && python3 test_intraday_eod.py ) || fail=1
-fi
-if [ -f tools/test_calendar.mjs ]; then
-  node tools/test_calendar.mjs || fail=1
-fi
+echo "==> 3/5  Node unit tests (auto-discovered)"
+for t in $(find tools -name 'test_*.mjs' | sort); do
+  echo "    - $t"
+  node "$t" || { echo "   TEST FAIL: $t"; fail=1; }
+done
 
 echo "==> 4/5  Inline <script> syntax gate (every *.html)"
 node tools/check-scripts.mjs || fail=1
 
-ech
+echo "==> 5/5  JSON well-formedness (committed *.json data files)"
+for j in marketmap.json xsection.json cik.json alpha_calib.json; do
+  if [ -f "$j" ]; then
+    python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$j" || { echo "   BAD JSON: $j"; fail=1; }
+  fi
+done
+echo "    ok"
+
+if [ "$fail" -ne 0 ]; then
+  echo ""
+  echo "RESULT: FAIL - one or more gates above failed."
+  exit 1
+fi
+echo ""
+echo "RESULT: PASS - all offline gates green."
+exit 0

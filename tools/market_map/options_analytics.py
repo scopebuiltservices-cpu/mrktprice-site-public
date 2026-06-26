@@ -1,7 +1,7 @@
 """Run the full option-analysis stack for one ticker and emit a compact summary plus a
 PROVISIONAL composite signal (weights uncalibrated until signal_linkage validates them)."""
 import math
-import black_scholes as bs, bs_ext as be, american as am, realized as rl
+import black_scholes as bs, american as am, realized as rl
 import chain_quality as cq, parity as par, risk_neutral as rn, vol_surface as vs
 
 def analyze(ticker, spot, closes, chain, days, r=0.04, q=0.0, record=True):

@@ -1,0 +1,41 @@
+name: CI tests
+
+# Runs the full offline test suite (Python + Node) on every push/PR so a bad
+# edit cannot deploy silently. No secrets, no network, no API keys required:
+# every gate here is deterministic and offline (tools/run-checks.sh).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+
+      - name: Install build deps (best-effort; tests are stdlib-only)
+        run: |
+          python -m pip install --quiet --upgrade pip
+          pip install --quiet -r tools/market_map/requirements.txt || \
+            echo "::warning::requirements install skipped; offline tests are stdlib-only"
+
+      - name: Run offline gate (tools/run-checks.sh)
+        run: sh tools/run-checks.sh

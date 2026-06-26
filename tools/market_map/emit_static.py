@@ -36,8 +36,9 @@ def _stooq(t):
     return []
 
 def history(t):
-    """FMP Ultimate first (authoritative, split/div-adjusted), then yfinance, then Stooq.
-    Returns (rows, source_label) so per-ticker provenance can be stored + shown in the UI."""
+    """FMP Ultimate first (authoritative, split/div-adjusted), then yfinance, then Tiingo
+    (official API, gated on TIINGO_API_KEY), then Stooq. Returns (rows, source_label) so
+    per-ticker provenance can be stored + shown in the UI."""
     try:
         import fmp_history as _fh
         if _fh.have_key():
@@ -58,6 +59,13 @@ def history(t):
             return rows, "yfinance"
     except Exception:
         pass
+    try:
+        import tiingo_connector as _tg          # official-API fallback (no-op unless TIINGO_API_KEY set)
+        tr = _tg.fetch_rows(t)
+        if tr and len(tr) >= 40:
+            return tr, "Tiingo"
+    except Exception:
+        pass
     sr = _stooq(t)
     return (sr, "Stooq") if sr else (None, None)
 
@@ -74,7 +82,7 @@ def emit(universe_path, out_dir, do_hist=False, cap=0, hist_dir=None):
     d = json.load(open(universe_path)); names = d.get("names", [])
     cdir = os.path.join(out_dir, "cards"); hdir = os.path.join(out_dir, "hist")
     os.makedirs(cdir, exist_ok=True); os.makedirs(hdir, exist_ok=True)
-    nc = nh = 0; srccount = {}
+    nc = nh = 0; srccount = {}; linerr = 0
     for n in names:
         t = n.get("t")
         if not t: continue
@@ -117,8 +125,13 @@ def emit(universe_path, out_dir, do_hist=False, cap=0, hist_dir=None):
                     _G={"deployable":1.0,"research-only":0.5}.get(_g.get("releaseGate","blocked"),0.0)
                     _M=1 if ((lin.get("pq") or {}).get("modellable") or lin.get("factor")) else 0
                     lin["alert"]=_lineage.alert_score(_pmax,_edge,_es,_vb.get("avgVol20"),_vb.get("medVol"),_M,_G)
-            except Exception:
-                pass
+            except Exception as _le:
+                # Fail soft (one bad ticker must not abort the whole emit) BUT make it visible:
+                # a silent swallow here would drop sigvol/touch/EVT/alert-score for the name unnoticed.
+                linerr += 1
+                if linerr <= 8:
+                    import sys as _s
+                    _s.stderr.write("::warning:: emit_static: lineage augment failed for %s: %s\n" % (t, str(_le)[:120]))
         with open(os.path.join(cdir, t + ".json"), "w") as f:
             json.dump(n, f, allow_nan=False)
         nc += 1

@@ -2205,6 +2205,33 @@ function coneOptionsIV(sym){try{var M=(typeof window!=='undefined'&&window.MMAP)
 /* ---- render the compact instrument strip below the chart ---- */
 function _pc(x,d){return (x==null||!isFinite(x))?'—':(100*x).toFixed(d==null?0:d)+'%';}
 function _sg(x,d){return (x>=0?'+':'')+(100*x).toFixed(d==null?1:d)+'%';}
+/* Options analytics card: surfaces the per-name BS/options stack (n.bs) computed by the
+   nightly build (options_analytics.analyze -> risk_neutral / vol_surface / american / chain_quality).
+   Renders only when a real options chain was priced (EODHD key present); otherwise no-op. */
+function coneOptionsBS(sym){try{
+  var M=(typeof window!=='undefined'&&window.MMAP)?window.MMAP[sym]:null;var b=M&&M.bs;if(!b)return '';
+  var card='background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:7px 9px;margin-top:7px';
+  var head='<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8a93a0);margin-bottom:3px">';
+  function num(x,d){return (x==null||!isFinite(x))?'—':Number(x).toFixed(d==null?2:d);}
+  function pct(x,d){return (x==null||!isFinite(x))?'—':Number(x).toFixed(d==null?1:d)+'%';}
+  function tile(k,v,c){return '<div style="min-width:92px"><div style="font-size:8.5px;text-transform:uppercase;color:var(--faint,#646e7c)">'+k+'</div><span style="font-size:13px;font-weight:700;color:'+(c||'var(--ink,#eef3f8)')+'">'+v+'</span></div>';}
+  var t=[];
+  if(b.atmIVpct!=null)t.push(tile('ATM IV',pct(b.atmIVpct)));
+  if(b.mfImpliedVolPct!=null)t.push(tile('model-free IV',pct(b.mfImpliedVolPct)));
+  if(b.vrpVolPts!=null)t.push(tile('VRP vol pts',(b.vrpVolPts>=0?'+':'')+num(b.vrpVolPts,1),b.vrpVolPts>0?'#e0c14a':'#2ecc8f'));
+  if(b.rnSkew!=null)t.push(tile('RN skew',num(b.rnSkew,2),b.rnSkew<-0.2?'#ef5f4e':'var(--ink,#eef3f8)'));
+  if(b.rnKurt!=null)t.push(tile('RN kurt',num(b.rnKurt,2)));
+  if(b.sviAtmSkew!=null)t.push(tile('SVI ATM skew',num(b.sviAtmSkew,3)));
+  if(b.avgRichnessPct!=null)t.push(tile('richness',pct(b.avgRichnessPct),Math.abs(b.avgRichnessPct)>10?'#e0c14a':'var(--ink,#eef3f8)'));
+  if(b.expMovePct!=null)t.push(tile('exp. move',pct(b.expMovePct)));
+  if(b.american&&b.american.eepPutPct!=null)t.push(tile('Amer. EEP put',pct(b.american.eepPutPct)));
+  if(b.noArbViolations!=null)t.push(tile('no-arb viol.',String(b.noArbViolations),b.noArbViolations>0?'#ef5f4e':'#2ecc8f'));
+  if(!t.length)return '';
+  var sub='Model-free implied vol &amp; variance-risk premium (Bakshi–Kapadia–Madan), risk-neutral density skew/kurt (Breeden–Litzenberger / BKM), SVI slice, American early-exercise premium, chain no-arbitrage. '+(b.optTiltStatus||'')+'. Research only.';
+  return '<div style="'+card+'">'+head+'Options analytics · '+sym+(b.nContracts?(' ('+b.nContracts+' contracts)'):'')+'</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:14px">'+t.join('')+'</div>'
+    +'<div style="margin-top:5px;font-size:8.5px;color:var(--faint,#646e7c)">'+sub+'</div></div>';
+}catch(_e){return '';}}
 function renderConeInstrument(sym,mcOverride){
   var host=document.getElementById('coneInstrument');if(!host)return;
   try{
@@ -2263,7 +2290,7 @@ function renderConeInstrument(sym,mcOverride){
         +'<div style="margin-top:5px;padding:3px 6px;border-radius:6px;font-size:10px;background:rgba(120,140,170,.08);border-left:3px solid '+calCol+';color:'+calCol+'">'+calTxt+'</div></div>'
       +'<div style="'+card+'">'+head+'Path probabilities</div><div style="font-size:11px;display:flex;flex-direction:column;gap:2px">'+probHtml+'</div></div>'
       +'</div>'
-      +_authLine+'<div style="'+card+';margin-top:7px">'+head+'Cone layers</div><div style="font-size:10px;display:flex;flex-wrap:wrap;gap:12px">'+L.join('')+'</div>'
+      +_authLine+coneOptionsBS(sym)+'<div style="'+card+';margin-top:7px">'+head+'Cone layers</div><div style="font-size:10px;display:flex;flex-wrap:wrap;gap:12px">'+L.join('')+'</div>'
         +(alerts.length?'<div style="margin-top:5px;font-size:10px;color:var(--caution,#e0c14a);display:flex;flex-direction:column;gap:2px">'+alerts.map(function(a){return '<div>'+a+'</div>';}).join('')+'</div>':'')
         +'<div style="margin-top:4px;font-size:8.5px;color:var(--faint,#646e7c)">Quantiles are asymmetric (skew-aware), read off the same fan drawn above. Path odds are Monte-Carlo ('+pp.N+' paths) on the displayed cone. Calibration is walk-forward coverage of this name&rsquo;s own history. IV annualized 252-day (trading). Research only; not advice.</div></div>';
   }catch(e){host.innerHTML='<div style="font-size:10px;color:var(--faint,#646e7c);margin-top:6px">cone instrument unavailable: '+(e&&e.message||e)+'</div>';CUR.coneExtra=null;}

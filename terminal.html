@@ -1142,11 +1142,13 @@ function _regimeMomentum(seg){
   var q=Math.max(2,Math.min(5,Math.floor(n/4))),V=_varianceRatio(seg,q);
   var sig=Math.min(1,Math.abs(t)/2);                       // |t|>=2 (95%) => fully significant
   var score=_tanh(sharpe/2);                               // signed, bounded momentum for color
-  var rev=V.vr<0.95,trd=V.vr>1.05;
+  var ZC=1.96;                                             // 95% two-sided gate on the VR z-stat
+  var trdSig=(V.vr>1&&V.z>ZC), revSig=(V.vr<1&&V.z<-ZC);  // ONLY call persistence/mean-reversion when significant
+  var persist=trdSig?1:(revSig?-1:0);                      // +1 momentum · -1 mean-revert · 0 indistinguishable from random walk
   var verdict=Math.abs(t)<1.0?'choppy · no momentum edge'
-    :(rev?(mu>0?'up but mean-reverting (fade)':'down but mean-reverting (fade)')
-    :(mu>0?(trd?'persistent uptrend':'uptrend'):(trd?'persistent downtrend':'downtrend')));
-  return {n:n,score:score,t:t,sharpe:sharpe,drift:mu*252,sigma:sd*Math.sqrt(252),vr:V.vr,vrz:V.z,sig:sig,verdict:verdict};
+    :(revSig?(mu>0?'up but mean-reverting (fade)':'down but mean-reverting (fade)')
+    :(mu>0?(trdSig?'persistent uptrend':'uptrend'):(trdSig?'persistent downtrend':'downtrend')));
+  return {n:n,score:score,t:t,sharpe:sharpe,drift:mu*252,sigma:sd*Math.sqrt(252),vr:V.vr,vrz:V.z,sig:sig,persist:persist,verdict:verdict};
 }
 /* Diverging MOMENTUM color: red(down) — gray(flat) — green(up); alpha = significance. */
 function _momHeat(score,alpha){
@@ -1202,7 +1204,7 @@ function renderRegimeValue(ic){var host=document.getElementById('regimeValue');i
     +'<div style="display:flex;justify-content:space-between;font-size:8px;margin:2px 0 5px">'
       +'<span style="color:#ef5f4e">↓ down-momentum</span><span style="color:var(--faint,#646e7c)">regime momentum · width = duration · ▢ = now</span><span style="color:#2ecc8f">up-momentum ↑</span></div>'
     +'<div class="chip"><span class="k">momentum</span><span class="v" style="color:'+_momHeat(R.mom.score,1)+'">'+R.mom.verdict+'</span></div>'
-    +'<div class="chip"><span class="k">Sharpe · drift t · VR(q)</span><span class="v">'+(R.mom.sharpe>=0?'+':'')+R.mom.sharpe.toFixed(2)+' · t '+R.mom.t.toFixed(1)+' · VR '+R.mom.vr.toFixed(2)+(Math.abs(R.mom.vrz)>1.96?' ✓':'')+'</span></div>'
+    +'<div class="chip"><span class="k">Sharpe · drift t · VR(q)</span><span class="v">'+(R.mom.sharpe>=0?'+':'')+R.mom.sharpe.toFixed(2)+' · t '+R.mom.t.toFixed(1)+' · VR '+R.mom.vr.toFixed(2)+' (z '+R.mom.vrz.toFixed(1)+(R.mom.persist!==0?' ✓ sig':' ns')+')</span></div>'
     +'<div class="chip"><span class="k">vol vs own history</span><span class="v" style="color:'+R.cls.c+'">'+gp+'th pct · '+R.ratio.toFixed(2)+'×med</span></div>'
     +'<div class="chip"><span class="k">stock in regime</span><span class="v" style="color:'+(R.rt?R.rt.col:'inherit')+'">'+posTxt+'</span></div>'
     +'<div class="chip"><span class="k">up / down vol</span><span class="v">'+asym+'</span></div>'

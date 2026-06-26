@@ -1,0 +1,39 @@
+name: Earnings fiscal-join live smoke
+
+# Proves the AUTHORITATIVE earnings fiscal-Q/Y join works against the live FMP Ultimate feed
+# (the key only exists in CI). The key is injected from GitHub Secrets into an env var — never a
+# literal, never printed, never in a logged URL. Fork PRs get no secret, so the test self-skips.
+# A transient API/plan error skips with a warning; only a WRONG fiscal label fails the job.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/market_map/fmp_history.py'
+      - 'tools/market_map/test_earnings_live.py'
+      - '.github/workflows/earnings-smoke.yml'
+  schedule:
+    - cron: '37 11 * * 1'      # Mondays 11:37 UTC — catch silent FMP schema/field changes
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: earnings-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Install deps
+        run: python -m pip install --quiet requests
+      - name: Live earnings fiscal-join smoke
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY || secrets.FMP_ULTIMATE_API_KEY || secrets.FMP_UTIMATE_API_KEY }}
+        run: python tools/market_map/test_earnings_live.py

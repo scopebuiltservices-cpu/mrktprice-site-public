@@ -1198,13 +1198,16 @@ function renderRegimeValue(ic){var host=document.getElementById('regimeValue');i
     +'<span style="font-size:15px;font-weight:800;color:'+R.cls.c+'">'+R.cls.t+'</span>'
     +'<span style="font-size:11px;color:var(--faint,#646e7c)">'+R.annCur.toFixed(0)+'% ann · '+R.dlyCur.toFixed(2)+'%/day</span></div>'
     +'<div style="display:flex;height:14px;border-radius:3px;overflow:hidden;border:1px solid var(--line,#2a2f3a)">'+cells+'</div>'
-    +'<div style="display:flex;justify-content:space-between;font-size:8px;color:var(--faint,#646e7c);margin:2px 0 5px">'
-      +'<span>calm</span><span>regime timeline · width = duration · ▢ = now</span><span>stressed</span></div>'
-    +'<div class="chip"><span class="k">vs own history</span><span class="v" style="color:'+R.cls.c+'">'+gp+'th pct · '+R.ratio.toFixed(2)+'×med</span></div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:8px;margin:2px 0 5px">'
+      +'<span style="color:#ef5f4e">↓ down-momentum</span><span style="color:var(--faint,#646e7c)">regime momentum · width = duration · ▢ = now</span><span style="color:#2ecc8f">up-momentum ↑</span></div>'
+    +'<div class="chip"><span class="k">momentum</span><span class="v" style="color:'+_momHeat(R.mom.score,1)+'">'+R.mom.verdict+'</span></div>'
+    +'<div class="chip"><span class="k">Sharpe · drift t · VR(q)</span><span class="v">'+(R.mom.sharpe>=0?'+':'')+R.mom.sharpe.toFixed(2)+' · t '+R.mom.t.toFixed(1)+' · VR '+R.mom.vr.toFixed(2)+(Math.abs(R.mom.vrz)>1.96?' ✓':'')+'</span></div>'
+    +'<div class="chip"><span class="k">vol vs own history</span><span class="v" style="color:'+R.cls.c+'">'+gp+'th pct · '+R.ratio.toFixed(2)+'×med</span></div>'
     +'<div class="chip"><span class="k">stock in regime</span><span class="v" style="color:'+(R.rt?R.rt.col:'inherit')+'">'+posTxt+'</span></div>'
     +'<div class="chip"><span class="k">up / down vol</span><span class="v">'+asym+'</span></div>'
     +'<div class="chip"><span class="k">age · vol trend</span><span class="v" style="color:'+R.trend.c+'">'+R.age+' bars · '+R.trend.t+'</span></div>'
-    +'<div style="margin-top:5px;font-size:10px;line-height:1.35;color:var(--ink,#cfd8e3)">'+verdict+'</div>';
+    +'<div style="margin-top:5px;font-size:10px;line-height:1.35;color:var(--ink,#cfd8e3)">'+verdict+' <b style="color:'+_momHeat(R.mom.score,1)+'">Momentum: '+R.mom.verdict+'</b> (ann Sharpe '+(R.mom.sharpe>=0?'+':'')+R.mom.sharpe.toFixed(2)+', drift t '+R.mom.t.toFixed(1)+', variance-ratio '+R.mom.vr.toFixed(2)+(Math.abs(R.mom.vrz)>1.96?' — significant':'')+').</div>'
+    +'<div style="margin-top:3px;font-size:8px;color:var(--faint,#646e7c)">Shading = signed momentum (Sharpe), opacity = drift significance · Lo–MacKinlay variance ratio separates momentum (VR&gt;1) from mean-reversion (VR&lt;1) · research only</div>';
 }
 /* ===== EARNINGS LAYER (drawn LAST, on top of every pane) =====
    The single owner of the bold calendar grid + the 5 quarterly report-date verticals. Drawing it
@@ -3061,9 +3064,10 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
  if(document.getElementById('tReg').checked&&ic.breaks.length){const maxr=Math.max(...ic.rms);const _K=ic.bounds.length-1;
   for(let i=0;i<_K;i++){const a0=ic.bounds[i]+1-h0,b0=ic.bounds[i+1]+1-h0;const x0=Math.max(X(Math.max(a0,0)),padL),x1=X(Math.min(b0,show-1));if(x1<=padL)continue;
    const _cur=(i===_K-1),_ann=ic.rms[i]*Math.sqrt(252)*100;
-   g.fillStyle='rgba(192,57,43,'+(.04+.12*(ic.rms[i]/maxr)).toFixed(3)+')';g.fillRect(x0,yP0,x1-x0,Hp);
-   if(_cur){g.strokeStyle='rgba(255,120,110,.85)';g.lineWidth=1;g.strokeRect(x0+0.5,yP0+0.5,x1-x0-1,Hp-1);}        // outline the current regime
-   if(x1-x0>30){g.fillStyle=_cur?'rgba(255,160,150,.95)':'rgba(224,120,110,.72)';g.font=(_cur?'bold ':'')+'8px sans-serif';g.fillText('R'+(i+1)+' σ'+_ann.toFixed(0)+'%',x0+3,yP0+Hp-4);}
+   var _mseg=(CUR.r||[]).slice(ic.bounds[i],ic.bounds[i+1]),_mm=_regimeMomentum(_mseg);   // econometric momentum
+   g.fillStyle=_momHeat(_mm.score,.05+.18*_mm.sig);g.fillRect(x0,yP0,x1-x0,Hp);            // signed Sharpe · alpha = drift significance
+   if(_cur){g.strokeStyle='rgba(255,255,255,.8)';g.lineWidth=1;g.strokeRect(x0+0.5,yP0+0.5,x1-x0-1,Hp-1);}        // outline the current regime
+   if(x1-x0>30){var _ar=_mm.score>0.15?'↑':(_mm.score<-0.15?'↓':'→');g.fillStyle=_cur?'rgba(255,255,255,.95)':'rgba(228,233,240,.8)';g.font=(_cur?'bold ':'')+'8px sans-serif';g.fillText('R'+(i+1)+' '+_ar+' Sh'+_mm.sharpe.toFixed(1)+' σ'+_ann.toFixed(0)+'%',x0+3,yP0+Hp-4);}
   }
   ic.breaks.forEach(bk=>{const x=X(bk+1-h0);if(x>padL){g.strokeStyle='rgba(192,57,43,.7)';g.lineWidth=1;g.setLineDash([3,3]);g.beginPath();g.moveTo(x,yP0);g.lineTo(x,yP0+Hp);g.stroke();g.setLineDash([]);}});
   // ===== CURRENT-REGIME volatility-path readout: how volatile the regime is + where the stock sits =====

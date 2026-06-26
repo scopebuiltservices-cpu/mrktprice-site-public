@@ -109,6 +109,16 @@ jobs:
             # GUARD: loud signal if the engine ran but the FMP history layer produced nothing
             # (catches "new code committed but didn't execute / connect").
             FMP_API_KEY="$FMP_API_KEY" python tools/market_map/verify_history.py marketmap.json || true
+            # HARDENED ARTIFACT GUARD — accept a promoted artifact only after re-reading the final
+            # bytes from the authoritative path. Catches a truncated/empty/half-written promote that
+            # JSON-validity alone can miss. Runs in the CI runtime (no mount illusion). Hard-gate the
+            # primary payload; warn on the secondary ones so a thin day still publishes the map.
+            python tools/verify_artifact.py guard marketmap.json --min-bytes 5000 --ends-with '}' || { echo "::error::marketmap.json failed the hardened artifact guard"; exit 1; }
+            [ -f cik.json ]       && { python tools/verify_artifact.py guard cik.json       --min-bytes 100 --ends-with '}' || echo "::warning::cik.json guard"; }
+            [ -f xsection.json ]  && { python tools/verify_artifact.py guard xsection.json  --min-bytes 100 --ends-with '}' || echo "::warning::xsection.json guard"; }
+            [ -f alpha_calib.json ] && { python tools/verify_artifact.py guard alpha_calib.json --min-bytes 20 --ends-with '}' || echo "::warning::alpha_calib.json guard"; }
+            # Forensics layer: a sha256/byte/tail manifest of the promoted set (retained in the run log).
+            mkdir -p .build && python tools/verify_artifact.py manifest marketmap.json cik.json xsection.json alpha_calib.json --out .build/artifact-manifest.json 2>/dev/null || true
           else
             echo "::error::Real Market Map build FAILED - refusing to publish synthetic data"; exit 1
           fi

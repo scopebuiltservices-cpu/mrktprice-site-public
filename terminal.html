@@ -196,7 +196,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
    <label>A<select id="indA"><option value="signal">Signal/Noise</option><option value="ao">Awesome</option><option value="obv">OBV</option><option value="mfi">MFI</option><option value="rsi">RSI</option><option value="macd">MACD</option></select></label>
    <label>B<select id="indB"><option value="ao">Awesome</option><option value="signal">Signal/Noise</option><option value="obv">OBV</option><option value="mfi">MFI</option><option value="rsi">RSI</option><option value="macd">MACD</option></select></label>
    <label><input type="checkbox" id="tScen">scenarios</label>
-   <label><input type="checkbox" id="tHARQ" onchange="renderHARQ()">HARQ+regime RV forecast</label>
+   <label><input type="checkbox" id="tHARQ" onchange="renderHARQ();try{redraw();}catch(_e){}" title="Drive the projection-cone σ from the HARQ+regime next-session vol forecast (overrides Vol src while checked)">HARQ+regime RV forecast</label>
    <span class="note" id="asym" style="margin:0"></span></div></div>
  <canvas id="cv2"></canvas><div class="readout" id="ro"></div>
  <div id="coneInstrument"></div>
@@ -1993,7 +1993,7 @@ function load(sym,s){const c=s.closes,d=s.dates,vol=s.volumes||c.map(()=>0);cons
  const bestFit=EMAP.reduce((a,b)=>emaM[b].r2>emaM[a].r2?b:a);
  const _mcs=(function(){try{return momentumContinuation(c,vol,20);}catch(e){return{validated:false,score:null};}})();
  CUR={sym,c,d,vol,r,last,rvDaily:sd(r),garch:g,icss:ic,curRms,roll:rollVol(r,21),dds:ddSeries(c),sk,
-   va,v20,rvolS,ao,hvT,cone,rvAnn,cv,dd,emaM,bestTrack,bestFit,sma20,std20,bbU2,bbL2,bbU1,bbL1,z:zS,obv:obvS,mfi:mfiS,macd:macdS,rsi:rsiS,vp,obvDiv,ou,avgVol20,vwStd,integrity,mcs:_mcs};
+   va,v20,rvolS,ao,hvT,cone,rvAnn,cv,dd,emaM,bestTrack,bestFit,sma20,std20,bbU2,bbL2,bbU1,bbL1,z:zS,obv:obvS,mfi:mfiS,macd:macdS,rsi:rsiS,vp,obvDiv,ou,avgVol20,vwStd,integrity,mcs:_mcs,harq:(function(){try{return harqRegimeForecast(c);}catch(_h){return null;}})()};
  document.getElementById('px').textContent=last.toFixed(2);
  const ce=document.getElementById('chg');ce.textContent=(chg>=0?'+':'')+(chg*100).toFixed(2)+'%';ce.className='chg '+(chg>=0?'up':'down');
  document.getElementById('sym').textContent=sym;document.getElementById('asof').textContent='as of '+d[d.length-1];
@@ -2032,7 +2032,8 @@ function load(sym,s){const c=s.closes,d=s.dates,vol=s.volumes||c.map(()=>0);cons
  if(!document.getElementById('mid').value||document.getElementById('mid').dataset.sym!==sym){document.getElementById('mid').value=last.toFixed(2);document.getElementById('low').value=(last*.90).toFixed(2);document.getElementById('high').value=(last*1.10).toFixed(2);document.getElementById('mid').dataset.sym=sym;}
  redraw();drawCone();buildCadence(sym,c,d);try{buildQLedger(sym,c,d);}catch(_e){}try{renderHARQ();}catch(_hq){}}
 function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementById('mid').value,low=+document.getElementById('low').value,high=+document.getElementById('high').value,H=+document.getElementById('hz').value,cf=(+document.getElementById('cf').value)/100,lev=document.getElementById('lev').checked;
- const vs=document.getElementById('volsrc').value;const sig=vs==='regime'?CUR.curRms:(vs==='garch'?CUR.garch.annVol/Math.sqrt(252):0.6*CUR.garch.annVol/Math.sqrt(252)+0.4*CUR.rvDaily);
+ const vs=document.getElementById('volsrc').value;let sig=vs==='regime'?CUR.curRms:(vs==='garch'?CUR.garch.annVol/Math.sqrt(252):0.6*CUR.garch.annVol/Math.sqrt(252)+0.4*CUR.rvDaily);
+ const _harqOn=!!(document.getElementById('tHARQ')&&document.getElementById('tHARQ').checked&&CUR.harq&&CUR.harq.volDaily>0);if(_harqOn)sig=CUR.harq.volDaily;CUR.harqDrivingCone=_harqOn;   // HARQ+regime next-session vol drives the projection cone σ when checked
  const am=document.getElementById('anchorSel').value;let pj;
  var _rr=lr(CUR.c),_dn=[],_up=[];for(var _i=0;_i<_rr.length;_i++){if(_rr[_i]<0)_dn.push(-_rr[_i]);else if(_rr[_i]>0)_up.push(_rr[_i]);}
  var _rms=function(a){return a.length?Math.sqrt(a.reduce(function(s,y){return s+y*y;},0)/a.length):0;};

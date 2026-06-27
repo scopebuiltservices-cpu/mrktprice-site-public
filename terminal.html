@@ -757,15 +757,7 @@ function conditioningGate(c,d,recentBreak){const n=c.length,r=lr(c);const a=adfT
  return{grade,checks,reasons};}
 // GARCH(1,1) QMLE (cross-checked vs simulation) + ICSS (verified vs planted variance breaks)
 /* _inv3 + garch (GARCH(1,1) QMLE) -> engine.js (single source of truth; seed option + M-stat1 notes there) */
-function icssCrit(T){return Math.max(1.358,1.3466+.0171*Math.sqrt(Math.log(Math.max(T,2))));}
-function icss(rr,minSeg=10,mvr=1.5){const m=rr.reduce((a,b)=>a+b,0)/rr.length,y2=rr.map(x=>(x-m)*(x-m)),T=y2.length,crit=icssCrit(T);let cps=[];
- const cs=(lo,hi)=>{const n=hi-lo;let C=0,Ck=[];for(let i=lo;i<hi;i++){C+=y2[i];Ck.push(C);}if(C<=0)return null;let j=0,mx=0;for(let k=0;k<n;k++){const D=Ck[k]/C-(k+1)/n;if(Math.abs(D)>Math.abs(mx)){mx=D;j=k;}}return{stat:Math.sqrt(n/2)*Math.abs(mx),j};};
- const rec=(lo,hi)=>{if(hi-lo<2*minSeg)return;const c=cs(lo,hi);if(!c||c.stat<=crit)return;const cp=lo+c.j;if(cp-lo<minSeg||hi-cp<minSeg)return;rec(lo,cp);cps.push(cp);rec(cp,hi);};
- rec(0,T);cps.sort((a,b)=>a-b);let ch=true,g=0;
- while(ch&&cps.length&&g++<50){ch=false;const b=[0,...cps,T],kept=[];for(let i=1;i<b.length-1;i++){const c=cs(b[i-1],b[i+1]);if(c&&c.stat>crit){const nc=b[i-1]+c.j;if(nc-b[i-1]>=minSeg&&b[i+1]-nc>=minSeg)kept.push(nc);}}const nc=[...new Set(kept)].sort((a,b)=>a-b);ch=JSON.stringify(nc)!==JSON.stringify(cps);cps=nc;}
- const sv=(a,b)=>{let s=0;for(let i=a;i<b;i++)s+=y2[i];return b>a?s/(b-a):0;};ch=true;
- while(ch&&cps.length){ch=false;const b=[0,...cps,T];let weak=null;for(let i=1;i<b.length-1;i++){const vl=sv(b[i-1],b[i]),vrr=sv(b[i],b[i+1]),ra=Math.max(vl,vrr)/Math.max(Math.min(vl,vrr),1e-300);if(ra<mvr&&(!weak||ra<weak.r))weak={i:i-1,r:ra};}if(weak){cps.splice(weak.i,1);ch=true;}}
- const b=[0,...cps,T],rms=[];for(let i=0;i<b.length-1;i++){let s=0;for(let k=b[i];k<b[i+1];k++)s+=y2[k];rms.push(Math.sqrt(s/(b[i+1]-b[i])));}return{breaks:cps,crit,rms,bounds:b};}
+/* icssCrit, icss (ICSS variance-regime detector) -> engine.js (single source of truth) */
 /* ouFit (OU / AR(1) mean-reversion) -> engine.js (single source of truth) */
 function _gaussSolve(A,b){var n=b.length,M=[];for(var i=0;i<n;i++)M.push(A[i].slice().concat([b[i]]));
  for(var col=0;col<n;col++){var piv=col;for(var r=col+1;r<n;r++)if(Math.abs(M[r][col])>Math.abs(M[piv][col]))piv=r;
@@ -1106,18 +1098,7 @@ function _volRating(z){if(z==null||!isFinite(z))return {idx:10,col:_VOLCOLS[10],
 function _regHeat(f){f=Math.max(0,Math.min(1,f));var g=[46,204,143],y=[224,193,74],r=[239,95,78];
   var a,b,t;if(f<0.5){a=g;b=y;t=f/0.5;}else{a=y;b=r;t=(f-0.5)/0.5;}
   return 'rgb('+Math.round(a[0]+(b[0]-a[0])*t)+','+Math.round(a[1]+(b[1]-a[1])*t)+','+Math.round(a[2]+(b[2]-a[2])*t)+')';}
-function _tanh(x){if(x>=20)return 1;if(x<=-20)return -1;var e=Math.exp(2*x);return (e-1)/(e+1);}
-/* Lo-MacKinlay (1988) variance ratio VR(q) with unbiased estimators + homoskedastic z-stat.
-   VR>1 => positive serial correlation (trending / momentum); VR<1 => mean reversion. */
-function _varianceRatio(r,q){
-  var n=r.length;if(n<2*q||q<2)return {vr:1,z:0};
-  var mu=0,i,j;for(i=0;i<n;i++)mu+=r[i];mu/=n;
-  var va=0;for(i=0;i<n;i++){var d=r[i]-mu;va+=d*d;}va/=(n-1);if(va<=0)return {vr:1,z:0};
-  var m=q*(n-q+1)*(1-q/n);if(m<=0)return {vr:1,z:0};
-  var sc=0;for(i=q-1;i<n;i++){var s=0;for(j=0;j<q;j++)s+=(r[i-j]-mu);sc+=s*s;}
-  var vq=sc/m,vr=vq/va,phi=2*(2*q-1)*(q-1)/(3*q*n);
-  return {vr:vr,z:phi>0?(vr-1)/Math.sqrt(phi):0};
-}
+/* _tanh, _varianceRatio (Lo-MacKinlay VR(q) + z) -> engine.js (single source of truth) */
 /* Per-regime momentum from a returns segment: drift t-stat (H0:mu=0), annualized risk-adjusted
    Sharpe (signed momentum), and the variance-ratio persistence test. score in [-1,1]. */
 function _regimeMomentum(seg){

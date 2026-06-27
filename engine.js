@@ -6,7 +6,10 @@
 
    Contents: _ols (OLS via normal equations + Gauss-Jordan), _mackinnonCV (ADF 5% surface),
    adfTest (AIC-lag ADF, regression-rows T + small-sample flag), _nwlrv (Newey-West LRV),
-   kpssTest (KPSS level + small-sample flag). Mirrored 1:1 by tools/market_map/stats_ref.py. */
+   kpssTest (KPSS level + small-sample flag); ema/emaProjPath, hvRollSeries (realized vol),
+   garch (GARCH(1,1) QMLE), ouFit (OU/AR(1) mean-reversion); icss/icssCrit (ICSS variance-regime
+   detector), _varianceRatio (Lo-MacKinlay VR(q)+z), _tanh. ADF/KPSS mirrored 1:1 by
+   tools/market_map/stats_ref.py; the rest are planted-structure tested in test_engine_estimators.mjs. */
 (function (root) {
   'use strict';
 
@@ -81,7 +84,33 @@
     const z = (sigmaX2 > 0 && isFinite(sigmaX2)) ? (last - mu) / Math.sqrt(sigmaX2) : 0;
     return { phi, sePhi, theta, mu, muPrice: Math.exp(mu), halfLife, sigmaX2, meanRev, z, last }; }
 
-  const API = { _ols, _mackinnonCV, adfTest, _nwlrv, kpssTest, ema, emaProjPath, hvRollSeries, _inv3, garch, ouFit, _lr, _vr, _sd };
+  /* ---- ICSS variance-regime detector (Inclán-Tiao iterated cumulative sum of squares).
+         icssCrit: size-invariant critical value; icss: returns change-points, per-segment RMS and
+         segment bounds. Deterministic; mirrors the prior inline dashboard implementation 1:1. ---- */
+  function icssCrit(T){return Math.max(1.358,1.3466+.0171*Math.sqrt(Math.log(Math.max(T,2))));}
+  function icss(rr,minSeg=10,mvr=1.5){const m=rr.reduce((a,b)=>a+b,0)/rr.length,y2=rr.map(x=>(x-m)*(x-m)),T=y2.length,crit=icssCrit(T);let cps=[];
+   const cs=(lo,hi)=>{const n=hi-lo;let C=0,Ck=[];for(let i=lo;i<hi;i++){C+=y2[i];Ck.push(C);}if(C<=0)return null;let j=0,mx=0;for(let k=0;k<n;k++){const D=Ck[k]/C-(k+1)/n;if(Math.abs(D)>Math.abs(mx)){mx=D;j=k;}}return{stat:Math.sqrt(n/2)*Math.abs(mx),j};};
+   const rec=(lo,hi)=>{if(hi-lo<2*minSeg)return;const c=cs(lo,hi);if(!c||c.stat<=crit)return;const cp=lo+c.j;if(cp-lo<minSeg||hi-cp<minSeg)return;rec(lo,cp);cps.push(cp);rec(cp,hi);};
+   rec(0,T);cps.sort((a,b)=>a-b);let ch=true,g=0;
+   while(ch&&cps.length&&g++<50){ch=false;const b=[0,...cps,T],kept=[];for(let i=1;i<b.length-1;i++){const c=cs(b[i-1],b[i+1]);if(c&&c.stat>crit){const nc=b[i-1]+c.j;if(nc-b[i-1]>=minSeg&&b[i+1]-nc>=minSeg)kept.push(nc);}}const nc=[...new Set(kept)].sort((a,b)=>a-b);ch=JSON.stringify(nc)!==JSON.stringify(cps);cps=nc;}
+   const sv=(a,b)=>{let s=0;for(let i=a;i<b;i++)s+=y2[i];return b>a?s/(b-a):0;};ch=true;
+   while(ch&&cps.length){ch=false;const b=[0,...cps,T];let weak=null;for(let i=1;i<b.length-1;i++){const vl=sv(b[i-1],b[i]),vrr=sv(b[i],b[i+1]),ra=Math.max(vl,vrr)/Math.max(Math.min(vl,vrr),1e-300);if(ra<mvr&&(!weak||ra<weak.r))weak={i:i-1,r:ra};}if(weak){cps.splice(weak.i,1);ch=true;}}
+   const b=[0,...cps,T],rms=[];for(let i=0;i<b.length-1;i++){let s=0;for(let k=b[i];k<b[i+1];k++)s+=y2[k];rms.push(Math.sqrt(s/(b[i+1]-b[i])));}return{breaks:cps,crit,rms,bounds:b};}
+
+  /* ---- tanh squash + Lo-MacKinlay (1988) variance ratio VR(q) with homoskedastic z-stat.
+         VR>1 => positive serial correlation (trend/momentum); VR<1 => mean reversion. ---- */
+  function _tanh(x){if(x>=20)return 1;if(x<=-20)return -1;var e=Math.exp(2*x);return (e-1)/(e+1);}
+  function _varianceRatio(r,q){
+    var n=r.length;if(n<2*q||q<2)return {vr:1,z:0};
+    var mu=0,i,j;for(i=0;i<n;i++)mu+=r[i];mu/=n;
+    var va=0;for(i=0;i<n;i++){var d=r[i]-mu;va+=d*d;}va/=(n-1);if(va<=0)return {vr:1,z:0};
+    var m=q*(n-q+1)*(1-q/n);if(m<=0)return {vr:1,z:0};
+    var sc=0;for(i=q-1;i<n;i++){var s=0;for(j=0;j<q;j++)s+=(r[i-j]-mu);sc+=s*s;}
+    var vq=sc/m,vr=vq/va,phi=2*(2*q-1)*(q-1)/(3*q*n);
+    return {vr:vr,z:phi>0?(vr-1)/Math.sqrt(phi):0};
+  }
+
+  const API = { _ols, _mackinnonCV, adfTest, _nwlrv, kpssTest, ema, emaProjPath, hvRollSeries, _inv3, garch, ouFit, _lr, _vr, _sd, icssCrit, icss, _tanh, _varianceRatio };
   root.MrktEngine = API;                       // namespaced (used by the Node parity test)
   for (const k in API) { if (typeof root[k] === 'undefined') root[k] = API[k]; }   // bare globals for the inline dashboard code
 })(typeof globalThis !== 'undefined' ? globalThis : this);

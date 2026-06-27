@@ -46,5 +46,33 @@ ok('GARCH annVol positive + finite', g.annVol>0 && isFinite(g.annVol), g.annVol)
 const gS=E.garch(simGarch(1500,2e-6,0.08,0.90,11),{seed:'stationary'});
 ok('GARCH stationary-seed option runs', gS.seedKind==='stationary' && gS.kappa>0.85 && gS.kappa<1.0, gS.kappa);
 
+/* 5) ICSS: recover a planted variance break (low-vol first half, high-vol second half) */
+ok('engine exposes icss/icssCrit/_varianceRatio/_tanh', ['icss','icssCrit','_varianceRatio','_tanh'].every(k=>typeof E[k]==='function'));
+const rngI=mul32(21); const seg1=[],seg2=[];
+for(let i=0;i<150;i++)seg1.push(0.005*gauss(rngI));
+for(let i=0;i<150;i++)seg2.push(0.025*gauss(rngI));
+const icr=E.icss(seg1.concat(seg2));
+ok('ICSS finds >=1 break', icr.breaks.length>=1, icr.breaks);
+ok('ICSS break near planted midpoint (~150)', icr.breaks.some(b=>Math.abs(b-150)<45), icr.breaks);
+ok('ICSS later-segment RMS >> earlier', icr.rms[icr.rms.length-1] > icr.rms[0]*2, icr.rms);
+ok('ICSS crit > 1.3 (size-invariant)', icr.crit>1.3, icr.crit);
+
+/* 6) Lo-MacKinlay variance ratio: iid -> VR~1; positively autocorrelated -> VR>1, z>0;
+      mean-reverting -> VR<1, z<0 */
+const rngV=mul32(33); const iid=[]; for(let i=0;i<800;i++)iid.push(gauss(rngV));
+const vrIid=E._varianceRatio(iid,4);
+ok('VR(iid) ~ 1', Math.abs(vrIid.vr-1)<0.25, vrIid);
+const trend=[]; let pT=0; for(let i=0;i<800;i++){pT=0.5*pT+gauss(rngV); trend.push(pT);}
+const vrTr=E._varianceRatio(trend,4);
+ok('VR(positively autocorrelated) > 1 and z>0', vrTr.vr>1.1 && vrTr.z>0, vrTr);
+const mr=[]; let pM=0; for(let i=0;i<800;i++){const x=-0.5*pM+gauss(rngV); mr.push(x); pM=x;}
+const vrMr=E._varianceRatio(mr,4);
+ok('VR(mean-reverting) < 1 and z<0', vrMr.vr<0.9 && vrMr.z<0, vrMr);
+
+/* 7) tanh: odd, bounded, saturating, monotone */
+ok('tanh(0)=0', Math.abs(E._tanh(0))<1e-12);
+ok('tanh saturates to +/-1', Math.abs(E._tanh(50)-1)<1e-9 && Math.abs(E._tanh(-50)+1)<1e-9);
+ok('tanh monotone + strictly bounded', E._tanh(1)>E._tanh(0.5) && E._tanh(1)<1, E._tanh(1));
+
 console.log('\n' + (fails ? (fails + ' FAILED') : 'ALL ENGINE-ESTIMATOR TESTS PASSED'));
 process.exit(fails ? 1 : 0);

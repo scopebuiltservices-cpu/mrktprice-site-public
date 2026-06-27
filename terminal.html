@@ -2134,7 +2134,7 @@ function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementByI
  const rk={pass:0,caution:1,fail:2,'weak-id':1};let w=0;S.forEach(s=>w=Math.max(w,rk[s]??1));const gs=['pass','caution','fail'][w];
  setPill('gate',gs,gs==='pass'?'PASS':gs==='caution'?'PASS · CAUTION':'REJECT');
  document.getElementById('gatewhy').textContent=gs==='pass'?'volatility, RV-ratio, tail, skew within tolerance (timing daily-proxy; dependence degraded).':gs==='caution'?'a risk component elevated/weak-id; size conservatively.':'a hard risk band breached — release withheld.';
- buildAlerts();try{renderConeInstrument(CUR.sym);}catch(_e){}try{renderConeContext(CUR.sym);}catch(_e){}try{renderConeZoom();}catch(_e){}draw();buildInsightTiles(CUR.sym);renderDecision(CUR.sym);renderReaction(CUR.sym);renderMacro(CUR.sym);try{buildForecastCard(CUR.sym);}catch(_eFCw){}try{_secFetchEarnings(CUR.sym);}catch(_eSEf){}}
+ buildAlerts();try{renderConeInstrument(CUR.sym);}catch(_e){}try{renderConeContext(CUR.sym);}catch(_e){}try{renderConeZoom();}catch(_e){}try{renderTriggers();}catch(_e){}draw();buildInsightTiles(CUR.sym);renderDecision(CUR.sym);renderReaction(CUR.sym);renderMacro(CUR.sym);try{buildForecastCard(CUR.sym);}catch(_eFCw){}try{_secFetchEarnings(CUR.sym);}catch(_eSEf){}}
 /* ===== CONSOLIDATED FORECAST CARD — What / Why / Risk / Trust / Action =====
    One coordinated read of the engine: the projection (What), the reasons behind it (Why), the
    downside envelope (Risk), the calibration/governance grade (Trust), and the conservative,
@@ -2438,6 +2438,45 @@ function _momLeanHtml(sym){try{
     +'Center path leans <b style="color:'+col+'">'+lean+'</b> by ~'+Math.abs(tiltPct).toFixed(1)+'% of the horizon band — a lean WITHIN the calibrated range, not a separate forecast.</div>'
     +'<div style="margin-top:3px;font-size:8px;color:var(--faint,#646e7c)">Gated on the Lo–MacKinlay VR z-stat (|z|&gt;1.96). Research only.</div></div>';
 }catch(_e){return '';}}
+/* ===== ECON TRIGGERS + CALCULUS (loaded ticker): velocity/acceleration of EMA (1st/2nd derivative),
+   integral of signed volume flow (OBV), and a 15-minute-grade trigger gate with EXPLICIT equation-deduced
+   numeric thresholds (RVOL>=2.0, |sigma-displacement|>=2.0, VWAP cross, EMA-velocity sign). Uses CUR series;
+   refreshes with the intraday feed when present, EOD otherwise. ===== */
+function renderTriggers(){
+  var host=document.getElementById('trigPanel');if(!host)return;
+  if(!(typeof CUR==='object'&&CUR&&CUR.c&&CUR.c.length>30)){host.innerHTML='';return;}
+  var c=CUR.c,n=c.length,px=CUR.last,vw=(CUR.v20&&CUR.v20[n-1]!=null)?CUR.v20[n-1]:null;
+  var rvol=(CUR.rvolS&&CUR.rvolS[n-1]!=null)?CUR.rvolS[n-1]:null,zlast=(CUR.z&&CUR.z[n-1]!=null)?CUR.z[n-1]:null;
+  var e=(typeof ema==='function')?ema(c,21):null,vel=null,acc=null;          // calculus on EMA21
+  if(e&&n>=4&&px){var v1=(e[n-1]-e[n-2])/px*100,v2=(e[n-2]-e[n-3])/px*100;vel=v1;acc=v1-v2;}
+  var obv=CUR.obv||[],obvTrend=null;if(obv.length>=11){var a0=obv[obv.length-1],b0=obv[obv.length-11];obvTrend=(b0!==0)?(a0-b0)/Math.abs(b0):(a0>0?1:(a0<0?-1:0));}
+  var rsig=CUR.rvDaily||0,lastRet=(n>1)?(c[n-1]/c[n-2]-1):0,brk=rsig>0?lastRet/rsig:0;
+  var TH={rvol:2.0,z:2.0};
+  var pAbove=(vw!=null&&px>vw),pBelow=(vw!=null&&px<vw),rvolOK=(rvol!=null&&rvol>=TH.rvol),
+      zUp=(zlast!=null&&zlast>=TH.z),zDn=(zlast!=null&&zlast<=-TH.z),velUp=(vel!=null&&vel>0),velDn=(vel!=null&&vel<0);
+  var bullFire=pAbove&&rvolOK&&zUp&&velUp,bearFire=pBelow&&rvolOK&&zDn&&velDn;
+  var bullN=[pAbove,rvolOK,zUp,velUp].filter(Boolean).length,bearN=[pBelow,rvolOK,zDn,velDn].filter(Boolean).length;
+  var verdict,vc;
+  if(bullFire){verdict='▲ BULL TRIGGER FIRED';vc='#2ecc8f';}
+  else if(bearFire){verdict='▼ BEAR TRIGGER FIRED';vc='#ef5f4e';}
+  else{var mx=Math.max(bullN,bearN);verdict=(mx>=3?(bullN>=bearN?'▲ bull armed '+bullN+'/4':'▼ bear armed '+bearN+'/4'):'◆ idle '+mx+'/4');vc=(mx>=3?(bullN>=bearN?'#9ece9b':'#e8a39b'):'#8a93a3');}
+  var dir=bullFire?true:(bearFire?false:(bullN>=bearN));
+  function cond(ok,label,val,thr){var cc=ok?'#2ecc8f':'#69727f';return '<div style="display:flex;justify-content:space-between;font-size:10px;padding:1px 0"><span style="color:'+cc+'">'+(ok?'✓':'·')+' '+label+'</span><span style="color:'+cc+'">'+val+' · '+thr+'</span></div>';}
+  var card='background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:9px;padding:8px 10px';
+  host.innerHTML='<div style="'+card+'"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">'
+    +'<span style="font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--ink,#eef3f8)">ECON TRIGGERS · CALCULUS</span>'
+    +'<span style="font-size:12px;font-weight:800;color:'+vc+'">'+verdict+'</span></div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;font-size:9px;color:var(--muted,#8a93a0);margin-bottom:5px">'
+      +'<span>velocity <b style="color:'+((vel!=null&&vel>=0)?'#2ecc8f':'#ef5f4e')+'">'+(vel!=null?(vel>=0?'+':'')+vel.toFixed(2)+'%/d':'—')+'</b></span>'
+      +'<span>acceleration <b style="color:'+((acc!=null&&acc>=0)?'#2ecc8f':'#ef5f4e')+'">'+(acc!=null?(acc>=0?'+':'')+acc.toFixed(3):'—')+'</b></span>'
+      +'<span>∫flow OBV·10d <b style="color:'+((obvTrend!=null&&obvTrend>=0)?'#2ecc8f':'#ef5f4e')+'">'+(obvTrend!=null?(obvTrend>=0?'accum':'distrib'):'—')+'</b></span>'
+      +'<span>σ-move <b>'+(brk>=0?'+':'')+brk.toFixed(2)+'σ</b></span></div>'
+    +cond((dir?pAbove:pBelow),'VWAP '+(dir?'reclaim price>VWAP':'loss price<VWAP'),(vw!=null?'$'+px.toFixed(2)+'/'+vw.toFixed(2):'—'),'cross')
+    +cond(rvolOK,'relative volume',(rvol!=null?rvol.toFixed(2)+'x':'—'),'≥'+TH.rvol.toFixed(1)+'x')
+    +cond((dir?zUp:zDn),'σ-displacement',(zlast!=null?(zlast>=0?'+':'')+zlast.toFixed(2)+'σ':'—'),(dir?'≥+':'≤−')+TH.z.toFixed(1)+'σ')
+    +cond((dir?velUp:velDn),'EMA velocity sign',(vel!=null?(vel>=0?'+':'')+vel.toFixed(2)+'%/d':'—'),(dir?'>0':'<0'))
+    +'<div style="font-size:8px;color:var(--faint,#646e7c);margin-top:4px">Fires when all four align. velocity=d(EMA21)/dt, acceleration=d²(EMA21)/dt², ∫flow=on-balance-volume integral over 10 sessions. Refreshes with the 15-min intraday feed when loaded; EOD otherwise. Research only — not a trade signal.</div></div>';
+}
 /* ===== PROJECTION CONE — ZOOM TILE: an oversized, high-contrast read of CUR.pj (central path +
    80/95 bands) with big horizon nodes (price + Δ% + date) and a metrics strip (P(up), expected
    move, ranges, σ/day, λ, conformal coverage). Pure read of already-computed forecast — no new math. */

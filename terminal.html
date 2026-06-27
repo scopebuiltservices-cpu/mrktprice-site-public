@@ -499,7 +499,8 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
       +rows
       +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;padding-top:7px;border-top:1px solid var(--line,#222)">'
         +'<span style="font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--faint,#646e7c)">Direct pulls</span>'
-        +'<label style="font-size:11px;color:var(--ink,#eef3f8)">Primary price source <select id="srcPrimary" style="font-size:11px;padding:2px 4px"><option value="fmp">FMP Ultimate</option><option value="yf">yfinance</option><option value="auto">Auto (FMP&rarr;yf&rarr;Stooq)</option></select></label>'
+        +'<label style="font-size:11px;color:var(--ink,#eef3f8)">Primary price source <select id="srcPrimary" style="font-size:11px;padding:2px 4px"><option value="fmp">FMP Ultimate (paid, primary)</option><option value="yf">yfinance (backup)</option><option value="auto">Auto (FMP&rarr;yf&rarr;Stooq)</option></select></label>'
+        +'<label style="font-size:11px;color:var(--ink,#eef3f8);display:inline-flex;align-items:center;gap:5px" title="yfinance is the FREE BACKUP source. Off = FMP Ultimate only (paid, no fallback). The nightly build honours the same switch via the MRKT_YF_ENABLED secret/env.">yfinance backup <input type="checkbox" id="srcYfBackup" checked> <span id="yfBackupNote" style="font-size:9px;color:var(--faint,#646e7c)">ON</span></label>'
         +'<button type="button" id="srcPull" class="ghost" style="font-size:11px;padding:4px 8px">&#8635; Pull fresh now</button>'
         +'<button type="button" id="srcReset" class="ghost" style="font-size:11px;padding:4px 8px;color:#e0a13c" title="Restore default sources (FMP+EOD on) and clear saved source state">&#8634; Reset sources</button>'
       +'</div>'
@@ -511,6 +512,13 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
     var prim=document.getElementById('srcPrimary');
     if(prim){try{prim.value=localStorage.getItem('mrkt.primarySource')||'fmp';}catch(e){}
       prim.addEventListener('change',function(){try{localStorage.setItem('mrkt.primarySource',prim.value);window.MRKT_PRIMARY=prim.value;}catch(e){}});}
+    // yfinance BACKUP on/off — FMP Ultimate stays primary; this governs the client live-fetch fallback
+    // (and documents the server toggle MRKT_YF_ENABLED). Persisted; exposes window.MRKT_YF_ENABLED.
+    var yfb=document.getElementById('srcYfBackup'),yfn=document.getElementById('yfBackupNote');
+    if(yfb){try{var _yo=localStorage.getItem('mrkt.yfBackup');yfb.checked=(_yo===null?true:_yo==='1');}catch(e){}
+      window.MRKT_YF_ENABLED=yfb.checked; if(yfn)yfn.textContent=yfb.checked?'ON':'OFF (FMP-only)';
+      yfb.addEventListener('change',function(){try{localStorage.setItem('mrkt.yfBackup',yfb.checked?'1':'0');}catch(e){}
+        window.MRKT_YF_ENABLED=yfb.checked; if(yfn)yfn.textContent=yfb.checked?'ON':'OFF (FMP-only)';});}
     var pull=document.getElementById('srcPull');
     if(pull)pull.addEventListener('click',function(){pull.textContent='&#8635; pulling…';try{location.reload();}catch(e){}});
     var rst=document.getElementById('srcReset');

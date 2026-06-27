@@ -2,9 +2,42 @@
 price bounds, calendar) + liquidity/stale filters. Garbage quotes -> garbage IV
 and false 'richness', so this gates the chain before any valuation."""
 import math
+try:
+    import options_conventions as _oc   # registry + quote/data-quality gate (BSM audit control)
+except Exception:                        # keep chain hygiene working even if the module is absent
+    _oc = None
+
+def conventions_gate(chain, asof_ts=None, max_stale_sec=120):
+    """Apply the options-conventions data-quality gate (BSM audit) as a PRE-filter:
+      - drop crossed / negative / locked quotes and (when ts present) stale quotes;
+      - normalize an IV that was supplied in PERCENT points (e.g. 22.0) back to decimal (0.22),
+        tagging the row ivUnitsFixed=True so a 100x IV->price error can never reach the pricer.
+    No-op passthrough when options_conventions is unavailable. Returns the cleaned chain."""
+    if _oc is None:
+        return chain
+    out = []
+    for o in chain:
+        oo = dict(o)
+        iv = oo.get("iv")
+        try:
+            ivf = float(iv) if iv not in (None, "") else None
+        except (TypeError, ValueError):
+            ivf = None
+        if ivf is not None and ivf > 5.0:            # percent points -> decimal
+            oo["iv"] = ivf / 100.0
+            oo["ivUnitsFixed"] = True
+        g = _oc.quote_gate({"bid": oo.get("bid"), "ask": oo.get("ask"), "ts": oo.get("ts")},
+                           asof_ts=asof_ts, max_stale_sec=max_stale_sec)
+        hard = {"crossed_market", "locked_market", "negative_quote", "stale_quote", "future_timestamp"}
+        if hard.intersection(g["rejects"]):
+            continue                                  # unusable quote -> drop before valuation
+        out.append(oo)
+    return out
 
 def liquidity_filter(chain, min_oi=10, max_rel_spread=0.6):
-    """Keep contracts with enough OI and a tradeable spread. Adds 'mark','relSpread'."""
+    """Keep contracts with enough OI and a tradeable spread. Adds 'mark','relSpread'.
+    Runs the conventions/quote-sanity gate first (IV-units normalize + crossed/stale drop)."""
+    chain = conventions_gate(chain)
     keep=[]
     for o in chain:
         try: K=float(o["strike"])

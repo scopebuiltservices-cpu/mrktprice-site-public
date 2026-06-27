@@ -99,7 +99,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
  <div class="brand"><svg width="26" height="26" viewBox="0 0 26 26" aria-label="MrktPrice logo"><rect x="2" y="2" width="22" height="22" rx="6" fill="var(--brand)"/><path d="M6 17 L11 11 L15 14 L20 7" fill="none" stroke="#0a0d12" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="20" cy="7" r="2.1" fill="#0a0d12"/></svg><span class="mk"><span class="a">Mrkt</span><span class="b">Price</span></span><span class="tag">mrktprice.com</span></div><div class="brandbar"></div>
 
  <div><div class="pxrow"><span class="px" id="px">—</span><span class="chg" id="chg"></span></div>
-  <div class="meta"><span class="badge" id="sym">—</span><span class="badge">pooled daily (research)</span>
+  <div class="meta"><span class="badge" id="sym">—</span><span class="badge">live daily</span>
    <span id="asof">as of —</span><span class="dot" id="stale"></span><span id="staletxt"></span><span class="pill" id="stateBadge">—</span><span class="pill" id="integBadge" title="Phase-3 conditioning integrity gate">—</span><span class="pill" id="relBadge" title="Global release gate (R3)">—</span><span class="pill" id="qReport" title="Next quarterly report (est. from fiscal calendar) + trailing PEG (P/E ÷ EPS growth%)">—</span></div></div>
  <div class="ctrls">
   <div class="ctrl"><label>Symbol</label><select id="symsel"></select></div>
@@ -721,7 +721,7 @@ function ewmaSig(r,lam){const sig=[];let s2=0;for(let t=0;t<r.length;t++){
   sig.push(Math.sqrt(Math.max(s2,1e-300)));s2=lam*s2+(1-lam)*r[t]*r[t];}return sig;}
 function ksP(u){const a=[...u].sort((x,y)=>x-y),n=a.length;let D=0;for(let i=0;i<n;i++)D=Math.max(D,(i+1)/n-a[i],a[i]-i/n);const lam=(Math.sqrt(n)+0.12+0.11/Math.sqrt(n))*D;let sm=0;for(let k=1;k<=100;k++)sm+=Math.pow(-1,k-1)*Math.exp(-2*k*k*lam*lam);return Math.max(0,Math.min(1,2*sm));}
 function kupiec(x,n,a){const pi=x/n;let lr;if(x===0||x===n)lr=-2*((n-x)*Math.log(1-a)+x*Math.log(a));else lr=-2*((n-x)*Math.log(1-a)+x*Math.log(a)-(n-x)*Math.log(1-pi)-x*Math.log(pi));return chi2sf(lr,1);}
-const DECOMM={SOLS:'29% coverage / corrupted — kill-switch retired'};function ACTIVE(){return Object.keys(DATA).filter(k=>!DECOMM[k]);}
+const DECOMM={SOLS:'29% coverage / corrupted — kill-switch retired'};window.LIVEKEYS=window.LIVEKEYS||{};function ACTIVE(){var lk=Object.keys(window.LIVEKEYS).filter(function(k){return !DECOMM[k]&&DATA[k];});if(lk.length)return lk;return Object.keys(DATA).filter(k=>!DECOMM[k]);}
 const OBJECTIVE={objective_id:"value_radar_20d",decision_class:"watchlist",horizon_days:20,utility_family:"cvar",risk_budget_bps:100,benchmark_id:"buy_hold"};
 function conformalNorm(r,alpha,split){const n=r.length,sig=ewmaSig(r,0.94);const score=r.map((v,i)=>Math.abs(v)/Math.max(sig[i],1e-12));
  const ts=Math.floor(0.75*n),cs=Math.floor(0.40*n);const cal=score.slice(cs,ts).sort((a,b)=>a-b);const ncal=cal.length;if(ncal<10)return null;
@@ -2088,7 +2088,7 @@ function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementByI
  document.getElementById('readout').innerHTML=`<tr><td>Anchor mid</td><td class=r>${mid.toFixed(2)}</td></tr><tr><td>Path @${H}d</td><td class=r>${lp.price.toFixed(2)}</td></tr><tr><td>95% @${H}d</td><td class=r>${b.low.toFixed(1)}–${b.high.toFixed(1)}</td></tr><tr><td>Implied</td><td class=r>${((mid/P0-1)*100).toFixed(1)}%</td></tr>`;
  // OU mean-reversion panel
  if(CUR.ou){const o=CUR.ou;document.getElementById('outab').innerHTML=`<tr><td>Long-run μ</td><td class=r>${o.muPrice.toFixed(2)}</td></tr><tr><td>Half-life</td><td class=r>${isFinite(o.halfLife)?o.halfLife.toFixed(0)+'d':'∞'}</td></tr><tr><td>φ persistence</td><td class=r>${o.phi.toFixed(3)}</td></tr><tr><td>Dev from μ</td><td class=r>${o.z>=0?'+':''}${o.z.toFixed(2)}σ</td></tr><tr><td>Mean-reverting?</td><td class=r>${o.meanRev?'yes':'no'}</td></tr>`;
-  document.getElementById('ounote').textContent=o.meanRev?`reverts to ${o.muPrice.toFixed(2)} with ${o.halfLife.toFixed(0)}d half-life; now ${o.z>=0?'+':''}${o.z.toFixed(2)}σ from fair value${Math.abs(o.z)>1.5?' — stretched, reversion pressure':''}.`:`φ=${o.phi.toFixed(3)} not significantly < 1 — no reliable mean reversion (trending/random-walk); OU anchor disabled.`;}
+  (function(){var el=document.getElementById('ounote');if(!el)return;var last=(typeof CUR==='object'&&CUR&&CUR.last)?CUR.last:o.muPrice;if(o.meanRev){var tgt=o.muPrice,pm=last?((tgt-last)/last*100):0,up=o.z<0,col=up?'var(--up,#3fb27f)':'var(--down,#ef5f4e)',arrow=up?'▲ UP':'▼ DOWN',str=Math.abs(o.z)>=2?'STRONG':(Math.abs(o.z)>=1?'moderate':'mild');el.innerHTML='<span style="font-weight:800;font-size:12px;letter-spacing:.04em;color:'+col+'">↺ MEAN-REVERSION → '+arrow+'</span> <span style="color:var(--faint,#646e7c)">'+str+' pull '+(up?'up toward':'down toward')+' fair value '+tgt.toFixed(2)+' ('+(pm>=0?'+':'')+pm.toFixed(1)+'%); now '+(o.z>=0?'+':'')+o.z.toFixed(2)+'σ from μ'+(isFinite(o.halfLife)?', '+o.halfLife.toFixed(0)+'d half-life':'')+'.</span>';}else{el.innerHTML='<span style="font-weight:700;color:var(--faint,#646e7c)">TRENDING · no mean-reversion edge</span> <span style="color:var(--faint,#646e7c)">(φ='+o.phi.toFixed(3)+' not significantly &lt; 1; OU anchor disabled).</span>';}})();}
  const spkTh=+document.getElementById('rvolTh').value||2;document.getElementById('spkTh').textContent=spkTh;
  const spikes=[];for(let i=20;i<CUR.c.length;i++){if((CUR.rvolS[i]||0)>=spkTh)spikes.push({i,date:CUR.d[i],rvol:CUR.rvolS[i],vol:CUR.vol[i],z:CUR.z[i],pct:(CUR.c[i]/CUR.c[i-1]-1)*100});}CUR.spikes=spikes;
  const fmtV=v=>v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v.toFixed(0);const recent=spikes.slice(-7).reverse();
@@ -3525,7 +3525,7 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
  function idbDel(k){return idbOpen().then(function(db){if(!db)return;try{db.transaction(IDB_STORE,'readwrite').objectStore(IDB_STORE).delete(k);}catch(e){}});}
  function applyRows(t,dates,closes,vols,asof,note,select){
    if(select===undefined)select=true;
-   DATA[t]={dates:dates.slice(-CAP),closes:closes.slice(-CAP),volumes:vols.slice(-CAP)};   /* cap tracked series -> fast scanner */
+   DATA[t]={dates:dates.slice(-CAP),closes:closes.slice(-CAP),volumes:vols.slice(-CAP)};try{window.LIVEKEYS=window.LIVEKEYS||{};window.LIVEKEYS[t]=1;}catch(_e){}   /* cap tracked series -> fast scanner; LIVE key => pooled scanner/backtests use live data only */
    var sel=document.getElementById('symsel');
    if(sel&&!Array.prototype.some.call(sel.options,function(o){return o.value===t;})){
      var o=document.createElement('option');o.value=t;o.textContent=t+' (live)';sel.appendChild(o);}

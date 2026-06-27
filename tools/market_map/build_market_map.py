@@ -616,6 +616,14 @@ def build(names,mkt,ff,macro=None):
                     n["dvol"] = round(_qt.downside_vol(_lr) * 100, 1)
         except Exception:
             pass
+        # Intraday/relative volume pace: latest-bar volume vs trailing-20 median (>1 = running hot).
+        # During the 3pm-ET intraday refresh the latest bar is today's partial, so this reads intraday pace.
+        try:
+            if vo and len(vo) > 21:
+                _v20 = sorted(vo[-21:-1]); _med = _v20[len(_v20) // 2] if _v20 else 0
+                n["rvol"] = round(vo[-1] / _med, 2) if _med else None
+        except Exception:
+            pass
         _pv=parkinson_vol(hi,lo) if (hi and lo) else None
         n["pvol"]=round(_pv*math.sqrt(252)*100,1) if _pv else None      # annualized Parkinson vol %
         vr=n["vr"]

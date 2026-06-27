@@ -3768,7 +3768,7 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
           _b.style.cssText='margin:9px;padding:9px 12px;background:rgba(179,66,79,.12);border:1px solid #b3424f;border-radius:9px;color:#b3424f;font-size:12px;font-weight:700';
           _b.textContent='Projection unavailable - payload contract version '+d.schemaVersion+' is unsupported by this dashboard (no-call). Update the dashboard or rebuild with a compatible schemaVersion.';
           document.body.insertBefore(_b,document.body.firstChild);return;}}catch(_e){}
-      MMAP={}; (d.names||[]).forEach(function(n){if(n&&n.t)MMAP[n.t]=n;});try{MMAP.names=d.names||[];['factorWeights','factorMode','factorBreadth','factorIC','triggerCutoffs','realCurve'].forEach(function(k){if(d[k]!=null)MMAP[k]=d[k];});window.MMAP=MMAP;window.DSRC=d.source||'';}catch(_e){}
+      MMAP={}; (d.names||[]).forEach(function(n){if(n&&n.t)MMAP[n.t]=n;});try{MMAP.names=d.names||[];['factorWeights','factorMode','factorBreadth','factorIC','triggerCutoffs','realCurve','asof','source','dataHealth'].forEach(function(k){if(d[k]!=null)MMAP[k]=d[k];});window.MMAP=MMAP;window.DSRC=d.source||'';}catch(_e){}
       render(curSym());
       var bg=document.getElementById('sym');
       if(bg&&window.MutationObserver){new MutationObserver(function(){render(curSym());}).observe(bg,{childList:true,subtree:true,characterData:true});}
@@ -3856,7 +3856,7 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
   if(!tryRender()){
     var tries=0,iv=setInterval(function(){tries++;if(tryRender()||tries>40)clearInterval(iv);},250);
     fetch('marketmap.json',{cache:'no-cache'}).then(function(r){return r.json();}).then(function(d){
-      var M={};(d.names||[]).forEach(function(n){if(n&&n.t)M[n.t]=n;});try{M.names=d.names||[];['factorWeights','factorMode','factorBreadth','factorIC','triggerCutoffs','realCurve'].forEach(function(k){if(d[k]!=null)M[k]=d[k];});if(!window.MMAP)window.MMAP=M;}catch(_e){}render(M);}).catch(function(){});
+      var M={};(d.names||[]).forEach(function(n){if(n&&n.t)M[n.t]=n;});try{M.names=d.names||[];['factorWeights','factorMode','factorBreadth','factorIC','triggerCutoffs','realCurve','asof','source','dataHealth'].forEach(function(k){if(d[k]!=null)M[k]=d[k];});if(!window.MMAP)window.MMAP=M;}catch(_e){}render(M);}).catch(function(){});
   }
 })();
 
@@ -4265,5 +4265,58 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
  if(document.readyState!=='loading')setTimeout(render,1500);else document.addEventListener('DOMContentLoaded',function(){setTimeout(render,1500);});
  setInterval(render,20000);
  if(typeof window.load==='function'){var _l=window.load;window.load=function(){var r=_l.apply(this,arguments);setTimeout(render,100);return r;};}
+})();
+</script><script>
+/* DATA COVERAGE — provenance + breadth indicator for the Bull/Bear universe. Scans window.MMAP.names and
+   reports, per data domain, the % of companies actually carrying that field (real coverage, not a claim),
+   plus source (live vs sample), as-of date, factor-weight mode, and a single data-quality verdict. Makes
+   the data quality behind every ranking visible at a glance. Research only. */
+(function(){
+ function names(){var M=window.MMAP;return (M&&M.names&&M.names.length)?M.names:(M?Object.keys(M).map(function(k){return M[k];}).filter(function(v){return v&&v.t;}):[]);}
+ function cov(ns,pred){var c=0;for(var i=0;i<ns.length;i++){try{if(pred(ns[i]))c++;}catch(e){}}return ns.length?c/ns.length:0;}
+ var DOMAINS=[
+   ['Prices / returns', function(n){return n.ret&&Object.keys(n.ret).length;}, 'FMP/yfinance/Stooq'],
+   ['Macro betas',      function(n){return n.mb&&Object.keys(n.mb).length;},  'FMP commodities+curve'],
+   ['Real-rate class',  function(n){return n.rate&&n.rate.class;},            'FRED DFII'],
+   ['Options / GEX',    function(n){return n.gex||n.opt||n.bs;},              'Alpaca+yfinance'],
+   ['Short interest',   function(n){return n.short;},                        'EODHD/FMP'],
+   ['Earnings / est.',  function(n){return n.earn;},                         'FMP'],
+   ['Volume pace',      function(n){return n.rvol!=null;},                   'daily/intraday'],
+   ['Drawdown / vol',   function(n){return n.maxDD!=null;},                  'quarterly_timeline'],
+   ['Flow (3m/1m)',     function(n){return n.flow&&(n.flow.net3m||n.flow.net1m);}, 'EODHD/FMP']
+ ];
+ function build(){
+   var ns=names(); if(!ns.length)return null;
+   var M=window.MMAP||{}, src=(M.source||window.DSRC||'').toString(), asof=M.asof||'';
+   var live=src.toLowerCase().indexOf('live')>=0||src.toLowerCase().indexOf('real')>=0;
+   var rows=DOMAINS.map(function(d){return {name:d[0],cov:cov(ns,d[1]),src:d[2]};});
+   var fitted=(M.factorMode==='fitted');
+   // overall = mean coverage of the ranking-critical domains (prices, macro, short, earnings, flow)
+   var crit=['Prices / returns','Macro betas','Short interest','Earnings / est.','Flow (3m/1m)'];
+   var critRows=rows.filter(function(r){return crit.indexOf(r.name)>=0;});
+   var overall=critRows.reduce(function(a,r){return a+r.cov;},0)/(critRows.length||1);
+   return {n:ns.length,src:src,live:live,asof:asof,rows:rows,fitted:fitted,overall:overall};
+ }
+ function col(c){return c>=0.7?'#2ecc8f':(c>=0.3?'#e0a13c':'#ef5f4e');}
+ function render(){
+   try{
+     var R=build(), host=document.getElementById('dataCoverage');
+     if(!host){var an=document.getElementById('bullBearBoard'); if(!an||!an.parentNode)return; host=document.createElement('div'); host.id='dataCoverage'; host.style.margin='6px 0'; an.parentNode.insertBefore(host,an);}
+     if(!R){host.innerHTML='';return;}
+     var v=R.overall, verdict=v>=0.7?'<b style="color:#2ecc8f">STRONG</b>':v>=0.4?'<b style="color:#e0a13c">PARTIAL</b>':'<b style="color:#ef5f4e">THIN</b>';
+     var tiles=R.rows.map(function(r){var c=col(r.cov);return '<div style="flex:1;min-width:96px;background:var(--panel2,#111721);border:1px solid var(--line);border-radius:6px;padding:4px 7px">'
+       +'<div style="font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px">'+r.name+'</div>'
+       +'<div style="font-size:14px;font-weight:800;color:'+c+'">'+(r.cov*100).toFixed(0)+'%</div>'
+       +'<div style="height:3px;background:#0c1117;border-radius:2px;overflow:hidden;margin:2px 0"><div style="height:100%;width:'+(r.cov*100).toFixed(0)+'%;background:'+c+'"></div></div>'
+       +'<div style="font-size:7.5px;color:#69727f">'+r.src+'</div></div>';}).join('');
+     host.innerHTML='<div style="font-size:10px;color:var(--muted);margin:4px 0"><b style="color:var(--gold)">DATA COVERAGE</b> · '+R.n+' names · source <b style="color:'+(R.live?'#2ecc8f':'#e0a13c')+'">'+(R.src||'unknown')+'</b>'+(R.asof?' · as of '+R.asof:'')+' · factor weights <b>'+(R.fitted?'fitted (forward-IC)':'priors')+'</b> · ranking-data quality: '+verdict+' ('+(R.overall*100).toFixed(0)+'%). Each tile = % of companies actually carrying that field. Research only.</div>'
+       +'<div style="display:flex;gap:5px;flex-wrap:wrap">'+tiles+'</div>'
+       +(R.overall<0.4?'<div class="note" style="font-size:9px;color:#e0a13c;margin-top:4px">Thin coverage — set FMP_API_KEY (macro+earnings) and EODHD_API_KEY (short interest/flow) as GitHub secrets so the nightly build populates these domains.</div>':'');
+   }catch(e){}
+ }
+ window.renderDataCoverage=render;
+ if(document.readyState!=='loading')setTimeout(render,1700);else document.addEventListener('DOMContentLoaded',function(){setTimeout(render,1700);});
+ setInterval(render,30000);
+ if(typeof window.buildBullBearBoard==='function'){var _b=window.buildBullBearBoard; window.buildBullBearBoard=function(){var r=_b.apply(this,arguments); try{render();}catch(e){} return r;};}
 })();
 </script></body></html>

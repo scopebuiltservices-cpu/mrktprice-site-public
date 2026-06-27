@@ -104,6 +104,59 @@ def eod_history(symbol, sess=None, frm=None, to=None, min_rows=40):
     return rows
 
 
+def _rows_from_eod_full(j):
+    """Normalize FMP EOD payload into ascending [[date, open, high, low, close, volume], ...].
+    FMP's historical-price-eod/full returns OHLCV; this keeps all four prices (eod_history keeps
+    only close+volume). Missing OHL fall back to close so downstream ATR/high-low stay aligned."""
+    rows = j if isinstance(j, list) else (j.get("historical") if isinstance(j, dict) else None)
+    if not isinstance(rows, list) or not rows:
+        return None
+    out = []
+    for d in rows:
+        if not isinstance(d, dict):
+            continue
+        dt_ = d.get("date"); c = d.get("close")
+        if dt_ is None or c is None:
+            continue
+        try:
+            c = round(float(c), 4)
+            o = float(d.get("open") if d.get("open") is not None else c)
+            h = float(d.get("high") if d.get("high") is not None else c)
+            lw = float(d.get("low") if d.get("low") is not None else c)
+            v = int(d.get("volume") or 0)
+            out.append([str(dt_)[:10], round(o, 4), round(h, 4), round(lw, 4), c, v])
+        except Exception:
+            pass
+    out.sort(key=lambda x: x[0])
+    return out or None
+
+
+def eod_ohlcv(symbol, sess=None, frm=None, to=None, min_rows=40):
+    """Full daily OHLCV for a stock/ETF/commodity from FMP Ultimate (PRIMARY price source).
+    Returns [[date, open, high, low, close, volume], ...] ascending, or None on failure so the
+    caller can fall back to yfinance/Stooq (clearly labeled)."""
+    key = _key()
+    if not key:
+        return None
+    import requests
+    s = sess or requests.Session()
+    url = "%s/historical-price-eod/full?symbol=%s&apikey=%s" % (STABLE, symbol, key)
+    if frm:
+        url += "&from=%s" % frm
+    if to:
+        url += "&to=%s" % to
+    r = _get(s, url)
+    if r is None or r.status_code != 200:
+        return None
+    try:
+        rows = _rows_from_eod_full(r.json())
+    except Exception:
+        return None
+    if not rows or len(rows) < min_rows:
+        return None
+    return rows
+
+
 def treasury_curve(sess=None, days=420):
     """Whole Treasury curve daily. Returns:
        {'asof', 'source', 'tenors':{label:latest_rate}, 'series':{label:[(date,rate)]},

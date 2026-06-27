@@ -1234,7 +1234,50 @@ def real_universe():
     spx=set(holdings("https://www.ssga.com/us/en/intermediary/etfs/library-content/products/fund-data/etfs/us/holdings-daily-us-en-spy.xlsx"))  # may need xlsx parse; best-effort
     # Robust fallback: SEED membership defines the universe if holdings fetch is unavailable.
     names=[]
-    import yfinance as yf
+    # ---- DATA-SOURCE HIERARCHY: FMP Ultimate (paid) is PRIMARY for all prices; yfinance is a
+    #      labeled BACKUP, switchable off via env MRKT_YF_ENABLED=0. When FMP fails for a symbol
+    #      and yfinance is ON, we fall back (and record it); when yfinance is OFF, FMP-only. The
+    #      health tracker (PH) records per-source counts + the last successful FMP pull timestamp
+    #      so the terminal can show "FMP Ultimate not pulling as of <ts>". ----
+    import time as _time
+    import fmp_history as _fmph
+    import requests as _rqp
+    _PSESS=_rqp.Session(); _PSESS.headers.update({"User-Agent":UA})
+    YF_ON=(os.environ.get("MRKT_YF_ENABLED","1").strip().lower() not in ("0","false","off","no"))
+    yf=None
+    if YF_ON:
+        try:
+            import yfinance as yf
+        except Exception as _yfe:
+            sys.stderr.write("yfinance import failed (%s); running FMP-only\n"%_yfe); yf=None
+    PH={"fmp":0,"yf":0,"miss":0,"fmpLastOk":None,"yfEnabled":bool(YF_ON),
+        "yfImported":bool(yf is not None),"fmpKeyPresent":bool(_fmph.have_key())}
+    def _now_utc():
+        return _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime())
+    def _get_hist(sym, min_rows=10):
+        """Price getter — FMP Ultimate FIRST, yfinance FALLBACK (if enabled). dict(cl,hi,lo,vo,src) or None."""
+        rows=None
+        try: rows=_fmph.eod_ohlcv(sym, sess=_PSESS, min_rows=min_rows)
+        except Exception: rows=None
+        if rows:
+            PH["fmp"]+=1; PH["fmpLastOk"]=_now_utc()
+            return {"cl":[r[4] for r in rows],"hi":[r[2] for r in rows],"lo":[r[3] for r in rows],
+                    "vo":[float(r[5]) for r in rows],"src":"fmp"}
+        if yf is not None:
+            try:
+                h=yf.Ticker(sym).history(period="1y",interval="1d",auto_adjust=True)
+                cl=[];vo=[];hi=[];lo=[]
+                for c,v,H,Lw in zip(h["Close"].tolist(),h["Volume"].tolist(),h["High"].tolist(),h["Low"].tolist()):
+                    c=float(c)
+                    if c==c and c>0:
+                        cl.append(c); vo.append(float(v) if v==v else 0.0)
+                        H=float(H); Lw=float(Lw); hi.append(H if H==H else c); lo.append(Lw if Lw==Lw else c)
+                if len(cl)>=min_rows:
+                    PH["yf"]+=1
+                    return {"cl":cl,"hi":hi,"lo":lo,"vo":vo,"src":"yfinance"}
+            except Exception: pass
+        PH["miss"]+=1
+        return None
     try:
         from free_financial_data.sec_client import SecClient  # optional EDGAR client (vendored in private repo only)
         sec=SecClient()
@@ -1242,25 +1285,25 @@ def real_universe():
         sec=None   # not vendored in the public repo; SEC pulls below use the inline requests+UA path. 'sec' is unused.
     for sym,nm,sec_name,code in SEED:        # phase-1 universe (extend to full big-3 once holdings parse is wired)
         try:
-            h=yf.Ticker(sym).history(period="1y",interval="1d",auto_adjust=True)
-            cl=[];vo=[];hi=[];lo=[]
-            for c,v,H,Lw in zip(h["Close"].tolist(), h["Volume"].tolist(), h["High"].tolist(), h["Low"].tolist()):
-                c=float(c); v=float(v)
-                if c==c and c>0:                     # drop NaN / non-positive closes, keep alignment
-                    cl.append(c); vo.append(v if v==v else 0.0)
-                    H=float(H); Lw=float(Lw); hi.append(H if H==H else c); lo.append(Lw if Lw==Lw else c)
-            if len(cl)<10: raise ValueError("insufficient history")
+            _ph=_get_hist(sym, min_rows=10)            # FMP Ultimate primary -> yfinance fallback
+            if not _ph: raise ValueError("no price data (FMP+yfinance)")
+            cl=_ph["cl"]; vo=_ph["vo"]; hi=_ph["hi"]; lo=_ph["lo"]
             wk=cl[::5]; wr=[(wk[i]/wk[i-1]-1) for i in range(1,len(wk)) if wk[i-1]]
-            info=yf.Ticker(sym).get_info(); mcap=float(info.get("marketCap") or 0) or (cl[-1]*float(info.get("sharesOutstanding") or 0))
-            fcf=info.get("freeCashflow")
-            def _fnum(x):
-                try: x=float(x); return x if (x==x and abs(x)<1e6) else None
-                except Exception: return None
-            valr={"pe":_fnum(info.get("trailingPE")),"fpe":_fnum(info.get("forwardPE")),
-                  "peg":_fnum(info.get("trailingPegRatio") or info.get("pegRatio")),"evb":_fnum(info.get("enterpriseToEbitda")),
-                  "epsg":_fnum(info.get("earningsGrowth")),"revg":_fnum(info.get("revenueGrowth"))}
+            mcap=None; fcf=None
+            valr={"pe":None,"fpe":None,"peg":None,"evb":None,"epsg":None,"revg":None}
+            if yf is not None:                          # mcap + valuation SEED from yfinance info (FMP refreshes below)
+                try:
+                    info=yf.Ticker(sym).get_info(); mcap=float(info.get("marketCap") or 0) or (cl[-1]*float(info.get("sharesOutstanding") or 0))
+                    fcf=info.get("freeCashflow")
+                    def _fnum(x):
+                        try: x=float(x); return x if (x==x and abs(x)<1e6) else None
+                        except Exception: return None
+                    valr={"pe":_fnum(info.get("trailingPE")),"fpe":_fnum(info.get("forwardPE")),
+                          "peg":_fnum(info.get("trailingPegRatio") or info.get("pegRatio")),"evb":_fnum(info.get("enterpriseToEbitda")),
+                          "epsg":_fnum(info.get("earningsGrowth")),"revg":_fnum(info.get("revenueGrowth"))}
+                except Exception: pass
             names.append({"t":sym,"n":nm,"sec":sec_name,"idx":membership(code),"mcap":round(mcap or 1e9),
-                          "wr":[round(x,5) for x in wr],"_cl":cl,"_hi":hi,"_lo":lo,"_vol":vo,"_fcf":float(fcf) if fcf else None,"_val":valr})
+                          "wr":[round(x,5) for x in wr],"_cl":cl,"_hi":hi,"_lo":lo,"_vol":vo,"_fcf":float(fcf) if fcf else None,"_val":valr,"_psrc":_ph["src"]})
             try: names[-1]["insider"]=fetch_insider(sym, max_filings=15)
             except Exception: names[-1]["insider"]=None
         except Exception as e:
@@ -1269,11 +1312,9 @@ def real_universe():
     _fok=0
     for fsym,fnm,fbucket in FACTOR_PANEL:
         try:
-            fh=yf.Ticker(fsym).history(period="1y",interval="1d",auto_adjust=True)
-            fcl=[];fvo=[]
-            for c,v in zip(fh["Close"].tolist(), fh["Volume"].tolist()):
-                c=float(c)
-                if c==c and c>0: fcl.append(c); fvo.append(float(v) if v==v else 0.0)
+            _fph=_get_hist(fsym, min_rows=40)          # FMP-first; yfinance fallback for cross-asset proxies
+            if not _fph: continue
+            fcl=_fph["cl"]; fvo=_fph["vo"]
             if len(fcl)<40: continue
             fwk=fcl[::5]; fwr=[(fwk[i]/fwk[i-1]-1) for i in range(1,len(fwk)) if fwk[i-1]]
             names.append({"t":fsym,"n":fnm,"sec":fbucket,"idx":["FACTOR"],"mcap":0,
@@ -1286,17 +1327,17 @@ def real_universe():
     # ---- Russell 2000 (phase 2): iShares IWM holdings, batch-downloaded (env RUSSELL_LIMIT caps size; 0 = all) ----
     try:
         lim=int(os.environ.get("RUSSELL_LIMIT","2000")); lim=lim or None
+        if yf is None:
+            raise RuntimeError("Russell batch fetch needs yfinance (disabled via MRKT_YF_ENABLED=0); skipping")
         rus=fetch_russell(yf, lim, UA)
         sys.stderr.write(f"russell: fetched {len(rus)} constituents\n"); names+=rus
     except Exception as e:
         sys.stderr.write(f"russell skip: {e}\n")
     # market proxy = SPY weekly
     def _wret(sym):
-        try:
-            h=yf.Ticker(sym).history(period="1y",interval="1d",auto_adjust=True)
-            c=[float(x) for x in h["Close"].tolist() if float(x)==float(x) and float(x)>0]
-            w=c[::5]; return [(w[i]/w[i-1]-1) for i in range(1,len(w)) if w[i-1]]
-        except Exception: return []
+        _wh=_get_hist(sym, min_rows=10)               # FMP-first; yfinance fallback for index/macro proxies
+        if not _wh: return []
+        c=_wh["cl"]; w=c[::5]; return [(w[i]/w[i-1]-1) for i in range(1,len(w)) if w[i-1]]
     mkt=_wret("SPY") or [0.0]*52
     ff={"SMB":[0.0]*len(mkt),"HML":[0.0]*len(mkt),"MOM":[0.0]*len(mkt)}  # FF factors optional; default 0 if no source
     # ---- macro factor panel (free proxies) for the sparse Lasso attribution + dislocation ----
@@ -1562,6 +1603,14 @@ def real_universe():
         "valCoveragePct":round(100.0*_cov.get("valOk",0)/max(sum(1 for n in names if "FACTOR" not in (n.get("idx") or [])),1),1),   # EQUITY-ONLY valuation coverage (ETFs have no P/E; counting them diluted it to ~62%)
         "fmpCoveragePct":round(100.0*_fmp_ok/max(_fmp_try,1),1),                  # FMP cross-check coverage specifically
         "gexCoveragePct":round(100.0*_eod_ok/max(_eod_try,1),1),
+        # ---- PRICE-SOURCE HIERARCHY health: FMP Ultimate is PRIMARY; yfinance is the labeled BACKUP.
+        #      The terminal reads these to show the source mix + the "FMP not pulling as of <ts>" alert. ----
+        "priceSrc":{"fmp":PH["fmp"],"yfinance":PH["yf"],"miss":PH["miss"]},
+        "fmpPricePrimary":True,
+        "fmpLastOk":PH["fmpLastOk"],                                              # ISO ts of last successful FMP price pull
+        "fmpDegraded":bool(PH["fmpKeyPresent"] and PH["fmp"]==0),                 # key present but 0 FMP prices -> alert
+        "yfEnabled":PH["yfEnabled"],"yfImported":PH["yfImported"],
+        "fmpPriceShare":round(100.0*PH["fmp"]/max(PH["fmp"]+PH["yf"]+PH["miss"],1),1),
         "coverage":_cov,"errs":_errs[:4]}
     return names,mkt,ff,macro
 
@@ -1571,14 +1620,25 @@ def main():
     if a.real:
         names,mkt,ff,macro=real_universe()
         _PRECM={n["t"]: list(n["_cl"]) for n in names if n.get("_cl")}   # capture closes BEFORE build() pops _cl off each name (line ~542)
-        snap=build(names,mkt,ff,macro); snap["source"]="Live (yfinance + macro factors + options OI) — research only"
+        snap=build(names,mkt,ff,macro); snap["source"]="Live · FMP Ultimate primary (prices/valuation) + macro factors + options OI; yfinance backup — research only"
         snap["dataHealth"]=globals().get("_DATA_HEALTH")
         # FMP Ultimate macro series (real Treasury curve + commodities) + per-driver provenance.
         _ms=globals().get("_MACRO_SERIES"); _msrc=globals().get("_MACRO_SRC")
         if _ms:
             snap["macroSeries"]=_ms
-            snap["source"]="Live (yfinance prices + FMP Ultimate rates/commodities + options OI) — research only"
+            snap["source"]="Live · FMP Ultimate primary (prices + rates/commodities/valuation + options OI); yfinance backup — research only"
         if _msrc: snap["macroSources"]=_msrc
+        # SOURCE-LABEL honesty: reflect the actual price mix + raise the FMP-down banner inline so the
+        # label itself communicates degradation even before the terminal renders the alert.
+        try:
+            _dhp=snap.get("dataHealth") or {}
+            _ps=_dhp.get("priceSrc") or {}
+            if _dhp.get("fmpDegraded"):
+                _last=_dhp.get("fmpLastOk") or "never this run"
+                snap["source"]="⚠ FMP Ultimate NOT pulling (last OK: %s) — serving yfinance backup · research only"%_last
+            elif _ps.get("yfinance",0)>0 and _ps.get("fmp",0)>0:
+                snap["source"]=snap["source"].replace("yfinance backup","yfinance backup [%d FMP / %d yfinance]"%(_ps.get("fmp",0),_ps.get("yfinance",0)))
+        except Exception: pass
         # GRACEFUL DEGRADATION: if FMP returned nothing this run (dead/expired/limited key), keep the
         # last-good valuations from the live site instead of blanking the layer. Tagged stale=True.
         try:

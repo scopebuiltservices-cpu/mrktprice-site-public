@@ -25,9 +25,9 @@ try:
 except Exception:
     _lineage=None
 try:
-    import options_gex as _ogex, eodhd_options as _eod, fmp_connector as _fmp, short_squeeze as _sqz
+    import options_gex as _ogex, eodhd_options as _eod, fmp_connector as _fmp, short_squeeze as _sqz, alpaca_options as _alp
 except Exception:
-    _ogex=_eod=_fmp=_sqz=None
+    _ogex=_eod=_fmp=_sqz=_alp=None
 
 SECTORS=["Technology","Financials","Health Care","Consumer Disc.","Communication",
          "Industrials","Consumer Staples","Energy","Utilities","Materials","Real Estate"]
@@ -1465,6 +1465,15 @@ def real_universe():
             except Exception as e:
                 _eod_err+=1
                 if len(_errs)<8: _errs.append("EODHD %s: %s"%(n["t"], str(e)[:80]))
+            _gcap+=1
+        if _alp and sp and not n.get("bs") and _gcap<140:          # free Alpaca fallback when EODHD has no options add-on
+            try:
+                ax=_alp.enrich_options(n["t"], sp, n.get("_cl"))     # IV+greeks+BS richness (GEX only if OI present)
+                if ax:
+                    if ax.get("bs"): n["bs"]=ax["bs"]; _alp_ok+=1
+                    if ax.get("gex") and not n.get("gex"): n["gex"]=ax["gex"]
+            except Exception as e:
+                if len(_errs)<8: _errs.append("ALPACA %s: %s"%(n["t"], str(e)[:80]))
             _gcap+=1
     _kf=bool(_os.environ.get("FMP_API_KEY","").strip()); _ke=bool(_os.environ.get("EODHD_API_KEY","").strip())
     _sys.stderr.write("ENRICH: FMP key=%s tried=%d ok=%d err=%d | EODHD key=%s tried=%d gex=%d err=%d\n"%(_kf,_fmp_try,_fmp_ok,_fmp_err,_ke,_eod_try,_eod_ok,_eod_err))

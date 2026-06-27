@@ -31,7 +31,9 @@ ok("classified long-duration", rr.classify(d) == "long-duration (rate-down benef
 rets2 = [0.3 * rmkt[i] + 1.4 * dL[i] + random.gauss(0, 0.004) for i in range(N)]
 ok("classified anti-duration", rr.classify(rr.duration_betas(rets2, rmkt, dL, dS, dC)) == "anti-duration (rate-up beneficiary)")
 rets3 = [0.5 * rmkt[i] + random.gauss(0, 0.01) for i in range(N)]
-ok("no rate loading -> rate-agnostic", rr.classify(rr.duration_betas(rets3, rmkt, dL, dS, dC)) == "rate-agnostic")
+# pure-noise rate betas can clear |t|>2 ~14% of the time (3 coeffs); use the conservative t>3 discovery
+# bar (Harvey-Liu-Zhu) so a no-loading name reliably classifies rate-agnostic.
+ok("no rate loading -> rate-agnostic (t>3 bar)", rr.classify(rr.duration_betas(rets3, rmkt, dL, dS, dC), tmin=3.0) == "rate-agnostic")
 
 # 4) curve_state + change series from a tiny planted history
 hist = {"dates": ["2026-06-24", "2026-06-25", "2026-06-26"],

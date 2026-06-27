@@ -1700,6 +1700,8 @@ def main():
             if _ch:
                 _cs=_rr.curve_state(_ch)
                 if _cs: snap["realCurve"]=_cs                                # Diebold-Li real L/S/C + dL/dS/dC
+                try: snap["rateBetaN"]=_rr.attach_duration_betas(names, _ch, is_etf=lambda t:(t in _etf))   # per-name n['rate']={bL,tL,...,class}
+                except Exception: pass
         except Exception: pass
         _s2.stderr.write("FACTOR STACK: mode=%s breadth=%s histN=%s curve=%s\n"%(_fx.get("factorMode"),_fx.get("factorBreadth"),_fx.get("factorHistoryN"),bool(snap.get("realCurve"))))
     except Exception as _fe2:

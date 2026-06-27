@@ -43,5 +43,23 @@ ok("curve_state returns L/S/C + deltas", all(k in cs for k in ("L", "S", "C", "d
 chg = rr.curve_change_series(hist)
 ok("change series length = N-1", len(chg["dL"]) == 2, chg)
 
+# 5) attach_duration_betas: a planted long-duration name (returns load -1.5*dL) gets n['rate'] + class
+random.seed(9)
+_h = {"dates": [], "y5": [], "y10": [], "y30": []}; _y5, _y10, _y30 = 2.0, 2.4, 2.7
+for i in range(120):
+    _y5 += random.gauss(0, 0.02); _y10 += random.gauss(0, 0.02); _y30 += random.gauss(0, 0.02)
+    _h["dates"].append("d%03d" % i); _h["y5"].append(_y5); _h["y10"].append(_y10); _h["y30"].append(_y30)
+_dL = rr.curve_change_series(_h)["dL"]
+_px = 100.0; _cl = [_px]
+for i in range(len(_dL)):
+    _px *= (1 - 1.5 * _dL[i] + random.gauss(0, 0.004)); _cl.append(_px)
+_sp = 100.0; _spcl = [_sp]
+for i in range(len(_dL)):
+    _sp *= (1 + random.gauss(0, 0.008)); _spcl.append(_sp)
+_names = [{"t": "LONGD", "_cl": _cl}, {"t": "SPY", "_cl": _spcl}]
+_cnt = rr.attach_duration_betas(_names, _h, is_etf=lambda t: t == "SPY")
+ok("attach_duration_betas attaches n['rate']", _cnt >= 1 and _names[0].get("rate") is not None, _cnt)
+ok("planted long-duration classified", "long-duration" in (_names[0]["rate"].get("class") or ""), _names[0].get("rate"))
+
 print("\n" + ("ALL RATE-REAL TESTS PASSED" if not F else "%d FAILED: %s" % (len(F), F)))
 raise SystemExit(1 if F else 0)

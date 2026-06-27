@@ -123,6 +123,37 @@ def curve_state(hist):
             "asof": hist["dates"][n - 1]}
 
 
+def _lr(c):
+    c = [x for x in (c or []) if x and x > 0]
+    return [c[i] / c[i - 1] - 1.0 for i in range(1, len(c))]
+
+
+def attach_duration_betas(names, hist, mkt_ticker="SPY", is_etf=None, tmin=2.0):
+    """Per-name real-rate duration betas + classification, tail-aligned to the curve change series, written
+    to n['rate']={bMKT,bL,tL,bS,tS,bC,tC,class}. Tail-alignment assumes each name's closes and the curve
+    changes end on the same recent session (true for a nightly universe build). Returns count attached."""
+    cs = curve_change_series(hist)
+    if not cs: return 0
+    dL, dS, dC = cs["dL"], cs["dS"], cs["dC"]
+    rmkt = None
+    for n in names:
+        if (n.get("t") or "").upper() == mkt_ticker:
+            rmkt = _lr(n.get("_cl") or []); break
+    cnt = 0
+    for n in names:
+        t = (n.get("t") or "").upper()
+        if not t or (is_etf and is_etf(t)): continue
+        rets = _lr(n.get("_cl") or [])
+        if len(rets) < 30: continue
+        L = min(len(rets), len(dL), len(dS), len(dC), (len(rmkt) if rmkt else len(rets)))
+        if L < 30: continue
+        rk = rmkt[-L:] if rmkt else [0.0] * L
+        d = duration_betas(rets[-L:], rk, dL[-L:], dS[-L:], dC[-L:])
+        if not d: continue
+        d["class"] = classify(d, tmin); n["rate"] = d; cnt += 1
+    return cnt
+
+
 def curve_change_series(hist):
     """Aligned dL,dS,dC daily-change series for the per-name regression."""
     if not hist or len(hist.get("dates", [])) < 3: return None

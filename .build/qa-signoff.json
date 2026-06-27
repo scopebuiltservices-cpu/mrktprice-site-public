@@ -1,0 +1,527 @@
+{
+  "generatedUtc": "2026-06-27T18:31:20.072587Z",
+  "verdict": "FAIL",
+  "hardOk": false,
+  "hardFailures": [
+    "schema-version-match"
+  ],
+  "softWarnings": [],
+  "sourceFingerprint": "bf79cc280439ba667ed25ec7fb6d2b6569cdb5a8feac126202b598a6c7dd3bd3",
+  "sourceFiles": 81,
+  "primary": "marketmap.json",
+  "artifacts": [
+    {
+      "path": "marketmap.json",
+      "bytes": 2594215,
+      "sha256": "0aa4e12506d9d28deedb6d1b685ac525a82c19fa2fecf5bed4d1b7f20275f9b7",
+      "tail": "}",
+      "mtime": "2026-06-27T02:28:47.112372Z",
+      "json_valid": true,
+      "top_keys": [
+        "asof",
+        "calibration",
+        "dataHealth",
+        "factorCov",
+        "factors",
+        "governance",
+        "indices",
+        "macroSeries",
+        "macroSources",
+        "macrof",
+        "names",
+        "schemaVersion",
+        "sectorCorr",
+        "sectors",
+        "source"
+      ]
+    },
+    {
+      "path": "xsection.json",
+      "bytes": 51830,
+      "sha256": "1c7c43468d28428a87bd6af1053a8c5b43130b37f6acab68390e725dd1bdea7b",
+      "tail": "}",
+      "mtime": "2026-06-27T02:28:47.120009Z",
+      "json_valid": true,
+      "top_keys": [
+        "asof",
+        "market",
+        "n",
+        "names",
+        "regimeNow",
+        "tickers"
+      ]
+    },
+    {
+      "path": "cik.json",
+      "bytes": 1753,
+      "sha256": "46964ed43a9af15ae54d062a8254fac65ea16bd02f676bf4fb8cfea32680fe15",
+      "tail": "}",
+      "mtime": "2026-06-25T23:32:14.823411Z",
+      "json_valid": true,
+      "top_keys": [
+        "AAPL",
+        "ABBV",
+        "ADBE",
+        "AEP",
+        "AMD",
+        "AMGN",
+        "AMT",
+        "AMZN",
+        "APD",
+        "AVGO",
+        "AXP",
+        "BA",
+        "BAC",
+        "BKNG",
+        "BLK",
+        "C",
+        "CAT",
+        "CCI",
+        "CL",
+        "CMCSA",
+        "COP",
+        "COST",
+        "CRM",
+        "CSCO",
+        "CVX",
+        "D",
+        "DE",
+        "DIS",
+        "DOW",
+        "DUK",
+        "EOG",
+        "EQIX",
+        "EXC",
+        "FCX",
+        "GE",
+        "GILD",
+        "GOOGL",
+        "GS",
+        "HD",
+        "HON",
+        "IBM",
+        "INTC",
+        "ISRG",
+        "JNJ",
+        "JPM",
+        "KO",
+        "LIN",
+        "LLY",
+        "LMT",
+        "LOW",
+        "MA",
+        "MCD",
+        "MDLZ",
+        "META",
+        "MMM",
+        "MPC",
+        "MRK",
+        "MS",
+        "MSFT",
+        "NEE",
+        "NEM",
+        "NFLX",
+        "NKE",
+        "NOW",
+        "NVDA",
+        "O",
+        "ORCL",
+        "PEP",
+        "PFE",
+        "PG",
+        "PLD",
+        "PM",
+        "QCOM",
+        "RTX",
+        "SBUX",
+        "SHW",
+        "SLB",
+        "SO",
+        "SPG",
+        "T",
+        "TMO",
+        "TMUS",
+        "TSLA",
+        "TXN",
+        "UNH",
+        "UNP",
+        "UPS",
+        "V",
+        "VZ",
+        "WFC",
+        "WMT",
+        "XOM"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "name": "schema-version-match",
+      "ok": false,
+      "hard": true,
+      "detail": "got '1.0' expected '1'"
+    },
+    {
+      "name": "min-names",
+      "ok": true,
+      "hard": true,
+      "detail": "names=155 need>=30"
+    },
+    {
+      "name": "freshness",
+      "ok": true,
+      "hard": true,
+      "detail": "asof='2026-06-27' age=0 max=5"
+    },
+    {
+      "name": "source-not-sample",
+      "ok": true,
+      "hard": true,
+      "detail": "source='Live (yfinance prices + FMP Ultimate rates/commodities + options OI) \u2014 research '"
+    },
+    {
+      "name": "core-coverage",
+      "ok": true,
+      "hard": false,
+      "detail": "no dataHealth coverage to check (soft-pass)"
+    },
+    {
+      "name": "quantile-noncross",
+      "ok": true,
+      "hard": true,
+      "detail": "crossed=0 of 0 quantile-bearing nodes"
+    },
+    {
+      "name": "scores-finite",
+      "ok": true,
+      "hard": true,
+      "detail": "non-finite score nodes=0"
+    }
+  ],
+  "source": [
+    {
+      "file": "tools/market_map/alpaca_options.py",
+      "sha256": "08d70791d9e0f9b9f6d99a3b3357da64aa5a0f7af7af70dc76d36d270bd6a78d"
+    },
+    {
+      "file": "tools/market_map/alpha_calib.py",
+      "sha256": "bd8f7b8d3e53495b4c25356aba1f0728a67a059369f1789e8aafa50e23a33cf9"
+    },
+    {
+      "file": "tools/market_map/american.py",
+      "sha256": "297d6421bd7bd78aba4987d5883538112c78e4e421c64029541a692e4d164eb4"
+    },
+    {
+      "file": "tools/market_map/audit_black_scholes.py",
+      "sha256": "d432f533bb67c45ccdbe6654f0040b0a547d6a129e47a20d7efca7add0c34a53"
+    },
+    {
+      "file": "tools/market_map/black_scholes.py",
+      "sha256": "1df17f986ea478ea505f01d35bdcb939cd18848607c28141a37c27e226187448"
+    },
+    {
+      "file": "tools/market_map/bs_ext.py",
+      "sha256": "f2c829142a5036b5da92bf9a624b14c00a437b53300df8fc2c12d1028f802442"
+    },
+    {
+      "file": "tools/market_map/bs_record.py",
+      "sha256": "ed6cfb7a98d6879008c972852b970a78b5cb8733bc57143319c775e056888659"
+    },
+    {
+      "file": "tools/market_map/build_institutional.py",
+      "sha256": "f7da60e4edddb927ea97d880cadea022d5ea85eb3d7b8f23f597f28604de04e5"
+    },
+    {
+      "file": "tools/market_map/build_market_map.py",
+      "sha256": "f2d19a8a7a3d587c09db1e1c9c62d7ffd205cadc3cb3ed70c2f119243ff6ad69"
+    },
+    {
+      "file": "tools/market_map/calibrate_outcomes.py",
+      "sha256": "3c3f6efc1d26f89dfcfeaacd52133c13a281d404e5e135037c0e49a2e3f82726"
+    },
+    {
+      "file": "tools/market_map/chain_quality.py",
+      "sha256": "d6b574e3d383cc0d0ead6d97f775de572b73431f66eb1c76ac89021093d40a3e"
+    },
+    {
+      "file": "tools/market_map/check_json.py",
+      "sha256": "862146dbc208f6ae337b6f4396e2f4b31a18830984efd5070e32361663447a01"
+    },
+    {
+      "file": "tools/market_map/emit_cik.py",
+      "sha256": "11a9ef7ce2fa264b1e54f958dd1d755e918c5a338ae21a91ffb071a00c1c2217"
+    },
+    {
+      "file": "tools/market_map/emit_static.py",
+      "sha256": "7dcce26a44b10499f1f593276f38b90c558553b6a515326765f4a34111248a6e"
+    },
+    {
+      "file": "tools/market_map/eodhd_options.py",
+      "sha256": "a22d0ed0c12f8823c36be75002393c5190e810848cfca4fd89243ad577184c48"
+    },
+    {
+      "file": "tools/market_map/est_snapshot.py",
+      "sha256": "26347aca21f26c3de862f3e6e223895ffb41b5126c91f0f615c0a78e5891df48"
+    },
+    {
+      "file": "tools/market_map/factor_eval.py",
+      "sha256": "34b23055078f26f8175e5ba23259c9a82500b97a7b7b3474d1edd226ae6560d7"
+    },
+    {
+      "file": "tools/market_map/factor_pipeline.py",
+      "sha256": "7fe33cde39abaca7d8a113432549992e2adce501f7b1c5c7f71d1f98196ae6ea"
+    },
+    {
+      "file": "tools/market_map/fmp_connector.py",
+      "sha256": "bb0e482991d180ef51c1b136181135abce5dbfbf3b64c093c15f2bb8bf0baa17"
+    },
+    {
+      "file": "tools/market_map/fmp_history.py",
+      "sha256": "fd399da91efebbcc941fec63268ababb0f6160559f0b28e1f755cd58d850ddd7"
+    },
+    {
+      "file": "tools/market_map/harq_regime.py",
+      "sha256": "f265073eb458ef491234b88d6be81b9ef14d604aa4be9c5b4db47a3813450e40"
+    },
+    {
+      "file": "tools/market_map/ic_store.py",
+      "sha256": "12882bb09dd7f5c2c99b28a81eaa563a04989a8244bbd1f35a53c0911e8777c3"
+    },
+    {
+      "file": "tools/market_map/intraday_engine.py",
+      "sha256": "e0852edeffcffdce8030d1b27663bd3d0e0492b495a4dd09900407831fd712f6"
+    },
+    {
+      "file": "tools/market_map/intraday_eod.py",
+      "sha256": "7823f7c532775c7759a22e25d5f2cdf8625b16713a6e9a0ef930a2ed50845caa"
+    },
+    {
+      "file": "tools/market_map/lineage.py",
+      "sha256": "63cf75c1002184383f6a934deef938da1dd77c37ccaea77cd63ff5f16dbd2133"
+    },
+    {
+      "file": "tools/market_map/options_analytics.py",
+      "sha256": "452444c5368ec3d7ab1e6c4db52f1e180e7d667220e9072cf2eee02757c9dcaa"
+    },
+    {
+      "file": "tools/market_map/options_conventions.py",
+      "sha256": "5ef4496bd11853cf37ef4eb9111af38cae687d3f25d26c6afc836a097578f4d8"
+    },
+    {
+      "file": "tools/market_map/options_gex.py",
+      "sha256": "56bcb27ef887624b156733b6ea05033370469fac8734ca8df12cccdf650355aa"
+    },
+    {
+      "file": "tools/market_map/parity.py",
+      "sha256": "2d7a08b11e5b1696fc548543c42a8e586aafa5ac5c0d4c461ba7b18baf0820e6"
+    },
+    {
+      "file": "tools/market_map/pooled_research.py",
+      "sha256": "cd01ec1bc24c52486a1a4f049a2ed6855178ce41492061748dcf9c78a275b309"
+    },
+    {
+      "file": "tools/market_map/publish_guards.py",
+      "sha256": "9fc6b323553f2b4696a075d1caff9a61b556d7e0dad6322ba4cac166d8ecd2ca"
+    },
+    {
+      "file": "tools/market_map/qa_signoff.py",
+      "sha256": "9156614cfaaa2595ebc06e15cdb7564a6eb8258fd20919021e49a991459905ce"
+    },
+    {
+      "file": "tools/market_map/quarterly_timeline.py",
+      "sha256": "5a770b44f9a7d654fffda38f3aa7868f2a493e24a742b61f02e0e5236921113b"
+    },
+    {
+      "file": "tools/market_map/rate_curve.py",
+      "sha256": "b846fa36984a842deafd6c395116b381fcfa207dfc57aa26037a1e1baf1b869d"
+    },
+    {
+      "file": "tools/market_map/rate_real.py",
+      "sha256": "1eac8980b8e02efc6ce308b89b0b801f2f59d1c1609962741dd06e8f5d965e0e"
+    },
+    {
+      "file": "tools/market_map/ratelimit.py",
+      "sha256": "c84b6a1e42d550ed7001391830ecbae2fe5912c48c9587412c51c77c0903eac7"
+    },
+    {
+      "file": "tools/market_map/realized.py",
+      "sha256": "4a504ae5dd553189235698987709e9415e59a85cbe2bd0a6fb9cfd55d2ffe194"
+    },
+    {
+      "file": "tools/market_map/report_bundle.py",
+      "sha256": "332eb1118db320b245476baefa22d19abf3c7439d8afe777c0213479d594e3ee"
+    },
+    {
+      "file": "tools/market_map/risk_neutral.py",
+      "sha256": "70d5a731d95702196109092cb40c7a8369ad0bb852d33878486e8c0c37b43d0a"
+    },
+    {
+      "file": "tools/market_map/short_squeeze.py",
+      "sha256": "e2d5d9d0b6db80e09c6b0d3ba74086a72d758311822dc77464c810c366eb5f12"
+    },
+    {
+      "file": "tools/market_map/signal_linkage.py",
+      "sha256": "ac7b594a5577d0aacf4d7507ce8cc49e8c35b4081ce7c6ab96ca0402cce517f0"
+    },
+    {
+      "file": "tools/market_map/stats_ref.py",
+      "sha256": "0419b56d31614f2faab368fac299cea73b37a688386be9822d808aff44e71e07"
+    },
+    {
+      "file": "tools/market_map/test_alpaca_options.py",
+      "sha256": "e5ce6be9e95933c61d51a410b4ccb0623d32d77cf3463c2ea3882eea9af96a2b"
+    },
+    {
+      "file": "tools/market_map/test_black_scholes.py",
+      "sha256": "ee7f05a9e91a6d35d948b897444b7796f89581a09e421c6cf280a14d1a4e7585"
+    },
+    {
+      "file": "tools/market_map/test_bs_golden.py",
+      "sha256": "58c8fa8e1fc6c0fa9b5e199146e63ad8acf47354698476339c02e1e7e3fad78d"
+    },
+    {
+      "file": "tools/market_map/test_chain_quality.py",
+      "sha256": "6c90e4ed7e476be2d2c11e79229f2e95ba0d3ccc8b2bce3ede5cc7111471845f"
+    },
+    {
+      "file": "tools/market_map/test_connector_resilience.py",
+      "sha256": "7209ae6976c63f847afa94d9397a829d21178fae9ef3336e5b041853fb9b3e58"
+    },
+    {
+      "file": "tools/market_map/test_earnings.py",
+      "sha256": "ad63fcf53815b5023bf64c76f56cc71e7570f946793765d2db776b55b42ec963"
+    },
+    {
+      "file": "tools/market_map/test_earnings_live.py",
+      "sha256": "ae23e2f411fc930d9e93d54fa86f867604f7d3cae32823ee04bdc584784d3096"
+    },
+    {
+      "file": "tools/market_map/test_est_snapshot.py",
+      "sha256": "1eaa154168dcd2af123e078fb3b7fa0f132d35779c68cdbb2d9785d8f345712f"
+    },
+    {
+      "file": "tools/market_map/test_factor_eval.py",
+      "sha256": "7703777968dcafa72220f6bcff724de0ba70f9abc2dd29fac42f26bb2c78dddd"
+    },
+    {
+      "file": "tools/market_map/test_factor_pipeline.py",
+      "sha256": "55918160a501874a10d1808ea1e517bc36a59ccde10e175e8d882367f57d1cb6"
+    },
+    {
+      "file": "tools/market_map/test_gex_accuracy.py",
+      "sha256": "a8094c549c6c7884ed912e64e4db0e1512745bbaeb22dfaa5edf14480e4b3fbf"
+    },
+    {
+      "file": "tools/market_map/test_harq_regime.py",
+      "sha256": "f656acf68e7e35581bb7ee1619cd6be194c6f8329c9424c56aa5ac5ae53f09df"
+    },
+    {
+      "file": "tools/market_map/test_ic_store.py",
+      "sha256": "7b4bc871e71f2ccbc9e50728b96d6d2fdebbbf9888621c2328c2a7f621e9b7c2"
+    },
+    {
+      "file": "tools/market_map/test_intraday.py",
+      "sha256": "00e22bc6a4ceaafc09fc37bcb9652be92d7bae427df5eabc29c2d558551b0cc5"
+    },
+    {
+      "file": "tools/market_map/test_intraday_eod.py",
+      "sha256": "8ec7fd99b8080dba2bb4a77c1f0ced39d75c2805940cda2c00fdab0212a89a5c"
+    },
+    {
+      "file": "tools/market_map/test_lineage.py",
+      "sha256": "56a6fd489a5442e216396d4b6988f55b0f931af99fae08af3c809b9658b3cf71"
+    },
+    {
+      "file": "tools/market_map/test_options_conventions.py",
+      "sha256": "604f5a8bed9e733709df0d4dfcdb56b62259ce3628216e8ca002211d2f588813"
+    },
+    {
+      "file": "tools/market_map/test_payload.py",
+      "sha256": "0852e00ef4858398a42cf76defeae5b33f70066f3f463637b3dddb7a730f41d1"
+    },
+    {
+      "file": "tools/market_map/test_pipeline_smoke.py",
+      "sha256": "7ee9c07ba9cc969538cdf9f07f1299cf7b231420b5550c5e85c9af7dab5b6f17"
+    },
+    {
+      "file": "tools/market_map/test_pooled_research.py",
+      "sha256": "59d62328ac9745c1abc56d81c3c26b2e1cc78073c0646955f357654552ebd1b3"
+    },
+    {
+      "file": "tools/market_map/test_qa_signoff.py",
+      "sha256": "6feb7c8e909082dd97e5cdc5744966635115bf921a4b46827c4a6067cf31cb3c"
+    },
+    {
+      "file": "tools/market_map/test_quant_ext.py",
+      "sha256": "fd374f906d7f7f5e74e15cddbe9bb2f007aff771dfeb6ffee844b622cc1ed50d"
+    },
+    {
+      "file": "tools/market_map/test_quarterly_timeline.py",
+      "sha256": "9181c95f276ccc7f8f2584b5545b620957c25afe83c2e83757fe17c8d96c134e"
+    },
+    {
+      "file": "tools/market_map/test_rate_real.py",
+      "sha256": "8910e209ea6d9e60984aad47ac79a0155e61b1b9d698475ec6a0f7029ccf4e46"
+    },
+    {
+      "file": "tools/market_map/test_report_bundle.py",
+      "sha256": "50610dd44d6ea781b21b3cc815a476d617501cff05cbc752bae44757adf6611e"
+    },
+    {
+      "file": "tools/market_map/test_stats_ref.py",
+      "sha256": "8aecb4bc857667f50d097489e1d4dac25fc8048bd43c9e5cd3de1c922c2fa0a0"
+    },
+    {
+      "file": "tools/market_map/test_threshold_calib.py",
+      "sha256": "69f2eb91c6ca40ba40b89d34e01a7831703d2d51ac93474db8fce6aa1266baa9"
+    },
+    {
+      "file": "tools/market_map/test_trigger_store.py",
+      "sha256": "57ca5ef2de97f4113351aeac67e28aa8a7304ee8072a29a27c777dcde6f2daf9"
+    },
+    {
+      "file": "tools/market_map/test_verify_artifact.py",
+      "sha256": "d07c6fe0bd91ba34986e203b120d0b5f3ead25ee9e7c18d7a2a840e84fa6f170"
+    },
+    {
+      "file": "tools/market_map/test_warehouse.py",
+      "sha256": "0c8588954afb62dcd989e78f96ca666309102e56a301965d25b0059a769cf258"
+    },
+    {
+      "file": "tools/market_map/threshold_calib.py",
+      "sha256": "26e0a02b73b70ca357167bfc592da90b610a05e87c0e73d298d1c545f3a0b309"
+    },
+    {
+      "file": "tools/market_map/tiingo_connector.py",
+      "sha256": "822904eb894c7a1357ca23ee5828d4a6b9f2c519c75c73009487f97d40f0f4df"
+    },
+    {
+      "file": "tools/market_map/trigger_store.py",
+      "sha256": "dd9439b94b50090349d1e151be0b6843ecc34ff9f87b311c90a14a0c4cc916b6"
+    },
+    {
+      "file": "tools/market_map/validate_payload.py",
+      "sha256": "36118198def9d5e799e1dfde3a20cf96f8fd10fb8efaac92da289a3cbf5aa65f"
+    },
+    {
+      "file": "tools/market_map/validate_publish.py",
+      "sha256": "3179475e0bd49a11007a472ad9629783f28f8704057d5cc7381befe25fad0f39"
+    },
+    {
+      "file": "tools/market_map/verify_history.py",
+      "sha256": "7d897bd4d5e7e6f7aa60cd5be368ff28b7e6ca2076b9390afd3ed380e50111f5"
+    },
+    {
+      "file": "tools/market_map/vol_surface.py",
+      "sha256": "fe1a5fac5df2595b619571a310d38d0d86acd3168adb7a726263e5131d770333"
+    },
+    {
+      "file": "tools/market_map/warehouse.py",
+      "sha256": "688eb92ad1e473dca28150b8a20c7a12548458e5c8a569e1d904ea942e0c5b3c"
+    },
+    {
+      "file": "tools/market_map/xsection.py",
+      "sha256": "273879e6ada5f00562d51d2a6ae35de42d7f4fc12d815bccf209b06a67164d51"
+    }
+  ]
+}

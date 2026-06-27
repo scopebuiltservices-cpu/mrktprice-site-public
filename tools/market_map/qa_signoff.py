@@ -149,17 +149,26 @@ def qa_checks(payload, *, min_names, max_age_days, min_core_cov,
     is_sample = any(m.lower() in src.lower() for m in SAMPLE_MARKERS)
     add("source-not-sample", bool(src) and not is_sample, True, "source=%r" % src[:80])
 
-    # core coverage from dataHealth
+    # core coverage from dataHealth — supports two real shapes:
+    #  (a) flat fractions: dataHealth.prices.coverage = 0..1
+    #  (b) count dict:      dataHealth.coverage = {universe, priceOk, shortOk, mcapOk, ...}
     dh = payload.get("dataHealth") or {}
     cov = None
     if isinstance(dh, dict):
         cands = []
-        for k in ("prices", "macro", "short", "shortInterest", "flow"):
-            v = dh.get(k)
-            if isinstance(v, dict):
-                v = v.get("coverage", v.get("cov"))
-            if _is_finite(v):
-                cands.append(float(v))
+        covd = dh.get("coverage")
+        if isinstance(covd, dict) and _is_finite(covd.get("universe")) and float(covd["universe"]) > 0:
+            uni = float(covd["universe"])
+            for k in ("priceOk", "shortOk", "mcapOk"):   # the core domains
+                if _is_finite(covd.get(k)):
+                    cands.append(float(covd[k]) / uni)
+        else:
+            for k in ("prices", "macro", "short", "shortInterest", "flow"):
+                v = dh.get(k)
+                if isinstance(v, dict):
+                    v = v.get("coverage", v.get("cov"))
+                if _is_finite(v):
+                    cands.append(float(v))
         if cands:
             cov = sum(cands) / len(cands)
     if cov is None:
@@ -174,14 +183,19 @@ def qa_checks(payload, *, min_names, max_age_days, min_core_cov,
         for nd in names:
             if not isinstance(nd, dict):
                 continue
-            ql = nd.get("qLo", nd.get("qlo", nd.get("p6low", nd.get("low"))))
-            qm = nd.get("qMid", nd.get("qmid", nd.get("p6mid", nd.get("mid"))))
-            qh = nd.get("qHi", nd.get("qhi", nd.get("p6high", nd.get("high"))))
+            # real payload carries analyst price-target band as ptgt={low,tgt,high}
+            pt = nd.get("ptgt") if isinstance(nd.get("ptgt"), dict) else None
+            if pt:
+                ql, qm, qh = pt.get("low"), pt.get("tgt"), pt.get("high")
+            else:
+                ql = nd.get("qLo", nd.get("qlo", nd.get("p6low", nd.get("low"))))
+                qm = nd.get("qMid", nd.get("qmid", nd.get("p6mid", nd.get("mid"))))
+                qh = nd.get("qHi", nd.get("qhi", nd.get("p6high", nd.get("high"))))
             if _is_finite(ql) and _is_finite(qm) and _is_finite(qh):
                 checked_q += 1
                 if not (float(ql) <= float(qm) <= float(qh)):
                     crossed += 1
-            sc = nd.get("net", nd.get("score"))
+            sc = nd.get("net", nd.get("score", nd.get("opp", nd.get("oppPct"))))
             if sc is not None and not _is_finite(sc):
                 nonfinite += 1
     add("quantile-noncross", crossed == 0, True,

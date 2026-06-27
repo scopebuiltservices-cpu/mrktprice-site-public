@@ -2209,6 +2209,7 @@ function buildBullBearBoard(){
     var sh=n.short||{},lvl=({low:0,moderate:1,high:2,extreme:3})[sh.level]||0,shp=lvl+(sh.trend==='rising'?1:(sh.trend==='falling'?-0.5:0));
     S.push({t:t,sec:n.sec||'',beta:beta,drag:beta*DIR.MKT,tilt:tilt,short:-shp,lvl:lvl,tr:sh.trend,
       sector:(n.secRel!=null?n.secRel:0),opp:(n.opp!=null?n.opp:0),ema:(n.ema21sig!=null?n.ema21sig:0),
+      vel:(n.ema21sl!=null?n.ema21sl:0),iflow:(n.flow&&n.flow.net3m!=null?n.flow.net3m:0),   // velocity = EMA21 slope (1st derivative); iflow = integral net 3m flow
       r1m:(n.ret&&n.ret['1m']!=null?n.ret['1m']:0),flow:(n.flow&&n.flow.net1m!=null?n.flow.net1m:0),mb:mb,deps:n.deps||[]});});
   if(!S.length){el.innerHTML='<div class="note">Bull/Bear board — universe not loaded.</div>';return;}
   function z(a){var m=a.reduce(function(x,y){return x+y;},0)/a.length,sd=Math.sqrt(a.reduce(function(x,y){return x+(y-m)*(y-m);},0)/Math.max(1,a.length-1))||1;return a.map(function(x){return (x-m)/sd;});}

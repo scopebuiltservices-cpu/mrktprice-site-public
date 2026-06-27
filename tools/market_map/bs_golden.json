@@ -1,0 +1,16 @@
+{
+  "_source": "Audit Framework for Black-Scholes and Black-Scholes-Merton Implementations — language-independent golden fixtures (machine-precision BSM evaluations). Inputs listed as (S,K,T,r,q,sigma).",
+  "tol": {"price": 1e-8, "greek": 1e-7, "parity": 1e-9, "iv": 1e-6},
+  "cases": [
+    {"name": "ATM_with_dividends",   "S": 100, "K": 100, "T": 1.0,                 "r": 0.05, "q": 0.02, "sigma": 0.20, "call": 9.2270055082,  "put": 6.3300806275,  "callDelta": 0.5868511461, "gamma": 0.0189505788, "vega": 37.9011575100},
+    {"name": "OTM_short_dated",      "S": 100, "K": 120, "T": 0.5,                 "r": 0.03, "q": 0.01, "sigma": 0.25, "call": 1.6713742953,  "put": 20.3835591284, "callDelta": 0.1867622787, "gamma": 0.0151598963, "vega": 18.9498703142},
+    {"name": "ITM_long_dated",       "S": 120, "K": 100, "T": 2.0,                 "r": 0.04, "q": 0.00, "sigma": 0.30, "call": 34.9098500256, "put": 7.2214846642,  "callDelta": 0.7968521093, "gamma": 0.0055506627, "vega": 47.9577259119},
+    {"name": "HighVol_near_expiry",  "S": 50,  "K": 50,  "T": 0.0833333333333333,  "r": 0.01, "q": 0.00, "sigma": 0.50, "call": 2.8962950322,  "put": 2.8546457219,  "callDelta": 0.5310630190, "gamma": 0.0551114085, "vega": 5.7407717202}
+  ],
+  "edge": [
+    {"name": "expiry_call_intrinsic", "S": 100, "K": 90,  "T": 0,   "r": 0.05, "q": 0.02, "sigma": 0.20, "kind": "C", "exp": 10.0},
+    {"name": "expiry_put_intrinsic",  "S": 100, "K": 110, "T": 0,   "r": 0.05, "q": 0.02, "sigma": 0.20, "kind": "P", "exp": 10.0},
+    {"name": "zerovol_ITM_call",      "S": 100, "K": 90,  "T": 1.0, "r": 0.05, "q": 0.02, "sigma": 0.0,  "kind": "C", "exp": 12.4092191256},
+    {"name": "zerovol_OTM_put",       "S": 100, "K": 110, "T": 1.0, "r": 0.05, "q": 0.02, "sigma": 0.0,  "kind": "P", "exp": 6.6153693644}
+  ]
+}

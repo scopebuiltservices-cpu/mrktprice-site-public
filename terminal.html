@@ -2108,7 +2108,7 @@ function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementByI
  const rk={pass:0,caution:1,fail:2,'weak-id':1};let w=0;S.forEach(s=>w=Math.max(w,rk[s]??1));const gs=['pass','caution','fail'][w];
  setPill('gate',gs,gs==='pass'?'PASS':gs==='caution'?'PASS · CAUTION':'REJECT');
  document.getElementById('gatewhy').textContent=gs==='pass'?'volatility, RV-ratio, tail, skew within tolerance (timing daily-proxy; dependence degraded).':gs==='caution'?'a risk component elevated/weak-id; size conservatively.':'a hard risk band breached — release withheld.';
- buildAlerts();try{renderConeInstrument(CUR.sym);}catch(_e){}try{renderConeContext(CUR.sym);}catch(_e){}draw();buildInsightTiles(CUR.sym);renderDecision(CUR.sym);renderReaction(CUR.sym);renderMacro(CUR.sym);try{buildForecastCard(CUR.sym);}catch(_eFCw){}try{_secFetchEarnings(CUR.sym);}catch(_eSEf){}}
+ buildAlerts();try{renderConeInstrument(CUR.sym);}catch(_e){}try{renderConeContext(CUR.sym);}catch(_e){}try{renderConeZoom();}catch(_e){}draw();buildInsightTiles(CUR.sym);renderDecision(CUR.sym);renderReaction(CUR.sym);renderMacro(CUR.sym);try{buildForecastCard(CUR.sym);}catch(_eFCw){}try{_secFetchEarnings(CUR.sym);}catch(_eSEf){}}
 /* ===== CONSOLIDATED FORECAST CARD — What / Why / Risk / Trust / Action =====
    One coordinated read of the engine: the projection (What), the reasons behind it (Why), the
    downside envelope (Risk), the calibration/governance grade (Trust), and the conservative,
@@ -2384,6 +2384,53 @@ function _momLeanHtml(sym){try{
     +'Center path leans <b style="color:'+col+'">'+lean+'</b> by ~'+Math.abs(tiltPct).toFixed(1)+'% of the horizon band — a lean WITHIN the calibrated range, not a separate forecast.</div>'
     +'<div style="margin-top:3px;font-size:8px;color:var(--faint,#646e7c)">Gated on the Lo–MacKinlay VR z-stat (|z|&gt;1.96). Research only.</div></div>';
 }catch(_e){return '';}}
+/* ===== PROJECTION CONE — ZOOM TILE: an oversized, high-contrast read of CUR.pj (central path +
+   80/95 bands) with big horizon nodes (price + Δ% + date) and a metrics strip (P(up), expected
+   move, ranges, σ/day, λ, conformal coverage). Pure read of already-computed forecast — no new math. */
+function renderConeZoom(){
+  var cv=document.getElementById('coneZoomCv');if(!cv)return;
+  var mEl=document.getElementById('coneZoomMetrics'),vEl=document.getElementById('coneZoomVerdict'),nEl=document.getElementById('coneZoomNote');
+  if(!(typeof CUR==='object'&&CUR&&CUR.pj&&CUR.pj.path&&CUR.pj.path.length)){if(mEl)mEl.innerHTML='';if(nEl)nEl.textContent='load a ticker to populate the projection cone';return;}
+  var pj=CUR.pj,P0=CUR.last,H=pj.path.length;var Z95=(typeof Z==='object'&&Z&&Z[95])?Z[95]:1.6449;
+  var fc=fitCanvas(cv),g=fc.g,W=fc.W,Ht=fc.H,padL=60,padR=66,padT=14,padB=26;
+  var lo=P0,hi=P0,i;for(i=0;i<H;i++){lo=Math.min(lo,pj.p95[i].low);hi=Math.max(hi,pj.p95[i].high);}var spn=(hi-lo)||1;lo-=spn*0.06;hi+=spn*0.06;
+  var X=function(k){return padL+(k/Math.max(H-1,1))*(W-padL-padR);},Y=function(v){return padT+(1-(v-lo)/(hi-lo))*(Ht-padT-padB);};
+  g.font='12px sans-serif';g.textAlign='left';
+  for(var r=0;r<=4;r++){var v=lo+(hi-lo)*r/4,y=Y(v);g.strokeStyle='rgba(255,255,255,.05)';g.beginPath();g.moveTo(padL,y);g.lineTo(W-padR,y);g.stroke();g.fillStyle='#8a93a0';g.fillText('$'+v.toFixed(2),6,y+4);g.fillStyle='#5b9dff';g.fillText(((v/P0-1)*100>=0?'+':'')+((v/P0-1)*100).toFixed(1)+'%',W-padR+6,y+4);}
+  var band=function(aLo,aHi,col){g.beginPath();g.moveTo(X(0),Y(P0));for(var k=0;k<H;k++)g.lineTo(X(k),Y(aHi[k]));for(var k2=H-1;k2>=0;k2--)g.lineTo(X(k2),Y(aLo[k2]));g.closePath();g.fillStyle=col;g.fill();};
+  band(pj.p95.map(function(b){return b.low;}),pj.p95.map(function(b){return b.high;}),'rgba(91,157,255,.12)');
+  band(pj.p80.map(function(b){return b.low;}),pj.p80.map(function(b){return b.high;}),'rgba(91,157,255,.22)');
+  g.strokeStyle='#e8eef6';g.lineWidth=2;g.beginPath();g.moveTo(X(0),Y(P0));for(var k3=0;k3<H;k3++)g.lineTo(X(k3),Y(pj.path[k3].price));g.stroke();g.lineWidth=1;
+  g.fillStyle='#f5c451';g.beginPath();g.arc(X(0),Y(P0),4,0,7);g.fill();g.font='bold 12px sans-serif';g.fillText('spot $'+P0.toFixed(2),X(0)+6,Y(P0)-8);
+  var nodes=[],frac=[0.25,0.5,0.75,1.0];for(var fi=0;fi<frac.length;fi++){var kk=Math.min(H-1,Math.max(0,Math.round(frac[fi]*(H-1))));if(nodes.indexOf(kk)<0)nodes.push(kk);}
+  var lastISO=(CUR.d&&CUR.d.length)?CUR.d[CUR.d.length-1]:null;g.textAlign='center';
+  for(var ni=0;ni<nodes.length;ni++){var k=nodes[ni],px=pj.path[k].price,x=X(k),yy=Y(px);
+    g.strokeStyle='rgba(255,255,255,.12)';g.setLineDash([2,3]);g.beginPath();g.moveTo(x,padT);g.lineTo(x,Ht-padB);g.stroke();g.setLineDash([]);
+    g.fillStyle='#5b9dff';g.beginPath();g.arc(x,yy,3.5,0,7);g.fill();
+    var dpc=(px/P0-1)*100;g.fillStyle='#e8eef6';g.font='bold 12px sans-serif';g.fillText('$'+px.toFixed(2),x,yy-16);
+    g.fillStyle=dpc>=0?'#2ecc8f':'#ef5f4e';g.font='bold 11px sans-serif';g.fillText((dpc>=0?'+':'')+dpc.toFixed(1)+'%',x,yy-4);
+    var dl='+'+(k+1)+'d';try{if(lastISO&&typeof _addBizDays==='function')dl='+'+(k+1)+'d '+_addBizDays(lastISO,k+1).slice(5);}catch(_e){}
+    g.fillStyle='#8a93a0';g.font='10px sans-serif';g.fillText(dl,x,Ht-padB+13);}
+  g.textAlign='left';
+  var bH=pj.p95[H-1],b8=pj.p80[H-1],pathH=pj.path[H-1].price;
+  var mu=Math.log(pathH/P0),sUp=Math.log(bH.high/pathH)/Z95||1e-9,sDn=Math.log(pathH/bH.low)/Z95||1e-9;
+  var pUp=1-normCDF((0-mu)/Math.max((mu>=0?sDn:sUp),1e-9)),expMove=((bH.high-bH.low)/2/P0*100);
+  var sigD=(CUR.harqDrivingCone&&CUR.harq)?(CUR.harq.volDaily*(CUR.harqConfK||1)):(CUR.curRms!=null?CUR.curRms:null);
+  var conf=(CUR.integrity&&CUR.integrity.conformal)?CUR.integrity.conformal:null;
+  function chip(k,v,col){return '<div style="background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:5px 9px;min-width:82px"><div style="font-size:9px;color:var(--muted,#8a93a0);text-transform:uppercase;letter-spacing:.04em">'+k+'</div><div style="font-size:15px;font-weight:800;color:'+(col||'var(--ink,#eef3f8)')+'">'+v+'</div></div>';}
+  if(mEl)mEl.innerHTML=chip('Spot','$'+P0.toFixed(2))
+    +chip('Path @'+H+'d','$'+pathH.toFixed(2),pathH>=P0?'#2ecc8f':'#ef5f4e')
+    +chip('Implied',((pathH/P0-1)*100>=0?'+':'')+((pathH/P0-1)*100).toFixed(1)+'%',pathH>=P0?'#2ecc8f':'#ef5f4e')
+    +chip('P(up) @'+H+'d',(pUp*100).toFixed(0)+'%',pUp>=0.5?'#2ecc8f':'#ef5f4e')
+    +chip('80% range','$'+b8.low.toFixed(2)+'–'+b8.high.toFixed(2))
+    +chip('95% range','$'+bH.low.toFixed(2)+'–'+bH.high.toFixed(2))
+    +chip('Exp move','±'+expMove.toFixed(1)+'%')
+    +chip('σ / day',sigD!=null?(sigD*100).toFixed(2)+'%':'—')
+    +chip('λ decay',pj.lam.toFixed(4))
+    +chip('Conformal cov',conf&&conf.cov!=null?(conf.cov*100).toFixed(0)+'%':'—',conf&&conf.cov>=0.85?'#2ecc8f':'#e0c14a');
+  if(vEl){var up=pUp>=0.5;vEl.textContent=(up?'▲ upward tilt · ':'▼ downward tilt · ')+(pUp*100).toFixed(0)+'% P(up)';vEl.style.color=up?'#2ecc8f':'#ef5f4e';}
+  if(nEl)nEl.textContent='Central path = OU/blend mean; bands = '+(CUR.harqDrivingCone?'HARQ-σ conformal-calibrated':((document.getElementById('volsrc')?document.getElementById('volsrc').value:'parametric')+'-σ'))+' 80%/95% over '+H+' trading days. Reference range, not a point forecast — research only.';
+}
 function renderConeInstrument(sym,mcOverride){
   var host=document.getElementById('coneInstrument');if(!host)return;
   try{
@@ -3316,7 +3363,7 @@ document.getElementById('alertClose').onclick=()=>document.getElementById('alert
   try{var v=localStorage.getItem('mrkt.ui.'+id);if(v!=null){if(e.type==='checkbox'){if(e.checked!==(v==='1')){e.checked=(v==='1');_did=true;}}else if(e.value!==v){e.value=v;_did=true;}}}catch(_e){}
   e.addEventListener('change',function(){try{localStorage.setItem('mrkt.ui.'+id,e.type==='checkbox'?(e.checked?'1':'0'):e.value);}catch(_e2){}});});
  if(_did){try{if(typeof CUR==='object'&&CUR&&CUR.c){redraw();if(typeof renderHARQ==='function')renderHARQ();}}catch(_e3){}}})();
-window.addEventListener('resize',()=>{draw();drawCone();});try{const _ro=new ResizeObserver(()=>{draw();drawCone();});_ro.observe(document.querySelector('.chartcard'));}catch(e){}
+window.addEventListener('resize',()=>{draw();drawCone();try{renderConeZoom();}catch(e){}});try{const _ro=new ResizeObserver(()=>{draw();drawCone();try{renderConeZoom();}catch(e){}});_ro.observe(document.querySelector('.chartcard'));}catch(e){}
 const dz=document.getElementById('dz');dz.onclick=()=>{const i=document.createElement('input');i.type='file';i.accept='.csv';i.onchange=e=>readCSV(e.target.files[0]);i.click();};
 ['dragover','dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.toggle('drag',ev==='dragover');if(ev==='drop')readCSV(e.dataTransfer.files[0]);}));
 function readCSV(f){if(!f)return;const rd=new FileReader();rd.onload=()=>{const L=rd.result.split(/\r?\n/).filter(x=>x.trim());const h=L[0].toLowerCase().split(',');const di=h.indexOf('date'),ci=h.indexOf('close'),vi=h.indexOf('volume');if(di<0||ci<0){alert('need date,close columns');return;}

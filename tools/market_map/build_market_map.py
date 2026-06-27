@@ -1582,8 +1582,8 @@ def real_universe():
             except Exception: pass
         return c
     _cov={"universe":len(names),
-          "priceOk":_cnt(lambda n:bool(n.get("_cl"))),          # yfinance daily closes (backbone)
-          "mcapOk":_cnt(lambda n:bool(n.get("mcap"))),          # yfinance market cap (info)
+          "priceOk":_cnt(lambda n:bool(n.get("_cl"))),          # daily closes — FMP Ultimate primary, yfinance backup
+          "mcapOk":_cnt(lambda n:bool(n.get("mcap"))),          # market cap (FMP/yfinance info)
           "instOk":_cnt(lambda n:bool(n.get("inst"))),          # SEC 13F institutional
           "insiderOk":_cnt(lambda n:bool(n.get("insider"))),    # SEC insider transactions
           "shortOk":_cnt(lambda n:bool(n.get("short"))),        # SEC short/FTD

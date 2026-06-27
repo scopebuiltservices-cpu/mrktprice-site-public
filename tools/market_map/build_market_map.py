@@ -1708,6 +1708,26 @@ def main():
         try:
             import sys as _s3; _s3.stderr.write("::warning::factor stack skipped: %s\n"%str(_fe2)[:160])
         except Exception: pass
+    # ---- TRIGGER-OUTCOME CALIBRATION: snapshot per-name gate metrics, mature with realized fwd returns,
+    #      walk-forward fit the intraday cutoffs (degrade to literature defaults until history accrues) ----
+    try:
+        import os as _o3, trigger_store as _tstore, threshold_calib as _tcal, datetime as _dt3
+        _st2=_o3.path.dirname(_o3.path.abspath(__file__))
+        _etf2=set((nn.get("t") or "").upper() for nn in names if ("ETF" in (nn.get("idx") or []) or nn.get("etf")))
+        _tsnap=_o3.path.join(_st2,"trig_snap.jsonl"); _tout=_o3.path.join(_st2,"trig_out.jsonl"); _td=_dt3.date.today().isoformat()
+        _trows=[]; _pxn={}
+        for nn in names:
+            _tt=(nn.get("t") or "").upper()
+            if not _tt or _tt in _etf2: continue
+            _mm=_tstore.metrics_for(nn.get("_cl") or [], nn.get("_vol") or [])
+            if _mm: _trows.append({"t":_tt,"m":_mm}); _pxn[_tt]=_mm["px"]
+        if _trows:
+            _tstore.snapshot(_tsnap,_td,_trows); _tstore.mature(_tsnap,_tout,_td,20,_pxn)
+            _mets={}
+            for _k3,_g3 in (("rvol",[1.5,2.0,2.5,3.0]),("z",[1.5,2.0,2.5]),("obvt",[1.5,2.0,2.5])):
+                _oc=_tstore.read_outcomes(_tout,_k3); _mets[_k3]={"values":_oc["values"],"fwd":_oc["fwd"],"grid":_g3,"side":"ge","min_hits":20}
+            snap["triggerCutoffs"]=_tcal.calibrate(_mets, defaults={"rvol":2.0,"z":2.0,"obvt":2.0})
+    except Exception: pass
     snap.setdefault("schemaVersion","1.0")                                 # producer-stamped contract version (consumer version-gates)
     snap=_finite(snap)
     json.dump(snap,open(a.out,"w"),separators=(",",":"),allow_nan=False)   # allow_nan=False = hard guard: never emit invalid JSON

@@ -2461,7 +2461,10 @@ function renderTriggers(){
   // OBV slope t-stat over last 8 bars (OLS slope significance) + MFI(14) — the PDF FlipLong gate set
   var obvT=null;if(obv.length>=8){var _m=8,_ys=obv.slice(-_m),_mx=(_m-1)/2,_my=_ys.reduce(function(a,b){return a+b;},0)/_m,_sxx=0,_sxy=0;for(var _q=0;_q<_m;_q++){_sxx+=(_q-_mx)*(_q-_mx);_sxy+=(_q-_mx)*(_ys[_q]-_my);}var _sl=_sxx>0?_sxy/_sxx:0,_sse=0;for(var _q2=0;_q2<_m;_q2++){var _yh=_my+_sl*(_q2-_mx);_sse+=(_ys[_q2]-_yh)*(_ys[_q2]-_yh);}var _se=(_sxx>0&&_m>2)?Math.sqrt((_sse/(_m-2))/_sxx):0;obvT=_se>0?_sl/_se:0;}
   var mfi=(CUR.mfi&&CUR.mfi[n-1]!=null)?CUR.mfi[n-1]:null;
-  var TH={rvol:2.0,z:2.0,obv:2.0};
+  var TH={rvol:2.0,z:2.0,obv:2.0},_thMode='default';
+  try{var _tc=(window.MMAP&&window.MMAP.triggerCutoffs)?window.MMAP.triggerCutoffs:null;
+    if(_tc&&_tc.cutoffs){if(_tc.cutoffs.rvol!=null)TH.rvol=_tc.cutoffs.rvol;if(_tc.cutoffs.z!=null)TH.z=_tc.cutoffs.z;if(_tc.cutoffs.obvt!=null)TH.obv=_tc.cutoffs.obvt;
+      if(_tc.mode){var _mv=Object.keys(_tc.mode).map(function(k){return _tc.mode[k];});_thMode=_mv.indexOf('fitted')>=0?'fitted (walk-forward)':'default';}}}catch(_e){}
   var pAbove=(vw!=null&&px>vw),pBelow=(vw!=null&&px<vw),rvolOK=(rvol!=null&&rvol>=TH.rvol),
       zUp=(zlast!=null&&zlast>=TH.z),zDn=(zlast!=null&&zlast<=-TH.z),velUp=(vel!=null&&vel>0),velDn=(vel!=null&&vel<0),
       obvUp=(obvT!=null&&obvT>=TH.obv),obvDn=(obvT!=null&&obvT<=-TH.obv);
@@ -2487,7 +2490,7 @@ function renderTriggers(){
     +cond((dir?zUp:zDn),'σ-displacement',(zlast!=null?(zlast>=0?'+':'')+zlast.toFixed(2)+'σ':'—'),(dir?'≥+':'≤−')+TH.z.toFixed(1)+'σ')
     +cond((dir?obvUp:obvDn),'OBV slope t-stat',(obvT!=null?(obvT>=0?'+':'')+obvT.toFixed(2):'—'),(dir?'≥+':'≤−')+TH.obv.toFixed(1))
     +'<div style="font-size:8px;color:var(--muted,#8a93a0);margin-top:3px">confirmations · EMA velocity '+(vel!=null?(vel>=0?'+':'')+vel.toFixed(2)+'%/d':'—')+' · MFI '+(mfi!=null?mfi.toFixed(0)+(mfi>=80?' (≥80 long-exhaustion)':mfi<=20?' (≤20 short-exhaustion)':''):'—')+' · breakout '+(brk>=0?'+':'')+brk.toFixed(2)+'σ</div>'
-    +'<div style="font-size:8px;color:var(--faint,#646e7c);margin-top:4px">Fires when all four align (price vs VWAP · RVOL≥2.0 · |σ-displacement|≥2.0 · OBV-slope |t|≥2.0). velocity=d(EMA21)/dt, acceleration=d²(EMA21)/dt², ∫flow=on-balance-volume integral over 10 sessions. Refreshes with the 15-min intraday feed when loaded; EOD otherwise. Research only — not a trade signal.</div></div>';
+    +'<div style="font-size:8px;color:var(--faint,#646e7c);margin-top:4px">Fires when all four align (price vs VWAP · RVOL≥'+TH.rvol.toFixed(1)+' · |σ-disp|≥'+TH.z.toFixed(1)+' · OBV |t|≥'+TH.obv.toFixed(1)+') · cutoffs: '+_thMode+'. velocity=d(EMA21)/dt, acceleration=d²(EMA21)/dt², ∫flow=on-balance-volume integral over 10 sessions. Refreshes with the 15-min intraday feed when loaded; EOD otherwise. Research only — not a trade signal.</div></div>';
 }
 /* ===== PROJECTION CONE — ZOOM TILE: an oversized, high-contrast read of CUR.pj (central path +
    80/95 bands) with big horizon nodes (price + Δ% + date) and a metrics strip (P(up), expected

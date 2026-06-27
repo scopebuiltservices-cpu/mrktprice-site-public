@@ -2211,21 +2211,21 @@ function buildBullBearBoard(){
     S.push({t:t,sec:n.sec||'',beta:beta,drag:beta*DIR.MKT,tilt:tilt,short:-shp,lvl:lvl,tr:sh.trend,
       sector:(n.secRel!=null?n.secRel:0),opp:(n.opp!=null?n.opp:0),ema:(n.ema21sig!=null?n.ema21sig:0),
       vel:(n.ema21sl!=null?n.ema21sl:0),iflow:(n.flow&&n.flow.net3m!=null?n.flow.net3m:0),   // velocity = EMA21 slope (1st derivative); iflow = integral net 3m flow
-      r1m:(n.ret&&n.ret['1m']!=null?n.ret['1m']:0),flow:(n.flow&&n.flow.net1m!=null?n.flow.net1m:0),rate:(n.rate||null),mb:mb,deps:n.deps||[]});});
+      r1m:(n.ret&&n.ret['1m']!=null?n.ret['1m']:0),flow:(n.flow&&n.flow.net1m!=null?n.flow.net1m:0),rate:(n.rate||null),volp:(n.rvol!=null?n.rvol:1),mb:mb,deps:n.deps||[]});});
   if(!S.length){el.innerHTML='<div class="note">Bull/Bear board — universe not loaded.</div>';return;}
   function z(a){var m=a.reduce(function(x,y){return x+y;},0)/a.length,sd=Math.sqrt(a.reduce(function(x,y){return x+(y-m)*(y-m);},0)/Math.max(1,a.length-1))||1;return a.map(function(x){return (x-m)/sd;});}
   var zt=z(S.map(function(s){return s.tilt;})),zse=z(S.map(function(s){return s.sector;})),zsh=z(S.map(function(s){return s.short;})),
       zop=z(S.map(function(s){return s.opp;})),zem=z(S.map(function(s){return s.ema;})),zr=z(S.map(function(s){return s.r1m;})),zf=z(S.map(function(s){return s.flow;})),
-      zvel=z(S.map(function(s){return s.vel;})),zif=z(S.map(function(s){return s.iflow;}));
+      zvel=z(S.map(function(s){return s.vel;})),zif=z(S.map(function(s){return s.iflow;})),zvp=z(S.map(function(s){return s.volp;}));
   var sigR=Math.sqrt(S.map(function(s){return s.r1m*s.r1m;}).reduce(function(x,y){return x+y;},0)/S.length)||1;   // realized 1m dispersion (calibration scale)
   var _cal=window.ALPHACALIB||null,_fit=!!(_cal&&_cal.mode==='fitted'&&_cal.coef!=null);
   // composite edge: prefer SERVER-FITTED forward-IC/BH-FDR weights (factor_pipeline) when present; else fixed priors.
   var _FW=(window.MMAP&&window.MMAP.factorMode==='fitted'&&window.MMAP.factorWeights)?window.MMAP.factorWeights:null;
   var _wMode=_FW?'fitted':'priors';
   S.forEach(function(s,i){
-    if(_FW){var zm={macro:zt[i],sector:zse[i],short:zsh[i],opp:zop[i],mom:zr[i],velocity:zvel[i],flow3m:zif[i],flow1m:zf[i],ema:zem[i]},a=0,ws=0;
+    if(_FW){var zm={macro:zt[i],sector:zse[i],short:zsh[i],opp:zop[i],mom:zr[i],velocity:zvel[i],flow3m:zif[i],flow1m:zf[i],ema:zem[i],volume:zvp[i]},a=0,ws=0;
       for(var k in zm){var w=_FW[k];if(w!=null){a+=w*zm[k];ws+=Math.abs(w);}}s.alpha=ws>0?a/ws:0;}
-    else{s.alpha=0.28*zt[i]+0.20*zse[i]+0.12*zsh[i]+0.12*zop[i]+0.06*((zem[i]+zr[i])/2)+0.08*zvel[i]+0.05*zif[i]+0.03*zf[i];}
+    else{s.alpha=0.28*zt[i]+0.20*zse[i]+0.12*zsh[i]+0.12*zop[i]+0.06*((zem[i]+zr[i])/2)+0.08*zvel[i]+0.05*zif[i]+0.03*zf[i]+0.04*zvp[i];}
     s.exp=_fit?(_cal.intercept+_cal.coef*s.alpha):(s.alpha*sigR);});
   // ---- IC + BH-FDR factor diagnostic: cross-sectional Spearman corr of each factor vs trailing 1m return;
   //      significance via normal approx z=|IC|*sqrt(N-1), Benjamini-Hochberg FDR at q=0.10; breadth = % significant ----
@@ -2233,7 +2233,7 @@ function buildBullBearBoard(){
   function _rank(a){var ix=a.map(function(v,i){return [v,i];}).sort(function(x,y){return x[0]-y[0];}),r=new Array(a.length);for(var i=0;i<ix.length;i++)r[ix[i][1]]=i+1;return r;}
   function _pear(a,b){var n=a.length,ma=a.reduce(function(x,y){return x+y;},0)/n,mb2=b.reduce(function(x,y){return x+y;},0)/n,sa=0,sb=0,sab=0;for(var i=0;i<n;i++){var da=a[i]-ma,db=b[i]-mb2;sa+=da*da;sb+=db*db;sab+=da*db;}return sab/(Math.sqrt(sa*sb)||1e-9);}
   var _rret=_rank(S.map(function(s){return s.r1m;}));
-  var FAC=[['macro',zt],['sector',zse],['short',zsh],['opp',zop],['mom',zr],['velocity',zvel],['flow3m',zif],['ema',zem],['flow1m',zf]];
+  var FAC=[['macro',zt],['sector',zse],['short',zsh],['opp',zop],['mom',zr],['velocity',zvel],['flow3m',zif],['ema',zem],['flow1m',zf],['volume',zvp]];
   var ics=FAC.map(function(f){var ic=_pear(_rank(f[1]),_rret),zz=Math.abs(ic)*Math.sqrt(Math.max(_N-1,1)),p=2*(1-normCDF(zz));return {name:f[0],ic:ic,p:Math.max(0,Math.min(1,p))};});
   var _ps=ics.slice().sort(function(a,b){return a.p-b.p;}),_q=0.10,_kmax=0;
   for(var _i2=0;_i2<_ps.length;_i2++){if(_ps[_i2].p<=_q*(_i2+1)/_ps.length)_kmax=_i2+1;}

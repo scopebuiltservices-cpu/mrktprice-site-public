@@ -1227,6 +1227,7 @@ function renderHARQ(){var host=document.getElementById('harqPanel');if(!host)ret
     +chip('p(high-vol regime)',(res.phvNow*100).toFixed(0)+'%',res.phvNow>0.5?'#e0c14a':'#9ab4e0')
     +chip('fit R² (in-sample)',res.r2.toFixed(2)+' · n='+res.n)
     +'<table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:4px"><tr><td style="color:var(--faint,#646e7c)">coefficient</td><td class=r style="color:var(--faint,#646e7c)">β</td></tr>'+coef+'</table>'
+    +'<div style="margin-top:4px;font-size:9px;color:#5b9dff">▲ driving the projection-cone σ (next-day '+(res.volDaily*100).toFixed(2)+'%/d) — uncheck to revert to the Vol-src setting</div>'
     +'<div style="margin-top:3px;font-size:8px;color:var(--faint,#646e7c)">Corsi HAR-RV + Bollerslev–Patton–Quaedvlieg quarticity + Fang–Ślepaczuk regime probability, OLS on log realized variance. Daily-RV approximation (RV=r²; RQ rolling r⁴ proxy) — free, no intraday feed required. Research only, not advice.</div></div>';
 }
 /* ===== EARNINGS LAYER (drawn LAST, on top of every pane) =====
@@ -2047,7 +2048,7 @@ function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementByI
  const projDamp=P0+em.slope*dsum,projLin=P0+em.slope*H;CUR.emaProj={N:selN,path:emaProjPath(em.slope,P0,H,phi),projDamp,projLin};
  document.getElementById('ematab').innerHTML='<tr><td>EMA</td><td class=r>last</td><td class=r>slope/d</td><td class=r>R²</td><td class=r>RMSE</td><td class=r>dir</td></tr>'+EMAP.map(N=>{const m=CUR.emaM[N];const fl=(N===CUR.bestTrack?' ★':'')+(N===CUR.bestFit?' R':'');return `<tr><td style="color:${EMACOL[N]}">${N}d${fl}</td><td class=r>${m.last.toFixed(2)}</td><td class=r>${m.slope.toFixed(3)}</td><td class=r>${m.r2.toFixed(2)}</td><td class=r>${m.rmse.toFixed(2)}</td><td class=r>${(m.dir*100).toFixed(0)}%</td></tr>`;}).join('');
  document.getElementById('emaproj').innerHTML=`<tr><td>Selected</td><td class=r style="color:${EMACOL[selN]}">EMA${selN}${eSel==='best'?' (best)':''}</td></tr><tr><td>Slope/day</td><td class=r>${em.slope.toFixed(3)} ${em.slope>=0?'▲':'▼'}</td></tr><tr><td>Trend R²</td><td class=r>${em.r2.toFixed(2)}</td></tr><tr><td>Proj @${H}d damped</td><td class=r>${projDamp.toFixed(2)}</td></tr><tr><td>Proj @${H}d linear</td><td class=r>${projLin.toFixed(2)}</td></tr>`;
- document.getElementById('asym').textContent=`fan σ ${(sig*100).toFixed(2)}%/d ${lev?`· realized skew ↓${asym.dn.toFixed(2)}/↑${asym.up.toFixed(2)}`:'· symmetric'} · λ=${pj.lam.toFixed(4)} · ${vs}`;
+ document.getElementById('asym').textContent=`fan σ ${(sig*100).toFixed(2)}%/d ${lev?`· realized skew ↓${asym.dn.toFixed(2)}/↑${asym.up.toFixed(2)}`:'· symmetric'} · λ=${pj.lam.toFixed(4)} · ${_harqOn?'HARQ σ (next-session)':vs}`;
  const b=pj.p95[pj.p95.length-1],lp=pj.path[pj.path.length-1];
  document.getElementById('readout').innerHTML=`<tr><td>Anchor mid</td><td class=r>${mid.toFixed(2)}</td></tr><tr><td>Path @${H}d</td><td class=r>${lp.price.toFixed(2)}</td></tr><tr><td>95% @${H}d</td><td class=r>${b.low.toFixed(1)}–${b.high.toFixed(1)}</td></tr><tr><td>Implied</td><td class=r>${((mid/P0-1)*100).toFixed(1)}%</td></tr>`;
  // OU mean-reversion panel

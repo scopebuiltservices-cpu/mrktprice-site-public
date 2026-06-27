@@ -25,9 +25,9 @@ try:
 except Exception:
     _lineage=None
 try:
-    import options_gex as _ogex, eodhd_options as _eod, fmp_connector as _fmp, short_squeeze as _sqz, alpaca_options as _alp
+    import options_gex as _ogex, eodhd_options as _eod, fmp_connector as _fmp, short_squeeze as _sqz, alpaca_options as _alp, est_snapshot as _es
 except Exception:
-    _ogex=_eod=_fmp=_sqz=_alp=None
+    _ogex=_eod=_fmp=_sqz=_alp=_es=None
 
 SECTORS=["Technology","Financials","Health Care","Consumer Disc.","Communication",
          "Industrials","Consumer Staples","Energy","Utilities","Materials","Real Estate"]
@@ -1412,7 +1412,9 @@ def real_universe():
     #      CI ::warning:: lines, and stash a dataHealth block into the published JSON. ----
     import sys as _sys, os as _os
     _gcap=0; _fmp_try=_fmp_ok=_fmp_err=0; _eod_try=_eod_ok=_eod_err=0; _alp_ok=0; _errs=[]
-    _earn_ok=_dcf_ok=_ptgt_ok=0; _fmp_lim=None
+    _earn_ok=_dcf_ok=_ptgt_ok=_est_ok=0; _fmp_lim=None
+    _EST_HIST=_os.path.join(_os.path.dirname(_os.path.abspath(__file__)),"est_history.jsonl")   # accumulating consensus snapshots (committed)
+    _TODAY_ISO=__import__("datetime").date.today().isoformat()
     try:
         from ratelimit import Limiter as _Lim; _fmp_lim=_Lim("fmp")   # shared budget across valuation + premium pulls
     except Exception: _fmp_lim=None
@@ -1447,6 +1449,19 @@ def real_universe():
                     if _px.get("earn"): n["earn"]=_px["earn"]; _earn_ok+=1
                     if _px.get("dcf") is not None: n["dcf"]=_px["dcf"]; _dcf_ok+=1
                     if _px.get("ptgt"): n["ptgt"]=_px["ptgt"]; _ptgt_ok+=1
+                    if _px.get("est"):                               # forward consensus + accumulate revision history
+                        _ec=_px["est"]
+                        try:
+                            _es.record(_EST_HIST, n["t"], _TODAY_ISO, str(_ec.get("period") or ""), _ec.get("eps"), _ec.get("n"))
+                            _lastrep=None
+                            if n.get("earn") and n["earn"].get("q"):
+                                _qd=[x.get("d") for x in n["earn"]["q"] if x.get("d")]
+                                if _qd: _lastrep=max(_qd)
+                            _rev=_es.revision(_EST_HIST, n["t"], _lastrep, str(_ec.get("period") or "")) if _lastrep else None
+                            n.setdefault("earn",{})["estCons"]={"eps":_ec.get("eps"),"period":_ec.get("period"),"n":_ec.get("n"),"rev":_ec.get("rev")}
+                            if _rev: n["earn"]["estRev"]=_rev          # consensus drift since the last print (negative=cut, positive=raise)
+                            _est_ok+=1
+                        except Exception: pass
                 except Exception: pass
                 # derived premium signals — ONE source of truth reused by card/chart/map/scatter
                 _lastpx=(n.get("_cl") or [None])[-1]
@@ -1478,7 +1493,7 @@ def real_universe():
     _kf=bool(_os.environ.get("FMP_API_KEY","").strip()); _ke=bool(_os.environ.get("EODHD_API_KEY","").strip())
     _ka=bool(_os.environ.get("ALPACA_API_KEY_ID","").strip() and _os.environ.get("ALPACA_API_SECRET_KEY","").strip())
     _sys.stderr.write("ENRICH: FMP key=%s tried=%d ok=%d err=%d | EODHD key=%s tried=%d gex=%d err=%d | ALPACA key=%s bs=%d\n"%(_kf,_fmp_try,_fmp_ok,_fmp_err,_ke,_eod_try,_eod_ok,_eod_err,_ka,_alp_ok))
-    _sys.stderr.write("FMP PREMIUM: earnings=%d dcf=%d priceTarget=%d (Ultimate)\n"%(_earn_ok,_dcf_ok,_ptgt_ok))
+    _sys.stderr.write("FMP PREMIUM: earnings=%d dcf=%d priceTarget=%d estConsensus=%d (Ultimate)\n"%(_earn_ok,_dcf_ok,_ptgt_ok,_est_ok))
     for _e in _errs: _sys.stderr.write("  - %s\n"%_e)
     if _kf and not _fmp_live:
         _r=_fmp_probe.get("reason"); _m=_fmp_probe.get("message") or ""

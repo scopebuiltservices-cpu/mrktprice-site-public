@@ -216,6 +216,21 @@ def fetch_premium(ticker, sess=None, lim=None):
     if isinstance(pt, list) and pt:
         p0=pt[0]; tgt=_num(p0.get("targetConsensus") or p0.get("targetMedian"))
         if tgt: out["ptgt"]={"tgt":round(tgt,2),"high":_num(p0.get("targetHigh")),"low":_num(p0.get("targetLow"))}
+    # FORWARD ANALYST CONSENSUS (for the next FY) — the value the snapshot store accumulates over time
+    # so the ledger can show how consensus moved AFTER each print. FMP returns consensus by fiscal
+    # period; we pick the nearest FUTURE period as the forward estimate.
+    ae=g("analyst-estimates", period="annual", limit=6)
+    if isinstance(ae, list) and ae:
+        today=dt.date.today().isoformat()
+        rows=[e for e in ae if e.get("date")]
+        fut=sorted([e for e in rows if e.get("date","")>=today], key=lambda e:e["date"])
+        pick=fut[0] if fut else (sorted(rows,key=lambda e:e["date"])[-1] if rows else None)
+        if pick:
+            feps=_num(pick.get("epsAvg") or pick.get("estimatedEpsAvg") or pick.get("epsAvgEstimated"))
+            frev=_num(pick.get("revenueAvg") or pick.get("estimatedRevenueAvg"))
+            nan=_num(pick.get("numberAnalystsEstimatedEps") or pick.get("numberAnalystEstimatedEps") or pick.get("numAnalysts"))
+            if feps is not None:
+                out["est"]={"period":pick.get("date"),"eps":round(feps,4),"rev":frev,"n":(int(nan) if nan else None)}
     return out
 
 __all__=["fetch","probe_key","classify","parse_val","fetch_premium"]

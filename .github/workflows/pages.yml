@@ -23,7 +23,9 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "20 6 * * 1-6"
+    - cron: "20 6 * * 1-6"     # nightly EOD rebuild (~01:20-02:20 America/New_York)
+    - cron: "0 19 * * 1-5"     # 3pm ET intraday refresh during EDT (Mar-Nov)  -> 19:00 UTC
+    - cron: "0 20 * * 1-5"     # 3pm ET intraday refresh during EST (Nov-Mar)  -> 20:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -56,8 +58,17 @@ jobs:
         run: |
           need=false
           ev="${{ github.event_name }}"
-          if [ "$ev" = "schedule" ] || [ "$ev" = "workflow_dispatch" ]; then
+          if [ "$ev" = "workflow_dispatch" ]; then
             need=true
+          elif [ "$ev" = "schedule" ]; then
+            need=true
+            # Two intraday crons fire at 19:00 and 20:00 UTC; keep ONLY the one that lands on 15:00
+            # America/New_York so we get exactly ONE 3pm-ET refresh year-round (DST-correct).
+            uth=$(date -u +%H)
+            if [ "$uth" = "19" ] || [ "$uth" = "20" ]; then
+              eth=$(TZ='America/New_York' date +%H)
+              if [ "$eth" != "15" ]; then need=false; echo "::notice title=Intraday skip::cron at ${uth}:00 UTC = ${eth}:00 ET (not 3pm ET) — skipping the duplicate DST slot"; fi
+            fi
           else
             before="${{ github.event.before }}"
             if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ]; then
@@ -128,7 +139,7 @@ jobs:
         run: |
           git config user.name  "mrktprice-bot"
           git config user.email "bot@mrktprice.com"
-          git add -A marketmap.json xsection.json hist/ 2>/dev/null || true
+          git add -A marketmap.json xsection.json hist/ tools/market_map/est_history.jsonl 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "::notice::no data changes to commit"
           else

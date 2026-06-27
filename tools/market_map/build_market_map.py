@@ -1683,6 +1683,29 @@ def main():
         if isinstance(o,list): return [_finite(x) for x in o]
         if isinstance(o,dict): return {k:_finite(v) for k,v in o.items()}
         return o
+    # ---- FACTOR EVALUATION STACK (forward-IC weighted, BH-FDR gated, sign-aware) + REAL-RATE CURVE ----
+    try:
+        import os as _o2, sys as _s2, factor_pipeline as _fpipe, rate_real as _rr
+        _store=_o2.path.dirname(_o2.path.abspath(__file__))
+        _etf=set((nn.get("t") or "").upper() for nn in names if ("ETF" in (nn.get("idx") or []) or nn.get("etf")))
+        _fx=_fpipe.run(names, _store, is_etf=lambda t:(t in _etf))
+        for _k in ("factorWeights","factorMode","factorBreadth","factorIC","factorHistoryN"):
+            if _k in _fx: snap[_k]=_fx[_k]
+        _calc=_fx.get("calc") or {}
+        for _nn in names:
+            _cc=_calc.get((_nn.get("t") or "").upper())
+            if _cc: _nn["calc"]=_cc                                          # per-name velocity/accel/accumulation
+        try:
+            _ch=_rr.fetch_real_curve_history()
+            if _ch:
+                _cs=_rr.curve_state(_ch)
+                if _cs: snap["realCurve"]=_cs                                # Diebold-Li real L/S/C + dL/dS/dC
+        except Exception: pass
+        _s2.stderr.write("FACTOR STACK: mode=%s breadth=%s histN=%s curve=%s\n"%(_fx.get("factorMode"),_fx.get("factorBreadth"),_fx.get("factorHistoryN"),bool(snap.get("realCurve"))))
+    except Exception as _fe2:
+        try:
+            import sys as _s3; _s3.stderr.write("::warning::factor stack skipped: %s\n"%str(_fe2)[:160])
+        except Exception: pass
     snap.setdefault("schemaVersion","1.0")                                 # producer-stamped contract version (consumer version-gates)
     snap=_finite(snap)
     json.dump(snap,open(a.out,"w"),separators=(",",":"),allow_nan=False)   # allow_nan=False = hard guard: never emit invalid JSON

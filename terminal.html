@@ -2219,8 +2219,14 @@ function buildBullBearBoard(){
       zvel=z(S.map(function(s){return s.vel;})),zif=z(S.map(function(s){return s.iflow;}));
   var sigR=Math.sqrt(S.map(function(s){return s.r1m*s.r1m;}).reduce(function(x,y){return x+y;},0)/S.length)||1;   // realized 1m dispersion (calibration scale)
   var _cal=window.ALPHACALIB||null,_fit=!!(_cal&&_cal.mode==='fitted'&&_cal.coef!=null);
-  // composite edge: quality/momentum/flow factors + velocity (EMA-slope 1st derivative) + integral net-3m flow
-  S.forEach(function(s,i){s.alpha=0.28*zt[i]+0.20*zse[i]+0.12*zsh[i]+0.12*zop[i]+0.06*((zem[i]+zr[i])/2)+0.08*zvel[i]+0.05*zif[i]+0.03*zf[i];s.exp=_fit?(_cal.intercept+_cal.coef*s.alpha):(s.alpha*sigR);});
+  // composite edge: prefer SERVER-FITTED forward-IC/BH-FDR weights (factor_pipeline) when present; else fixed priors.
+  var _FW=(window.MMAP&&window.MMAP.factorMode==='fitted'&&window.MMAP.factorWeights)?window.MMAP.factorWeights:null;
+  var _wMode=_FW?'fitted':'priors';
+  S.forEach(function(s,i){
+    if(_FW){var zm={macro:zt[i],sector:zse[i],short:zsh[i],opp:zop[i],mom:zr[i],velocity:zvel[i],flow3m:zif[i],flow1m:zf[i],ema:zem[i]},a=0,ws=0;
+      for(var k in zm){var w=_FW[k];if(w!=null){a+=w*zm[k];ws+=Math.abs(w);}}s.alpha=ws>0?a/ws:0;}
+    else{s.alpha=0.28*zt[i]+0.20*zse[i]+0.12*zsh[i]+0.12*zop[i]+0.06*((zem[i]+zr[i])/2)+0.08*zvel[i]+0.05*zif[i]+0.03*zf[i];}
+    s.exp=_fit?(_cal.intercept+_cal.coef*s.alpha):(s.alpha*sigR);});
   // ---- IC + BH-FDR factor diagnostic: cross-sectional Spearman corr of each factor vs trailing 1m return;
   //      significance via normal approx z=|IC|*sqrt(N-1), Benjamini-Hochberg FDR at q=0.10; breadth = % significant ----
   var _N=S.length;
@@ -2270,7 +2276,8 @@ function buildBullBearBoard(){
     return '<div class="bbcol"><div class="bbh" style="background:'+bg+';color:'+c+'"><span>'+lab+'</span><span>'+arr.length+'</span></div>'+body+'</div>';}
   var h=css+'<div class="note" style="margin:4px 0"><b style="color:var(--gold)">BULL / BEAR — every company ranked by TOTAL expected 1‑month return</b> · today: 10Y '+(DIR.RATE>=0?'+':'')+DIR.RATE.toFixed(1)+' · Oil '+(DIR.OIL>=0?'+':'')+DIR.OIL.toFixed(1)+'% · USD '+(DIR.DXY>=0?'+':'')+DIR.DXY.toFixed(1)+'% · Risk '+(DIR.VIX>0?'OFF':'ON')+' · exp% = '+(_fit?('empirically fitted (coef '+_cal.coef+' · IC '+_cal.ic+' · n='+_cal.n+')'):('α × realized 1m dispersion '+sigR.toFixed(1)+'% · calibrating, n='+((_cal&&_cal.n)||0)))+'. <b>Total = idiosyncratic α‑edge + market‑beta drag</b>; split BULL (total ≥0) vs BEAR (&lt;0). Conviction z = α ÷ cross‑sectional σ(α): <b style="color:#e8c14a">HIGH |z|≥1.5</b> · <b style="color:#9ab4e0">MED ≥0.7</b> · LOW. Click a row to load. ETFs excluded. Research only.</div>';
   var icStrip=ics.map(function(o){var c=o.sig?(o.ic>=0?'#2ecc8f':'#ef5f4e'):'#69727f';return '<span style="color:'+c+'">'+o.name+' '+(o.ic>=0?'+':'')+o.ic.toFixed(2)+(o.sig?'★':'')+'</span>';}).join(' · ');
-  h+='<div class="note" style="font-size:9px;margin:0 0 5px">factor IC (Spearman vs trailing‑1m return · ★ = survives BH‑FDR q≤0.10): '+icStrip+' · <b>breadth '+(_breadth*100).toFixed(0)+'%</b>'+(_breadth<0.34?' <span style="color:#e0a13c">— LOW breadth: few factors significant, treat ranks as weak this regime</span>':'')+'. IC is a contemporaneous alignment diagnostic, not a predictive guarantee; live weights are fixed priors (no look‑ahead).</div>';
+  var _srvB=(window.MMAP&&window.MMAP.factorBreadth!=null)?window.MMAP.factorBreadth:null;
+  h+='<div class="note" style="font-size:9px;margin:0 0 5px"><b>weights: '+_wMode+'</b>'+(_wMode==='fitted'?' (server forward‑IC, BH‑FDR‑gated'+(_srvB!=null?', breadth '+(_srvB*100).toFixed(0)+'%':'')+')':' (fixed priors — fitted forward‑IC weights activate once the IC history matures)')+' · factor IC (Spearman vs trailing‑1m · ★ = BH‑FDR q≤0.10): '+icStrip+' · breadth '+(_breadth*100).toFixed(0)+'%'+(_breadth<0.34?' <span style="color:#e0a13c">— LOW: treat ranks as weak this regime</span>':'')+'. The strip is a contemporaneous diagnostic; the live weights above are the no‑look‑ahead engine output.</div>';
   h+='<div class="bbcols">'+colH(bull,true)+colH(bear,false)+'</div>';
   el.innerHTML=h;}
 (function(){var n=0,fetched=false;function build(){try{buildBullBearBoard();}catch(e){}}
@@ -2451,11 +2458,15 @@ function renderTriggers(){
   if(e&&n>=4&&px){var v1=(e[n-1]-e[n-2])/px*100,v2=(e[n-2]-e[n-3])/px*100;vel=v1;acc=v1-v2;}
   var obv=CUR.obv||[],obvTrend=null;if(obv.length>=11){var a0=obv[obv.length-1],b0=obv[obv.length-11];obvTrend=(b0!==0)?(a0-b0)/Math.abs(b0):(a0>0?1:(a0<0?-1:0));}
   var rsig=CUR.rvDaily||0,lastRet=(n>1)?(c[n-1]/c[n-2]-1):0,brk=rsig>0?lastRet/rsig:0;
-  var TH={rvol:2.0,z:2.0};
+  // OBV slope t-stat over last 8 bars (OLS slope significance) + MFI(14) — the PDF FlipLong gate set
+  var obvT=null;if(obv.length>=8){var _m=8,_ys=obv.slice(-_m),_mx=(_m-1)/2,_my=_ys.reduce(function(a,b){return a+b;},0)/_m,_sxx=0,_sxy=0;for(var _q=0;_q<_m;_q++){_sxx+=(_q-_mx)*(_q-_mx);_sxy+=(_q-_mx)*(_ys[_q]-_my);}var _sl=_sxx>0?_sxy/_sxx:0,_sse=0;for(var _q2=0;_q2<_m;_q2++){var _yh=_my+_sl*(_q2-_mx);_sse+=(_ys[_q2]-_yh)*(_ys[_q2]-_yh);}var _se=(_sxx>0&&_m>2)?Math.sqrt((_sse/(_m-2))/_sxx):0;obvT=_se>0?_sl/_se:0;}
+  var mfi=(CUR.mfi&&CUR.mfi[n-1]!=null)?CUR.mfi[n-1]:null;
+  var TH={rvol:2.0,z:2.0,obv:2.0};
   var pAbove=(vw!=null&&px>vw),pBelow=(vw!=null&&px<vw),rvolOK=(rvol!=null&&rvol>=TH.rvol),
-      zUp=(zlast!=null&&zlast>=TH.z),zDn=(zlast!=null&&zlast<=-TH.z),velUp=(vel!=null&&vel>0),velDn=(vel!=null&&vel<0);
-  var bullFire=pAbove&&rvolOK&&zUp&&velUp,bearFire=pBelow&&rvolOK&&zDn&&velDn;
-  var bullN=[pAbove,rvolOK,zUp,velUp].filter(Boolean).length,bearN=[pBelow,rvolOK,zDn,velDn].filter(Boolean).length;
+      zUp=(zlast!=null&&zlast>=TH.z),zDn=(zlast!=null&&zlast<=-TH.z),velUp=(vel!=null&&vel>0),velDn=(vel!=null&&vel<0),
+      obvUp=(obvT!=null&&obvT>=TH.obv),obvDn=(obvT!=null&&obvT<=-TH.obv);
+  var bullFire=pAbove&&rvolOK&&zUp&&obvUp,bearFire=pBelow&&rvolOK&&zDn&&obvDn;
+  var bullN=[pAbove,rvolOK,zUp,obvUp].filter(Boolean).length,bearN=[pBelow,rvolOK,zDn,obvDn].filter(Boolean).length;
   var verdict,vc;
   if(bullFire){verdict='▲ BULL TRIGGER FIRED';vc='#2ecc8f';}
   else if(bearFire){verdict='▼ BEAR TRIGGER FIRED';vc='#ef5f4e';}
@@ -2474,8 +2485,9 @@ function renderTriggers(){
     +cond((dir?pAbove:pBelow),'VWAP '+(dir?'reclaim price>VWAP':'loss price<VWAP'),(vw!=null?'$'+px.toFixed(2)+'/'+vw.toFixed(2):'—'),'cross')
     +cond(rvolOK,'relative volume',(rvol!=null?rvol.toFixed(2)+'x':'—'),'≥'+TH.rvol.toFixed(1)+'x')
     +cond((dir?zUp:zDn),'σ-displacement',(zlast!=null?(zlast>=0?'+':'')+zlast.toFixed(2)+'σ':'—'),(dir?'≥+':'≤−')+TH.z.toFixed(1)+'σ')
-    +cond((dir?velUp:velDn),'EMA velocity sign',(vel!=null?(vel>=0?'+':'')+vel.toFixed(2)+'%/d':'—'),(dir?'>0':'<0'))
-    +'<div style="font-size:8px;color:var(--faint,#646e7c);margin-top:4px">Fires when all four align. velocity=d(EMA21)/dt, acceleration=d²(EMA21)/dt², ∫flow=on-balance-volume integral over 10 sessions. Refreshes with the 15-min intraday feed when loaded; EOD otherwise. Research only — not a trade signal.</div></div>';
+    +cond((dir?obvUp:obvDn),'OBV slope t-stat',(obvT!=null?(obvT>=0?'+':'')+obvT.toFixed(2):'—'),(dir?'≥+':'≤−')+TH.obv.toFixed(1))
+    +'<div style="font-size:8px;color:var(--muted,#8a93a0);margin-top:3px">confirmations · EMA velocity '+(vel!=null?(vel>=0?'+':'')+vel.toFixed(2)+'%/d':'—')+' · MFI '+(mfi!=null?mfi.toFixed(0)+(mfi>=80?' (≥80 long-exhaustion)':mfi<=20?' (≤20 short-exhaustion)':''):'—')+' · breakout '+(brk>=0?'+':'')+brk.toFixed(2)+'σ</div>'
+    +'<div style="font-size:8px;color:var(--faint,#646e7c);margin-top:4px">Fires when all four align (price vs VWAP · RVOL≥2.0 · |σ-displacement|≥2.0 · OBV-slope |t|≥2.0). velocity=d(EMA21)/dt, acceleration=d²(EMA21)/dt², ∫flow=on-balance-volume integral over 10 sessions. Refreshes with the 15-min intraday feed when loaded; EOD otherwise. Research only — not a trade signal.</div></div>';
 }
 /* ===== PROJECTION CONE — ZOOM TILE: an oversized, high-contrast read of CUR.pj (central path +
    80/95 bands) with big horizon nodes (price + Δ% + date) and a metrics strip (P(up), expected

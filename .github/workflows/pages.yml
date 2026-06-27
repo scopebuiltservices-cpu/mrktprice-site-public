@@ -109,7 +109,15 @@ jobs:
             # coverage, quantile non-crossing, finite). A violation BLOCKS publish - never ship a payload
             # the consumer would have to render as no-call.
             python validate_payload.py /tmp/mmbuild/marketmap.json --min-names 30 || { echo "::error::contract violated - refusing to publish"; exit 1; }
+            # QA SIGN-OFF: final release gate — ties the freshly-built artifacts to a sha256 fingerprint of
+            # ALL engine source (provenance), and hard-gates universe size, freshness, non-sample source,
+            # quantile non-crossing, finite scores, and core coverage. A FAIL refuses the publish. The
+            # signed manifest is retained in the run log + shipped to _site/.build for audit.
+            python qa_signoff.py /tmp/mmbuild/marketmap.json --also /tmp/mmbuild/xsection.json \
+              --src-root . --min-names 30 --max-age-days 2 --min-core-cov 0.70 --schema-version 1.0 \
+              --out /tmp/mmbuild/qa-signoff.json || { echo "::error::QA sign-off FAILED - refusing to publish"; exit 1; }
             cp /tmp/mmbuild/marketmap.json "$GITHUB_WORKSPACE/marketmap.json"
+            mkdir -p "$GITHUB_WORKSPACE/.build" && cp /tmp/mmbuild/qa-signoff.json "$GITHUB_WORKSPACE/.build/qa-signoff.json" 2>/dev/null || true
             cp /tmp/mmbuild/xsection.json  "$GITHUB_WORKSPACE/xsection.json" 2>/dev/null || echo "::warning::xsection.json not produced this run"
             cd "$GITHUB_WORKSPACE"
             python tools/market_map/emit_static.py --universe marketmap.json --out . --hist --cap 250 || echo "::warning::history emit partial"
@@ -157,6 +165,7 @@ jobs:
           python build_reports.py || echo "::warning::reports index rebuild skipped"
           mkdir -p _site/reports
           for f in *.html *.js robots.txt sitemap.xml marketmap.json xsection.json; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
+          mkdir -p _site/.build && cp .build/qa-signoff.json _site/.build/ 2>/dev/null || true   # ship the signed QA manifest for audit
           cp -r reports/*.html _site/reports/ 2>/dev/null || true
           rm -f _site/reports/report-template.html
           cp -r hist _site/hist 2>/dev/null || true

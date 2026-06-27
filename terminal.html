@@ -2217,9 +2217,15 @@ function buildBullBearBoard(){
   var sigR=Math.sqrt(S.map(function(s){return s.r1m*s.r1m;}).reduce(function(x,y){return x+y;},0)/S.length)||1;   // realized 1m dispersion (calibration scale)
   var _cal=window.ALPHACALIB||null,_fit=!!(_cal&&_cal.mode==='fitted'&&_cal.coef!=null);
   S.forEach(function(s,i){s.alpha=0.35*zt[i]+0.25*zse[i]+0.15*zsh[i]+0.15*zop[i]+0.07*((zem[i]+zr[i])/2)+0.03*zf[i];s.exp=_fit?(_cal.intercept+_cal.coef*s.alpha):(s.alpha*sigR);});
-  var TH=0.5,bull=S.filter(function(s){return s.alpha>=TH;}).sort(function(a,b){return b.alpha-a.alpha;}),
-      bear=S.filter(function(s){return s.alpha<=-TH;}).sort(function(a,b){return a.alpha-b.alpha;}),
-      neut=S.filter(function(s){return Math.abs(s.alpha)<TH;}).sort(function(a,b){return b.alpha-a.alpha;});
+  // CONVICTION: standardize the composite edge cross-sectionally -> z = alpha / cross-sectional sd(alpha).
+  // Equation-deduced numeric thresholds: |z|>=1.5 HIGH, >=0.7 MED, else LOW. TOTAL expected 1-month
+  // return = idiosyncratic exp% (alpha-driven) + market-beta drag (beta x market move).
+  var aSd=Math.sqrt(S.reduce(function(x,s){return x+s.alpha*s.alpha;},0)/Math.max(1,S.length))||1;
+  S.forEach(function(s){s.zc=s.alpha/aSd;s.tot=s.exp+s.drag;s.conv=(Math.abs(s.zc)>=1.5?'HIGH':(Math.abs(s.zc)>=0.7?'MED':'LOW'));});
+  // EVERY company placed in exactly one column by TOTAL expected return (fixes the alpha-sign edge case):
+  // tot>=0 -> BULL, tot<0 -> BEAR. Ranked within each by total expected return.
+  var bull=S.filter(function(s){return s.tot>=0;}).sort(function(a,b){return b.tot-a.tot;}),
+      bear=S.filter(function(s){return s.tot<0;}).sort(function(a,b){return a.tot-b.tot;});
   var MOVE={RATE:DIR.RATE,OIL:DIR.OIL,DXY:DIR.DXY,VIX:DIR.VIX},MLAB={RATE:'10Y',OIL:'Oil',DXY:'USD',VIX:'Risk'};
   function tiles(s){var out='';['RATE','OIL','DXY','VIX'].forEach(function(k){var b=s.mb[k];if(b==null)return;var mv=MOVE[k],tw=b*mv,c=tw>0?'#2ecc8f':(tw<0?'#ef5f4e':'#8a93a3');
       out+='<span class="bt" style="border-color:'+c+'55"><b>'+MLAB[k]+'</b> β'+b.toFixed(2)+' <span style="color:'+c+'">'+(mv>=0?'+':'')+mv.toFixed(1)+'%'+(tw>0?' ▲':tw<0?' ▼':'')+'</span></span>';});
@@ -2227,22 +2233,27 @@ function buildBullBearBoard(){
       if(f.indexOf('copper')>=0){pm=DIR.COPPER;lab='Copper';}else if(f.indexOf('gold')>=0){pm=DIR.GOLD;lab='Gold';}else if(f.indexOf('gas')>=0){pm=DIR.NATGAS;lab='NatGas';}else return;
       if(pm==null||pm===0)return;var corr=dp.corr||0,tw=corr*pm,c=tw>0?'#2ecc8f':'#ef5f4e';
       out+='<span class="bt" style="border-color:'+c+'55"><b>'+lab+'</b> r'+corr.toFixed(2)+' <span style="color:'+c+'">'+(pm>=0?'+':'')+pm.toFixed(1)+'%'+(tw>0?' ▲':' ▼')+'</span></span>';});
-    return out||'<span class="bt" style="color:#69727f">no significant rate/commodity correlation</span>';}
-  function rowH(s,isBull){var col=isBull?'#2ecc8f':'#ef5f4e';
-    return '<div class="bbrow"><div class="bbhd"><span class="bbt">'+s.t+'</span><span class="bbsec">'+s.sec+'</span>'+
-      '<span class="bbexp" style="color:'+col+'">'+(s.exp>=0?'+':'')+s.exp.toFixed(1)+'% exp</span>'+
-      '<span class="bbdrag">mkt '+(s.drag>=0?'+':'')+s.drag.toFixed(1)+'% (β'+s.beta.toFixed(2)+')</span>'+
-      '<span class="bba">α'+(s.alpha>=0?'+':'')+s.alpha.toFixed(2)+'</span></div><div class="bbtiles">'+tiles(s)+'</div></div>';}
-  var css='<style>#bullBearBoard .bbrow{border-top:1px solid var(--line);padding:5px 2px}#bullBearBoard .bbhd{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}'+
-    '#bullBearBoard .bbt{font-weight:800;font-size:13px}#bullBearBoard .bbsec{font-size:9px;color:var(--muted)}#bullBearBoard .bbexp{font-weight:700;font-size:12px}'+
-    '#bullBearBoard .bbdrag{font-size:9px;color:#8a93a3}#bullBearBoard .bba{font-size:9px;color:#69727f;margin-left:auto}'+
+    return out||'<span class="bt" style="color:#69727f">no significant macro correlation</span>';}
+  function rowH(s,isBull,rank){var col=isBull?'#2ecc8f':'#ef5f4e';var cc=(s.conv==='HIGH'?'#e8c14a':s.conv==='MED'?'#9ab4e0':'#69727f');
+    return '<div class="bbrow" onclick="try{load(\''+s.t+'\',DATA[\''+s.t+'\'])}catch(e){}" title="load '+s.t+'"><div class="bbhd">'+
+      '<span class="bbrk">'+rank+'</span><span class="bbt">'+s.t+'</span><span class="bbsec">'+s.sec+'</span>'+
+      '<span class="bbconv" style="color:'+cc+';border-color:'+cc+'66">'+s.conv+'</span>'+
+      '<span class="bbexp" style="color:'+col+'">'+(s.tot>=0?'+':'')+s.tot.toFixed(1)+'% tot</span></div>'+
+      '<div class="bbsub">edge α'+(s.alpha>=0?'+':'')+s.alpha.toFixed(2)+' (z'+(s.zc>=0?'+':'')+s.zc.toFixed(1)+') · idio '+(s.exp>=0?'+':'')+s.exp.toFixed(1)+'% · mkt '+(s.drag>=0?'+':'')+s.drag.toFixed(1)+'% β'+s.beta.toFixed(2)+'</div>'+
+      '<div class="bbtiles">'+tiles(s)+'</div></div>';}
+  var css='<style>#bullBearBoard .bbcols{display:flex;gap:10px;align-items:flex-start}#bullBearBoard .bbcol{flex:1;min-width:0;border:1px solid var(--line);border-radius:9px;overflow:hidden}'+
+    '#bullBearBoard .bbrow{border-top:1px solid var(--line);padding:5px 7px;cursor:pointer}#bullBearBoard .bbrow:hover{background:rgba(255,255,255,.03)}'+
+    '#bullBearBoard .bbhd{display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}#bullBearBoard .bbrk{font-size:9px;color:#69727f;min-width:16px}'+
+    '#bullBearBoard .bbt{font-weight:800;font-size:13px}#bullBearBoard .bbsec{font-size:9px;color:var(--muted)}#bullBearBoard .bbexp{font-weight:700;font-size:12px;margin-left:auto}'+
+    '#bullBearBoard .bbsub{font-size:9px;color:#8a93a3;margin-top:1px}#bullBearBoard .bba{font-size:9px;color:#69727f}#bullBearBoard .bbconv{font-size:8px;font-weight:700;border:1px solid;border-radius:4px;padding:0 4px}'+
     '#bullBearBoard .bbtiles{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}#bullBearBoard .bt{font-size:9px;border:1px solid var(--line);border-radius:4px;padding:0 4px;color:#cfd8e3}'+
-    '#bullBearBoard .bbh{font-weight:800;font-size:12px;padding:4px 6px;border-radius:6px;margin:8px 0 2px;display:flex;justify-content:space-between}</style>';
-  var h=css+'<div class="note" style="margin:4px 0"><b style="color:var(--gold)">BULL / BEAR — α (market‑neutral edge)</b> · today: 10Y '+(DIR.RATE>=0?'+':'')+DIR.RATE.toFixed(1)+' · Oil '+(DIR.OIL>=0?'+':'')+DIR.OIL.toFixed(1)+'% · USD '+(DIR.DXY>=0?'+':'')+DIR.DXY.toFixed(1)+'% · Risk '+(DIR.VIX>0?'OFF':'ON')+' · exp% = '+(_fit?('empirically fitted (coef '+_cal.coef+' · IC '+_cal.ic+' · n='+_cal.n+')'):('α × realized 1m dispersion '+sigR.toFixed(1)+'% · calibrating, n='+((_cal&&_cal.n)||0)))+'. Self‑recomputed from live data; ETFs excluded. Research only.</div>';
-  h+='<div class="bbh" style="background:rgba(239,95,78,.12);color:#ef5f4e"><span>▼ BEAR — real headwind (α≤−0.5σ)</span><span>'+bear.length+'</span></div>';bear.forEach(function(s){h+=rowH(s,false);});
-  h+='<div class="bbh" style="background:rgba(46,204,143,.12);color:#2ecc8f"><span>▲ BULL — real tailwind (α≥+0.5σ)</span><span>'+bull.length+'</span></div>';bull.forEach(function(s){h+=rowH(s,true);});
-  h+='<div class="bbh" style="background:rgba(138,147,163,.12);color:#9aa7b4"><span>◆ NO‑EDGE — beta‑driven (down only with the tape)</span><span>'+neut.length+'</span></div>';
-  h+='<div style="font-size:10px;color:#69727f;padding:3px 2px;line-height:1.5">'+neut.map(function(s){return '<b style="color:#9aa7b4">'+s.t+'</b> '+(s.exp>=0?'+':'')+s.exp.toFixed(1)+'%';}).join(' · ')+'</div>';
+    '#bullBearBoard .bbh{font-weight:800;font-size:12px;padding:5px 7px;display:flex;justify-content:space-between;align-items:center}'+
+    '@media(max-width:680px){#bullBearBoard .bbcols{flex-direction:column}}</style>';
+  function colH(arr,isBull){var c=isBull?'#2ecc8f':'#ef5f4e',bg=isBull?'rgba(46,204,143,.12)':'rgba(239,95,78,.12)',lab=isBull?'▲ BULL — tailwind':'▼ BEAR — headwind';
+    var body=arr.map(function(s,i){return rowH(s,isBull,i+1);}).join('')||'<div class="bbrow" style="color:#69727f">none</div>';
+    return '<div class="bbcol"><div class="bbh" style="background:'+bg+';color:'+c+'"><span>'+lab+'</span><span>'+arr.length+'</span></div>'+body+'</div>';}
+  var h=css+'<div class="note" style="margin:4px 0"><b style="color:var(--gold)">BULL / BEAR — every company ranked by TOTAL expected 1‑month return</b> · today: 10Y '+(DIR.RATE>=0?'+':'')+DIR.RATE.toFixed(1)+' · Oil '+(DIR.OIL>=0?'+':'')+DIR.OIL.toFixed(1)+'% · USD '+(DIR.DXY>=0?'+':'')+DIR.DXY.toFixed(1)+'% · Risk '+(DIR.VIX>0?'OFF':'ON')+' · exp% = '+(_fit?('empirically fitted (coef '+_cal.coef+' · IC '+_cal.ic+' · n='+_cal.n+')'):('α × realized 1m dispersion '+sigR.toFixed(1)+'% · calibrating, n='+((_cal&&_cal.n)||0)))+'. <b>Total = idiosyncratic α‑edge + market‑beta drag</b>; split BULL (total ≥0) vs BEAR (&lt;0). Conviction z = α ÷ cross‑sectional σ(α): <b style="color:#e8c14a">HIGH |z|≥1.5</b> · <b style="color:#9ab4e0">MED ≥0.7</b> · LOW. Click a row to load. ETFs excluded. Research only.</div>';
+  h+='<div class="bbcols">'+colH(bull,true)+colH(bear,false)+'</div>';
   el.innerHTML=h;}
 (function(){var n=0,fetched=false;function build(){try{buildBullBearBoard();}catch(e){}}
   function go(){if(window.MMAP&&window.MMAP.names&&window.MMAP.names.length){

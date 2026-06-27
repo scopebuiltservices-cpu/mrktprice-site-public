@@ -199,6 +199,13 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
    <label><input type="checkbox" id="tHARQ" onchange="try{redraw();}catch(_e){}renderHARQ();" title="Drive the projection-cone σ from the HARQ+regime next-session vol forecast (conformal-calibrated; overrides Vol src while checked)">HARQ+regime RV forecast</label>
    <span class="note" id="asym" style="margin:0"></span></div></div>
  <canvas id="cv2"></canvas><div class="readout" id="ro"></div>
+ <div id="coneZoomWrap" style="margin:8px 9px 0">
+   <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+     <span style="font-size:13px;font-weight:800;letter-spacing:.04em;color:var(--ink,#eef3f8)">PROJECTION CONE — ZOOM</span>
+     <span id="coneZoomVerdict" style="font-size:12px;font-weight:700">—</span></div>
+   <canvas id="coneZoomCv" style="width:100%;height:320px;display:block;background:var(--panel,#10141b);border:1px solid var(--line,#2a2f3a);border-radius:10px"></canvas>
+   <div id="coneZoomMetrics" style="display:flex;flex-wrap:wrap;gap:7px;margin-top:7px"></div>
+   <div id="coneZoomNote" style="font-size:9px;color:var(--faint,#646e7c);margin-top:5px"></div></div>
  <div id="coneInstrument"></div>
  <div id="coneContext"></div>
  <div id="harqPanel"></div>

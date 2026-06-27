@@ -97,6 +97,18 @@ def realized_quarticity(subrets):
         return 0.0
     return (m / 3.0) * sum(r ** 4 for r in subrets)
 
+def rq_band_inflation(rv, rq, cap=2.5):
+    """Measurement-noise multiplier (>=1) for the per-window band, from the Barndorff-Nielsen-Shephard
+    result that Var(RV) ~ (2/M)*IQ, i.e. the RELATIVE standard error of RV scales with sqrt(RQ)/RV.
+    When RV is itself noisily measured (high RQ/RV^2, the HARQ insight), the vol-scaled band should
+    widen. Returns 1.0 when RQ/RV are unavailable so the band degrades gracefully to the plain estimate.
+    Calibrated so a clean Gaussian bar (RQ/RV^2 ~ 1) gives ~1.0 and noisy bars inflate up to `cap`."""
+    if not (rv and rv > 0) or not (rq and rq > 0):
+        return 1.0
+    rel_se = (rq ** 0.5) / rv          # relative standard error of the variance estimate
+    infl = 1.0 + max(0.0, rel_se - 1.0)
+    return max(1.0, min(cap, infl))
+
 def block_bootstrap_se(rets, block=4, B=200, seed=12345):
     """Moving-block bootstrap SE of the drift (mean) estimate. Unlike the iid rolling SE, it
     resamples contiguous blocks, so SERIAL DEPENDENCE in the 15-min returns inflates the SE
@@ -244,16 +256,26 @@ def audit_coverage(events, alpha=0.90):
         return sum(1 for e in evs if e["lo"] <= e["realized"] <= e["hi"]) / len(evs)
     n = len(events)
     gated = [e for e in events if e.get("gatePass")]
+    # Frontier p.10: predictive content is REGIME-DEPENDENT, so audit coverage conditionally, not only
+    # in aggregate. Split the realized hit-rate by the calm (p_HV<=rho) vs hot (p_HV>rho) regime.
+    calm = [e for e in events if e.get("hot") is False]
+    hot = [e for e in events if e.get("hot") is True]
     rw = [e for e in events if e.get("rwLo") is not None]
+    vb = [e for e in events if e.get("volLo") is not None]   # volatility-only band baseline
     bias = sum(e["realized"] - e["center"] for e in events) / n
+    # avgBandWidth is mean(hi-lo) in LOG-price units == the spec's band-sharpness mean log(U/L).
     width = sum(e["hi"] - e["lo"] for e in events) / n
     da = sum(1 for e in events if (e["center"] >= e["pT"]) == (e["realized"] >= e["pT"])) / n
     rwcov = (sum(1 for e in rw if e["rwLo"] <= e["realized"] <= e["rwHi"]) / len(rw)) if rw else None
+    vbcov = (sum(1 for e in vb if e["volLo"] <= e["realized"] <= e["volHi"]) / len(vb)) if vb else None
     return {"n": n, "target": alpha, "coverage": round(cov(events), 3),
             "condCoverageGated": round(cov(gated), 3) if gated else None,
-            "bias": round(bias, 6), "avgBandWidth": round(width, 6),
+            "condCoverageCalm": round(cov(calm), 3) if calm else None,
+            "condCoverageHot": round(cov(hot), 3) if hot else None,
+            "bias": round(bias, 6), "avgBandWidth": round(width, 6), "sharpness": round(width, 6),
             "directionalAccuracy": round(da, 3),
-            "rwBaselineCoverage": round(rwcov, 3) if rwcov is not None else None}
+            "rwBaselineCoverage": round(rwcov, 3) if rwcov is not None else None,
+            "volBaselineCoverage": round(vbcov, 3) if vbcov is not None else None}
 
 
 # --------------------------------------------------------------------------- orchestration
@@ -309,7 +331,11 @@ def evaluate(bars, hist_bars, params=None):
     seCons = conservative_se(rr, muT)
     if not math.isfinite(seCons):
         seCons = seT
-    sigmas = [sig1] * P["H"]; ses = [seCons] * P["H"]
+    # RQ-aware widening (Frontier/HARQ): if the trigger-window variance is itself noisily measured
+    # (high RQ/RV^2), inflate the per-window dispersion so the parametric band is not falsely tight.
+    rqT = bars[T].get("rq"); rvT = bars[T].get("rv")
+    rqInfl = rq_band_inflation(rvT, rqT)
+    sigmas = [sig1 * rqInfl] * P["H"]; ses = [seCons] * P["H"]
     plo, phi = parametric_band(logpath, sigmas, ses)
     clo, chi = conformal_band(logpath, (params or {}).get("resid_by_h", {}), P["alpha"])
     # prefer conformal where available, else parametric (more-conservative spirit)
@@ -317,7 +343,7 @@ def evaluate(bars, hist_bars, params=None):
     hi = [chi[h] if chi[h] == chi[h] else phi[h] for h in range(len(logpath))]
     dec = decision(p_T, hi, lo, P["H"] - 1, P["cost"], gates[T]["G"])
     res.update({
-        "T_bucket": bars[T]["bucket"], "muT": muT, "seT": seT, "seConsT": seCons,
+        "T_bucket": bars[T]["bucket"], "muT": muT, "seT": seT, "seConsT": seCons, "rqInfl": round(rqInfl, 3),
         "centerLog": logpath, "center": [math.exp(x) for x in logpath],
         "loLog": lo, "hiLog": hi, "lo": [math.exp(x) for x in lo], "hi": [math.exp(x) for x in hi],
         "bandSource": ["conformal" if clo[h] == clo[h] else "parametric" for h in range(len(logpath))],

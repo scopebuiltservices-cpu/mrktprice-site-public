@@ -108,5 +108,33 @@ _mu2 = sum(_iid) / len(_iid)
 ok("bootstrap ~ rolling on iid (no false inflation)", ie.block_bootstrap_se(_iid) / ie.rolling_se(_iid, _mu2) < 1.4)
 ok("bootstrap SE deterministic (seeded)", ie.block_bootstrap_se(_ar) == ie.block_bootstrap_se(_ar))
 
+
+# 11) Frontier gap-diff: RQ-aware band widening + regime-split / vol-only conditional coverage
+ok("rq_infl no-data -> 1.0", ie.rq_band_inflation(None, None) == 1.0 and ie.rq_band_inflation(0.01, 0) == 1.0)
+ok("rq_infl clean bar ~ 1.0", abs(ie.rq_band_inflation(0.01, 0.0001) - 1.0) < 1e-9)        # sqrt(RQ)/RV = 1
+ok("rq_infl noisy bar > 1", ie.rq_band_inflation(0.01, 0.0004) > 1.0)                        # sqrt(RQ)/RV = 2
+ok("rq_infl capped at 2.5", ie.rq_band_inflation(0.001, 1.0) <= 2.5 + 1e-9)
+ok("rq_infl monotone in RQ", ie.rq_band_inflation(0.01, 0.0009) > ie.rq_band_inflation(0.01, 0.0004))
+_ev2 = [{"lo": -1.0, "hi": 1.0, "center": 0.0, "realized": 0.0, "pT": 0.0, "gatePass": True,
+         "hot": False, "volLo": -0.2, "volHi": 0.2} for _ in range(10)] + \
+       [{"lo": -1.0, "hi": 1.0, "center": 0.0, "realized": 5.0, "pT": 0.0, "gatePass": False,
+         "hot": True, "volLo": -0.2, "volHi": 0.2} for _ in range(10)]
+_ac = ie.audit_coverage(_ev2, 0.90)
+ok("regime split: calm coverage 1.0", _ac["condCoverageCalm"] == 1.0, _ac["condCoverageCalm"])
+ok("regime split: hot coverage 0.0", _ac["condCoverageHot"] == 0.0, _ac["condCoverageHot"])
+ok("vol-only baseline coverage 0.5", abs(_ac["volBaselineCoverage"] - 0.5) < 1e-9, _ac["volBaselineCoverage"])
+ok("sharpness alias == avgBandWidth", _ac["sharpness"] == _ac["avgBandWidth"])
+_full_q = synth(26)
+for _b in _full_q:
+    _b["rq"] = (_b["rv"] ** 2)                      # clean: RQ = RV^2 -> sqrt(RQ)/RV = 1 -> infl 1.0
+_clean = ie.evaluate(_full_q, hist2, {"K": 3, "warm": 4})
+for _b in _full_q:
+    _b["rq"] = (_b["rv"] ** 2) * 9.0               # noisy: sqrt(RQ)/RV = 3 -> infl > 1
+_noisy = ie.evaluate(_full_q, hist2, {"K": 3, "warm": 4})
+if _clean.get("triggered") and _noisy.get("triggered"):
+    ok("noisy-RQ reports rqInfl > 1", _noisy["rqInfl"] > 1.0, _noisy["rqInfl"])
+    ok("clean-RQ rqInfl ~ 1", abs(_clean["rqInfl"] - 1.0) < 1e-6, _clean["rqInfl"])
+    ok("noisy-RQ band wider than clean", (_noisy["hi"][-1] - _noisy["lo"][-1]) > (_clean["hi"][-1] - _clean["lo"][-1]))
+
 print("\n" + ("ALL INTRADAY ENGINE TESTS PASSED" if not FAILS else "%d FAILED: %s" % (len(FAILS), FAILS)))
 raise SystemExit(1 if FAILS else 0)

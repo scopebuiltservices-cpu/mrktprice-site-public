@@ -4086,4 +4086,50 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
  window.buildRigorPanel=buildRigorPanel;
  if(typeof window.buildScanner==='function'){var _bs=window.buildScanner; window.buildScanner=function(){var r=_bs.apply(this,arguments); buildRigorPanel(); return r;};}
 })();
+</script><script>
+/* PROJECTION TRACKER — reconciles the model's next-day projection against the live session in one tile row:
+   previous/last close (anchor), projected next-day target + %, live price + % vs prev close, and the
+   REMAINING expected move to the target ($ and %), plus a progress bar (share of the projected move
+   already realized). Reads CUR.pj (daily projection: path[0]=t+1) + CUR.last + the live 15-min buffer.
+   Research only; auto-detects live-session vs next-session mode. */
+(function(){
+ function tile(lab,val,col,sub){return '<div style="flex:1;min-width:96px;background:var(--panel2,#111721);border:1px solid var(--line);border-radius:6px;padding:5px 8px"><div style="font-size:8px;letter-spacing:.4px;color:var(--muted);text-transform:uppercase">'+lab+'</div><div style="font-size:14px;font-weight:800;color:'+(col||'var(--ink)')+'">'+val+'</div>'+(sub?'<div style="font-size:8px;color:var(--muted)">'+sub+'</div>':'')+'</div>';}
+ function compute(){
+   if(typeof CUR!=='object'||!CUR||!CUR.pj||!CUR.pj.path||!CUR.pj.path.length||!(CUR.last>0))return null;
+   var C0=CUR.last, T=CUR.pj.path[0].price;            /* anchor (prev/last close) + next-day (t+1) model target */
+   if(!(T>0))return null;
+   var projPct=T/C0-1, sym=(CUR.sym||'').toUpperCase(), live=null;
+   try{var key='mrkt.intra.'+sym+'.'+(new Date().toISOString().slice(0,10)), b=JSON.parse(localStorage.getItem(key)||'[]');
+       if(b.length){var r=b[b.length-1]; if(r&&r.price>0)live=r.price;}}catch(e){}
+   var sessionLive=(live!=null), P=sessionLive?live:C0, livePct=P/C0-1, remVal=T-P, remPct=remVal/C0;
+   var progress=(projPct!==0)?livePct/projPct:null, lo=null,hi=null;
+   try{var b95=CUR.pj.p95&&CUR.pj.p95[0]; if(b95){lo=b95.low;hi=b95.high;}}catch(e){}
+   return {sym:sym,C0:C0,T:T,projPct:projPct,P:P,livePct:livePct,remVal:remVal,remPct:remPct,progress:progress,sessionLive:sessionLive,lo:lo,hi:hi};
+ }
+ function render(){
+   try{
+     var R=compute(), host=document.getElementById('projTracker');
+     if(!R){if(host)host.innerHTML='';return;}
+     if(!host){var an=document.getElementById('intradayEodPanel')||document.getElementById('intradayStrip')||document.getElementById('intradayProjPanel')||document.querySelector('.chartcard');
+       if(!an||!an.parentNode)return; host=document.createElement('div'); host.id='projTracker'; host.style.margin='6px 0'; an.parentNode.insertBefore(host,an);}
+     var pc=function(x){return x>=0?'#2ecc8f':'#ef5f4e';}, pct=function(x){return (x>=0?'+':'')+(x*100).toFixed(2)+'%';}, d=function(x){return '$'+x.toFixed(2);};
+     var prog=(R.progress==null)?null:Math.max(-0.5,Math.min(1.5,R.progress));
+     var progTxt=(R.progress==null)?'—':((R.progress*100).toFixed(0)+'% of projected move realized');
+     var fill=(prog==null)?0:Math.max(0,Math.min(1,prog))*100;
+     var bar=(R.sessionLive)?('<div style="height:6px;background:var(--panel2,#111721);border-radius:3px;overflow:hidden;margin-top:4px"><div style="height:100%;width:'+fill.toFixed(0)+'%;background:'+pc(R.projPct)+'"></div></div>'):'';
+     var bandSub=(R.lo!=null&&R.hi!=null)?('95%: '+d(R.lo)+'–'+d(R.hi)):'next-day model';
+     host.innerHTML='<div style="font-size:10px;color:var(--muted);margin:4px 0"><b style="color:var(--gold)">PROJECTION TRACKER</b> · '+R.sym+' · '+(R.sessionLive?'LIVE session':'next session (market closed)')+' · research only</div>'
+       +'<div style="display:flex;gap:5px;flex-wrap:wrap">'
+       +tile('Prev close',d(R.C0),'var(--ink)','anchor')
+       +tile('Projected next-day',d(R.T),pc(R.projPct),pct(R.projPct)+' · '+bandSub)
+       +tile('Live'+(R.sessionLive?'':' (last)'),d(R.P),pc(R.livePct),(R.sessionLive?'live ':'close ')+pct(R.livePct)+' vs prev')
+       +tile('Remaining to target',(R.remVal>=0?'+':'')+d(R.remVal).replace('$-','$'),pc(R.remVal),pct(R.remPct)+' left · '+progTxt)
+       +'</div>'+bar;
+   }catch(e){}
+ }
+ window.renderProjTracker=render;
+ if(document.readyState!=='loading')setTimeout(render,1400);else document.addEventListener('DOMContentLoaded',function(){setTimeout(render,1400);});
+ setInterval(render,15000);
+ if(typeof window.load==='function'){var _ld=window.load; window.load=function(){var r=_ld.apply(this,arguments); setTimeout(render,80); return r;};}
+})();
 </script></body></html>

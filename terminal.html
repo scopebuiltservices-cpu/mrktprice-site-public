@@ -2203,7 +2203,7 @@ function _bbMacroDir(names){
 }
 function buildBullBearBoard(){
   var el=document.getElementById('bullBearBoard');if(!el)return;
-  var names=(window.MMAP&&window.MMAP.names)||[];if(!names.length)return;
+  var names=(window.MMAP&&window.MMAP.names&&window.MMAP.names.length)?window.MMAP.names:(window.MMAP?Object.keys(window.MMAP).map(function(k){return window.MMAP[k];}).filter(function(v){return v&&v.t;}):[]);  if(!names.length){el.innerHTML='<div class="note" style="font-size:10px;color:var(--muted)">Bull/Bear board — loading universe (marketmap.json)…</div>';return;}
   var DIR=_bbMacroDir(names),TILT={OIL:DIR.OIL,DXY:DIR.DXY,RATE:DIR.RATE,VIX:DIR.VIX},S=[];
   names.forEach(function(n){var t=(n.t||'').toUpperCase();if(!t||_isETF(t))return;
     var mb=n.mb||{},beta=(n.beta!=null?n.beta:1),tilt=0;for(var k in TILT)tilt+=(mb[k]||0)*TILT[k];
@@ -2280,8 +2280,8 @@ function buildBullBearBoard(){
   h+='<div class="note" style="font-size:9px;margin:0 0 5px"><b>weights: '+_wMode+'</b>'+(_wMode==='fitted'?' (server forward‑IC, BH‑FDR‑gated'+(_srvB!=null?', breadth '+(_srvB*100).toFixed(0)+'%':'')+')':' (fixed priors — fitted forward‑IC weights activate once the IC history matures)')+' · factor IC (Spearman vs trailing‑1m · ★ = BH‑FDR q≤0.10): '+icStrip+' · breadth '+(_breadth*100).toFixed(0)+'%'+(_breadth<0.34?' <span style="color:#e0a13c">— LOW: treat ranks as weak this regime</span>':'')+'. The strip is a contemporaneous diagnostic; the live weights above are the no‑look‑ahead engine output.</div>';
   h+='<div class="bbcols">'+colH(bull,true)+colH(bear,false)+'</div>';
   el.innerHTML=h;}
-(function(){var n=0,fetched=false;function build(){try{buildBullBearBoard();}catch(e){}}
-  function go(){if(window.MMAP&&window.MMAP.names&&window.MMAP.names.length){
+(function(){var n=0,fetched=false;function build(){try{buildBullBearBoard();}catch(e){var _el=document.getElementById('bullBearBoard');if(_el&&!_el.querySelector('.bbcols'))_el.innerHTML='<div class="note" style="font-size:10px;color:var(--fail,#e05a4e)">Bull/Bear board error: '+((e&&e.message)||e)+'</div>';}}
+  function go(){var _nm=(window.MMAP&&window.MMAP.names&&window.MMAP.names.length)?window.MMAP.names:(window.MMAP?Object.keys(window.MMAP).filter(function(k){return window.MMAP[k]&&window.MMAP[k].t;}):[]);  if(window.MMAP&&_nm.length){
     if(!fetched){fetched=true;fetch('alpha_calib.json',{cache:'no-cache'}).then(function(r){return r.ok?r.json():null;}).then(function(c){if(c)window.ALPHACALIB=c;}).catch(function(){}).then(build);}else build();return;}
     if(n++<50)setTimeout(go,400);}
   if(document.readyState!=='loading')go();else document.addEventListener('DOMContentLoaded',go);})();

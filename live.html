@@ -117,7 +117,6 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
   <div class="ctrl"><label>EMA</label><select id="emaSel"><option value="best">best (auto)</option><option value="5">5d</option><option value="8">8d</option><option value="13">13d</option><option value="21">21d</option><option value="all">compare</option></select></div>
   <div class="ctrl"><label>RVOL alert</label><input id="rvolTh" type="number" step="0.1" value="2"></div>
   <div class="ctrl"><label>DD alert%</label><input id="ddTh" type="number" value="-15"></div>
-  <div class="ctrl"><label>&nbsp;</label><div class="dz" id="dz">Drop CSV</div></div>
  </div></header>
 <div id="decision"></div>
 <div id="oppstrip"></div>
@@ -1676,12 +1675,7 @@ document.getElementById('alertClose').onclick=()=>document.getElementById('alert
 ['fState','fMR','fMin'].forEach(id=>{const e=document.getElementById(id);if(e)e.addEventListener('input',()=>{SCANFILT={state:document.getElementById('fState').value,mr:document.getElementById('fMR').checked,min:+document.getElementById('fMin').value||0};buildScanner();});});
 ['mid','low','high','hz','cf','lev','volsrc','tReg','tVwap','tEMA','tSig','tScen','tVP','indA','indB','rvolTh','ddTh','emaSel','anchorSel'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{redraw();}));
 window.addEventListener('resize',()=>{draw();drawCone();});try{const _ro=new ResizeObserver(()=>{draw();drawCone();});_ro.observe(document.querySelector('.chartcard'));}catch(e){}
-const dz=document.getElementById('dz');dz.onclick=()=>{const i=document.createElement('input');i.type='file';i.accept='.csv';i.onchange=e=>readCSV(e.target.files[0]);i.click();};
-['dragover','dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.toggle('drag',ev==='dragover');if(ev==='drop')readCSV(e.dataTransfer.files[0]);}));
-function readCSV(f){if(!f)return;const rd=new FileReader();rd.onload=()=>{const L=rd.result.split(/\r?\n/).filter(x=>x.trim());const h=L[0].toLowerCase().split(',');const di=h.indexOf('date'),ci=h.indexOf('close'),vi=h.indexOf('volume');if(di<0||ci<0){alert('need date,close columns');return;}
- const dates=[],closes=[],vols=[];for(let i=1;i<L.length;i++){const p=L[i].split(',');const c=parseFloat(p[ci]);if(isFinite(c)){dates.push(p[di]);closes.push(c);vols.push(vi>=0?parseFloat(p[vi])||0:0);}}
- const sym=(f.name.split('_')[0]||'CSV').toUpperCase();if(![...sel.options].some(o=>o.value===sym)){const o=document.createElement('option');o.value=sym;o.textContent=sym;sel.appendChild(o);}
- DATA[sym]={dates:dates.slice(-252),closes:closes.slice(-252),volumes:vols.slice(-252)};SCANROWS=null;sel.value=sym;load(sym,DATA[sym]);if(typeof updateStrip==='function')updateStrip();};rd.readAsText(f);}
+/* CSV upload removed — live.html depends only on data pulls (data service: yfinance->Stooq), never user files. */
 sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnimationFrame(()=>{draw();drawCone();});
 </script>
 <script>

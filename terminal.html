@@ -118,7 +118,6 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
   <div class="ctrl"><label>RVOL alert</label><input id="rvolTh" type="number" step="0.1" value="2"></div>
   <div class="ctrl"><label>DD alert%</label><input id="ddTh" type="number" value="-15"></div>
   <div class="ctrl"><label>Data sources</label><button type="button" id="srcBtn" class="ghost" style="padding:5px 8px">⚙ Sources</button></div>
-  <div class="ctrl" id="csvCtrl" style="display:none"><label>CSV (opt-in)</label><div class="dz" id="dz">Drop CSV</div></div>
  </div></header>
 <div id="decision"></div>
 <div id="premcard"></div>
@@ -438,10 +437,10 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
 })();
 </script><script>
 /* ===== Data Sources control — choose what feeds the analysis; per-source toggle + live status =====
-   Defaults: FMP Ultimate + EODHD (paid) ON, free pulls ON, CSV upload OFF (opt-in). Each source shows
-   an ACTIVE dot (green = live data, amber = key set but no data, grey = off/unused) and the last-updated
-   date from marketmap.json. State persists in localStorage. MrktPrice runs on OUR pulls + cache by
-   default; CSV is opt-in and only replaces the chart for the symbol you upload. */
+   Defaults: FMP Ultimate + EODHD (paid) ON, free pulls ON. Each source shows an ACTIVE dot (green =
+   live data, amber = key set but no data, grey = off/unused) and the last-updated date from
+   marketmap.json. State persists in localStorage. ALL ticker outputs depend on live data pulls + the
+   nightly cache — there is no CSV/user-file ingestion anywhere. */
 (function(){
   var SRC=[
     {id:'fmp',name:'FMP Ultimate',kind:'paid API',def:true},
@@ -452,8 +451,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
     {id:'twelve',name:'TwelveData (intraday σ)',kind:'free API',def:true},
     {id:'finnhub',name:'Finnhub (beat)',kind:'free API',def:false},
     {id:'sec',name:'SEC EDGAR',kind:'free gov',def:true},
-    {id:'cache',name:'Static cache (IndexedDB)',kind:'cache',def:true},
-    {id:'csv',name:'CSV upload (your files)',kind:'your file',def:false}
+    {id:'cache',name:'Static cache (IndexedDB)',kind:'cache',def:true}
   ];
   function dflt(id){var s=SRC.filter(function(x){return x.id===id;})[0];return s?s.def:false;}
   function enabled(id){try{var v=localStorage.getItem('mrkt.src.'+id);return v==null?dflt(id):v==='1';}catch(e){return dflt(id);}}
@@ -469,11 +467,9 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
     if(id==='finnhub')return ((cov.beatOk||0)>0)?g:off;
     if(id==='sec')return (((cov.insiderOk||0)+(cov.shortOk||0)+(cov.instOk||0))>0)?g:a;
     if(id==='cache')return g;
-    if(id==='csv')return enabled('csv')?['#6aa0ff','on']:off;
     return off;
   }
   function applyEffect(id,on){
-    if(id==='csv'){var c=document.getElementById('csvCtrl');if(c)c.style.display=on?'':'none';window.CSV_ENABLED=on;}
     if(id==='fmp'){['macroComplexBoard','fundValuation'].forEach(function(eid){var e=document.getElementById(eid);if(e)e.style.display=on?'':'none';});}
     try{document.body.classList.toggle('srcoff-'+id,!on);}catch(e){}
   }
@@ -497,9 +493,9 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
         +'<span style="font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--faint,#646e7c)">Direct pulls</span>'
         +'<label style="font-size:11px;color:var(--ink,#eef3f8)">Primary price source <select id="srcPrimary" style="font-size:11px;padding:2px 4px"><option value="fmp">FMP Ultimate</option><option value="yf">yfinance</option><option value="auto">Auto (FMP&rarr;yf&rarr;Stooq)</option></select></label>'
         +'<button type="button" id="srcPull" class="ghost" style="font-size:11px;padding:4px 8px">&#8635; Pull fresh now</button>'
-        +'<button type="button" id="srcReset" class="ghost" style="font-size:11px;padding:4px 8px;color:#e0a13c" title="Restore defaults (FMP+EOD on, CSV off) and clear any saved CSV/source state">&#8634; Reset sources / clear CSV</button>'
+        +'<button type="button" id="srcReset" class="ghost" style="font-size:11px;padding:4px 8px;color:#e0a13c" title="Restore default sources (FMP+EOD on) and clear saved source state">&#8634; Reset sources</button>'
       +'</div>'
-      +'<div style="font-size:9px;color:var(--faint,#646e7c);margin-top:6px">Default: <b>FMP Ultimate + EODHD</b> (paid) and free fallbacks. CSV upload is <b>opt-in</b> — your file replaces the chart for that symbol only.</div>';
+      +'<div style="font-size:9px;color:var(--faint,#646e7c);margin-top:6px">Default: <b>FMP Ultimate + EODHD</b> (paid) and free fallbacks. All ticker outputs come from live data pulls + the nightly cache — no CSV/user-file ingestion.</div>';
     Array.prototype.forEach.call(p.querySelectorAll('input[data-src]'),function(cb){
       cb.addEventListener('change',function(){var id=cb.getAttribute('data-src');setEnabled(id,cb.checked);applyEffect(id,cb.checked);
         var dot=cb.parentNode.children[1];if(dot){var st=status(id,dh,cov,idx,live);dot.style.background=st[0];}});
@@ -511,8 +507,8 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
     if(pull)pull.addEventListener('click',function(){pull.textContent='&#8635; pulling…';try{location.reload();}catch(e){}});
     var rst=document.getElementById('srcReset');
     if(rst)rst.addEventListener('click',function(){try{
-      var ks=[];for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&(k.indexOf('mrkt.src.')===0||k==='mrkt.primarySource'||k.toLowerCase().indexOf('csv')>=0))ks.push(k);}
-      ks.forEach(function(k){localStorage.removeItem(k);});window.CSV_ENABLED=false;window.MRKT_PRIMARY='fmp';
+      var ks=[];for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&(k.indexOf('mrkt.src.')===0||k==='mrkt.primarySource'||k.toLowerCase().indexOf('csv')>=0))ks.push(k);}   // also purge any legacy csv.* keys
+      ks.forEach(function(k){localStorage.removeItem(k);});window.MRKT_PRIMARY='fmp';
     }catch(e){}location.reload();});
   }
   function init(){

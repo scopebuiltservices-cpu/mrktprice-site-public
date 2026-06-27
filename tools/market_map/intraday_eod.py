@@ -131,4 +131,47 @@ def eod_outlook(bars, ctx):
     }
 
 
-__all__ = ["intraday_rv", "tod_volume_profile", "volume_pace", "eod_close_projection", "eod_outlook", "BUCKETS_PER_DAY"]
+def tod_variance_profile(n=BUCKETS_PER_DAY):
+    """U-shaped intraday VARIANCE weights (open/close carry more variance than midday), summing to 1."""
+    w = [1 + 2.6 * (math.exp(-i / 4) + math.exp(-(n - 1 - i) / 4)) for i in range(n)]
+    s = sum(w) or 1.0
+    return [x / s for x in w]
+
+
+def _phi(x):
+    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+
+def close_vs_now(o, prev_close=None, total=BUCKETS_PER_DAY):
+    """100x projClose-vs-priceNow: shrink the noisy intraday drift toward a martingale by the fraction of
+    the session elapsed, size the remaining band off the U-SHAPED time-of-day variance budget, and turn
+    the gap into probabilities: P(close>now), P(green vs prev close), P(close>VWAP), expected remaining
+    move, and completion (share of the projected day-move already realized). `o` = eod_outlook output."""
+    if not o:
+        return None
+    elapsed = o["elapsed"]; rem = max(0, o["remaining"]); now = o["priceNow"]; vwap = o["vwap"]
+    sig = o.get("sigmaPerBucket") or 0.0
+    sess_frac = (elapsed / total) if total > 0 else 0.0
+    drift_shrunk = (o.get("driftPerBucket") or 0.0) * sess_frac
+    vprof = tod_variance_profile(total)
+    rem_var_frac = sum(vprof[i] for i in range(elapsed, total)) if elapsed < total else 0.0
+    band_sig = math.sqrt(max(sig * sig * total * max(rem_var_frac, 0.0), 0.0))
+    p_now = math.log(now) if now > 0 else 0.0
+    p_mean = p_now + drift_shrunk * rem
+    close_mean = math.exp(p_mean); z = 1.6448536
+    p_up = _phi((p_mean - p_now) / band_sig) if band_sig > 0 else (1.0 if p_mean >= p_now else 0.0)
+    p_green = (None if not (prev_close and prev_close > 0) else
+               (_phi((p_mean - math.log(prev_close)) / band_sig) if band_sig > 0 else (1.0 if close_mean >= prev_close else 0.0)))
+    p_vwap = (None if not (vwap and vwap > 0) else
+              (_phi((p_mean - math.log(vwap)) / band_sig) if band_sig > 0 else (1.0 if close_mean >= vwap else 0.0)))
+    now_move = (now / prev_close - 1) if (prev_close and prev_close > 0) else None
+    proj_move = (close_mean / prev_close - 1) if (prev_close and prev_close > 0) else None
+    return {"sessFrac": sess_frac, "remVarFrac": rem_var_frac, "driftShrunk": drift_shrunk, "bandSig": band_sig,
+            "closeMean": close_mean, "lo": math.exp(p_mean - z * band_sig), "hi": math.exp(p_mean + z * band_sig),
+            "pUp": p_up, "pGreen": p_green, "pVwap": p_vwap,
+            "expRem": close_mean - now, "expRemPct": (close_mean / now - 1) if now > 0 else None,
+            "nowMovePct": now_move, "projMovePct": proj_move,
+            "completion": (now_move / proj_move) if (proj_move not in (None, 0) and now_move is not None) else None}
+
+
+__all__ = ["intraday_rv", "tod_volume_profile", "tod_variance_profile", "volume_pace", "eod_close_projection", "eod_outlook", "close_vs_now", "BUCKETS_PER_DAY"]

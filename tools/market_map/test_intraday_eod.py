@@ -55,5 +55,36 @@ ok("projected RVOL ~1x on a typical-volume day", abs(o["projRVOL"] - 1.0) < 0.1,
 ok("RV vs HV ratio present", o["rvVsHv"] is not None)
 ok("no look-ahead (uses only elapsed bars)", ie.eod_outlook(bars[:5], ctx)["elapsed"] == 5)
 
+# ===== close_vs_now: 100x projClose-vs-priceNow math =====
+cvn = ie.close_vs_now(o, prev_close=ctx["openPx"])
+ok("U-shape variance profile sums to 1", abs(sum(ie.tod_variance_profile(26)) - 1.0) < 1e-12)
+ok("U-shape: close bucket carries more variance than midday", ie.tod_variance_profile(26)[-1] > ie.tod_variance_profile(26)[13])
+ok("probabilities all in [0,1]", all(0.0 <= q <= 1.0 for q in (cvn["pUp"], cvn["pGreen"], cvn["pVwap"])), cvn)
+ok("drift shrunk toward 0 (|shrunk| <= |raw|)", abs(cvn["driftShrunk"]) <= abs(o["driftPerBucket"]) + 1e-12)
+ok("remaining variance fraction in (0,1]", 0 < cvn["remVarFrac"] <= 1.0, cvn["remVarFrac"])
+ok("band lo <= closeMean <= hi", cvn["lo"] <= cvn["closeMean"] <= cvn["hi"], cvn)
+ok("expected remaining move = closeMean - now", abs(cvn["expRem"] - (cvn["closeMean"] - o["priceNow"])) < 1e-9)
+# NOISY session (real residual variance) -> strict band + interior probabilities
+import random as _rng
+_r = _rng.Random(11); _p = 100.0; _nb = []
+for _k in range(13):
+    _ret = 0.0008 + 0.006 * _r.gauss(0, 1); _p *= math.exp(_ret)
+    _nb.append({"bucket": _k, "ret": _ret, "vol": 1.0, "p": math.log(_p), "price": _p})
+_no = ie.eod_outlook(_nb, {"openPx": 100.0, "totalBuckets": 26})
+_nc = ie.close_vs_now(_no, prev_close=100.0)
+ok("noisy: band strictly brackets close (lo < mean < hi)", _nc["lo"] < _nc["closeMean"] < _nc["hi"], _nc)
+ok("noisy: P(close>now) strictly in (0,1)", 0.0 < _nc["pUp"] < 1.0, _nc["pUp"])
+ok("noisy: bandSig > 0", _nc["bandSig"] > 0, _nc["bandSig"])
+# planted strong up-drift -> projected close above now, P(up) high
+up = [{"ret": 0.004, "vol": 1.0, "price": 100 * (1.004 ** i)} for i in range(1, 14)]
+up = [dict(b, p=math.log(b["price"])) for b in up]
+ou = ie.eod_outlook(up, {"openPx": up[0]["price"], "totalBuckets": 26})
+cu = ie.close_vs_now(ou, prev_close=up[0]["price"] / 1.004)
+ok("up-drift -> projected close above now", cu["closeMean"] > ou["priceNow"], cu)
+# end-of-day -> band collapses, close == now
+oe = ie.eod_outlook([dict(b, p=math.log(b["price"])) for b in [{"ret": 0.0, "vol": 1, "price": 100}] * 26], {"totalBuckets": 26})
+ce = ie.close_vs_now(oe, prev_close=100)
+ok("end-of-day: no remaining variance, close == now", abs(ce["closeMean"] - oe["priceNow"]) < 1e-9 and ce["bandSig"] == 0, ce)
+
 print("\n" + ("ALL INTRADAY-EOD TESTS PASSED" if not F else "%d FAILED: %s" % (len(F), F)))
 raise SystemExit(1 if F else 0)

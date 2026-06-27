@@ -4132,4 +4132,86 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
  setInterval(render,15000);
  if(typeof window.load==='function'){var _ld=window.load; window.load=function(){var r=_ld.apply(this,arguments); setTimeout(render,80); return r;};}
 })();
+</script><script>
+/* INTRADAY -> CLOSE timeline: a single SVG that shows the realized 15-min path, the projection CONE to
+   the close (U-shaped variance band), prev-close / VWAP reference lines, and clearly-labelled NOW vs
+   PROJECTED-CLOSE markers with %s, plus a probability strip (P green, P>now, expected remaining,
+   completion). Makes projClose-vs-priceNow legible at a glance. Reads the live buffer + MrktIntradayEOD
+   (eodOutlook + closeVsNow) + CUR.last. Research only. */
+(function(){
+ function gather(){
+   if(!window.MrktIntradayEOD||typeof CUR!=='object'||!CUR||!CUR.sym||!(CUR.last>0))return null;
+   var sym=(CUR.sym||'').toUpperCase(), buf=[];
+   try{buf=JSON.parse(localStorage.getItem('mrkt.intra.'+sym+'.'+(new Date().toISOString().slice(0,10)))||'[]');}catch(e){}
+   if(buf.length<2)return {err:'waiting for live 15-min bars (market hours)'};
+   var bars=buf.map(function(r,i){var pr=(r.price>0?r.price:1);return {bucket:i,ret:(r.r||0),vol:(r.rvol>0?r.rvol:1),price:pr,p:Math.log(pr)};});
+   var hv=null;try{hv=(CUR.garch&&CUR.garch.annVol)||CUR.rvAnn||null;}catch(e){}
+   var o=window.MrktIntradayEOD.eodOutlook(bars,{avgDailyVol:26,dailyHV:hv,openPx:bars[0].price,totalBuckets:26});
+   if(!o)return null;
+   var cv=window.MrktIntradayEOD.closeVsNow(o,CUR.last,26);
+   return {o:o,cv:cv,bars:bars,prevClose:CUR.last,sym:sym,total:26};
+ }
+ function svg(R){
+   var o=R.o,cv=R.cv,tot=R.total,e=o.elapsed,prev=R.prevClose,vwap=o.vwap,now=o.priceNow;
+   var W=520,H=132,padL=46,padR=66,padT=12,padB=22, z=1.6448536, pNow=Math.log(now);
+   var coneLo=[],coneHi=[],coneMid=[];
+   for(var j=e-1;j<tot;j++){var span=(tot-1-(e-1))||1, f=(j-(e-1))/span, mid=Math.exp(pNow+cv.driftShrunk*(j-(e-1))), half=cv.bandSig*Math.sqrt(Math.max(f,0));
+     coneMid.push([j,mid]); coneLo.push([j,Math.exp(Math.log(mid)-z*half)]); coneHi.push([j,Math.exp(Math.log(mid)+z*half)]);}
+   var vals=[].concat(R.bars.map(function(b){return b.price;}),coneLo.map(function(c){return c[1];}),coneHi.map(function(c){return c[1];}),[prev,vwap,now]);
+   var ymin=Math.min.apply(null,vals),ymax=Math.max.apply(null,vals),pad=(ymax-ymin)*0.08||1; ymin-=pad; ymax+=pad;
+   var xOf=function(i){return padL+i/(tot-1)*(W-padL-padR);}, yOf=function(v){return padT+(1-(v-ymin)/(ymax-ymin))*(H-padT-padB);};
+   var pc=function(x){return x>=0?'#2ecc8f':'#ef5f4e';}, pct=function(x){return (x>=0?'+':'')+(x*100).toFixed(2)+'%';};
+   var live=(now/prev-1), proj=(cv.closeMean/prev-1), upCol=pc(live);
+   var s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="max-width:560px;display:block">';
+   // reference lines
+   function hline(v,col,dash,lab){if(!(v>0))return '';var y=yOf(v).toFixed(1);return '<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'" stroke="'+col+'" stroke-width="1"'+(dash?' stroke-dasharray="3,3"':'')+'/><text x="2" y="'+(+y+3)+'" fill="'+col+'" font-size="8">'+lab+'</text>';}
+   s+=hline(prev,'#5b6675',false,'prev $'+prev.toFixed(2));
+   s+=hline(vwap,'#6f93c4',true,'VWAP $'+vwap.toFixed(2));
+   // cone band polygon (lo forward + hi backward)
+   var poly=coneHi.map(function(c){return xOf(c[0]).toFixed(1)+','+yOf(c[1]).toFixed(1);}).concat(coneLo.slice().reverse().map(function(c){return xOf(c[0]).toFixed(1)+','+yOf(c[1]).toFixed(1);})).join(' ');
+   s+='<polygon points="'+poly+'" fill="'+upCol+'" fill-opacity="0.12" stroke="none"/>';
+   // projection mean (dashed)
+   s+='<polyline points="'+coneMid.map(function(c){return xOf(c[0]).toFixed(1)+','+yOf(c[1]).toFixed(1);}).join(' ')+'" fill="none" stroke="'+upCol+'" stroke-width="1.3" stroke-dasharray="4,3"/>';
+   // realized path (solid)
+   s+='<polyline points="'+R.bars.map(function(b){return xOf(b.bucket).toFixed(1)+','+yOf(b.price).toFixed(1);}).join(' ')+'" fill="none" stroke="'+upCol+'" stroke-width="1.8"/>';
+   // markers
+   var nx=xOf(e-1),ny=yOf(now),cx=xOf(tot-1),cy=yOf(cv.closeMean);
+   s+='<line x1="'+nx.toFixed(1)+'" y1="'+padT+'" x2="'+nx.toFixed(1)+'" y2="'+(H-padB)+'" stroke="#3a4350" stroke-width="0.6" stroke-dasharray="2,2"/>';
+   s+='<circle cx="'+nx.toFixed(1)+'" cy="'+ny.toFixed(1)+'" r="3.2" fill="'+upCol+'"/>';
+   s+='<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="3.2" fill="none" stroke="'+pc(proj)+'" stroke-width="1.5"/>';
+   s+='<text x="'+(nx-2).toFixed(1)+'" y="'+(ny-6).toFixed(1)+'" fill="'+upCol+'" font-size="9" font-weight="700" text-anchor="end">now $'+now.toFixed(2)+' '+pct(live)+'</text>';
+   s+='<text x="'+(W-padR+3)+'" y="'+(cy+3).toFixed(1)+'" fill="'+pc(proj)+'" font-size="9" font-weight="700">close $'+cv.closeMean.toFixed(2)+'</text>';
+   s+='<text x="'+(W-padR+3)+'" y="'+(cy+13).toFixed(1)+'" fill="'+pc(proj)+'" font-size="8">'+pct(proj)+' · band $'+cv.lo.toFixed(2)+'-$'+cv.hi.toFixed(2)+'</text>';
+   // x ticks
+   s+='<text x="'+padL+'" y="'+(H-6)+'" fill="#646e7c" font-size="8">open</text>';
+   s+='<text x="'+nx.toFixed(1)+'" y="'+(H-6)+'" fill="#646e7c" font-size="8" text-anchor="middle">now</text>';
+   s+='<text x="'+(W-padR)+'" y="'+(H-6)+'" fill="#646e7c" font-size="8" text-anchor="end">close</text>';
+   s+='</svg>';
+   return s;
+ }
+ function strip(R){
+   var cv=R.cv,pc=function(x){return x>=0?'#2ecc8f':'#ef5f4e';},P=function(x){return x==null?'-':(x*100).toFixed(0)+'%';},pct=function(x){return x==null?'-':((x>=0?'+':'')+(x*100).toFixed(2)+'%');};
+   function t(l,v,c,sub){return '<div style="flex:1;min-width:86px;background:var(--panel2,#111721);border:1px solid var(--line);border-radius:6px;padding:4px 7px"><div style="font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px">'+l+'</div><div style="font-size:13px;font-weight:800;color:'+(c||'var(--ink)')+'">'+v+'</div>'+(sub?'<div style="font-size:8px;color:var(--muted)">'+sub+'</div>':'')+'</div>';}
+   return '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px">'
+     +t('P(green day)',P(cv.pGreen),pc((cv.pGreen||0.5)-0.5),'vs prev close')
+     +t('P(close &gt; now)',P(cv.pUp),pc((cv.pUp||0.5)-0.5),'remaining drift')
+     +t('Exp. remaining','$'+(cv.expRem>=0?'+':'')+cv.expRem.toFixed(2),pc(cv.expRem),pct(cv.expRemPct)+' into close')
+     +t('Completion',(cv.completion==null?'-':(cv.completion*100).toFixed(0)+'%'),'var(--ink)','of projected day-move')
+     +'</div>';
+ }
+ function render(){
+   try{
+     var R=gather(), host=document.getElementById('eodTimeline');
+     if(!host){var an=document.getElementById('intradayEodPanel')||document.getElementById('projTracker')||document.getElementById('intradayStrip')||document.querySelector('.chartcard');
+       if(!an||!an.parentNode)return; host=document.createElement('div'); host.id='eodTimeline'; host.style.margin='6px 0'; an.parentNode.insertBefore(host, an.nextSibling);}
+     if(!R){host.innerHTML='';return;}
+     if(R.err){host.innerHTML='<div class="note" style="font-size:10px"><b style="color:var(--gold)">INTRADAY -> CLOSE</b> — '+R.err+'</div>';return;}
+     host.innerHTML='<div style="font-size:10px;color:var(--muted);margin:4px 0"><b style="color:var(--gold)">INTRADAY -> CLOSE</b> · '+R.sym+' · '+R.o.elapsed+'/'+R.total+' bars · '+(R.cv.sessFrac*100).toFixed(0)+'% of session · research only</div>'+svg(R)+strip(R);
+   }catch(e){}
+ }
+ window.renderEodTimeline=render;
+ if(document.readyState!=='loading')setTimeout(render,1600);else document.addEventListener('DOMContentLoaded',function(){setTimeout(render,1600);});
+ setInterval(render,15000);
+ if(typeof window.load==='function'){var _l=window.load; window.load=function(){var r=_l.apply(this,arguments); setTimeout(render,90); return r;};}
+})();
 </script></body></html>

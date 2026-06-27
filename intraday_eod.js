@@ -66,7 +66,36 @@
       driftPerBucket: drift, sigmaPerBucket: sig
     };
   }
-  var API = { intradayRV: intradayRV, todVolumeProfile: todVolumeProfile, volumePace: volumePace,
+  function _erf(x){var s=x<0?-1:1;x=Math.abs(x);var t=1/(1+0.3275911*x);
+    var y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);return s*y;}
+  function _Phi(x){return 0.5*(1+_erf(x/Math.SQRT2));}
+  function todVarianceProfile(n){n=n||BPD;var w=[];
+    for(var i=0;i<n;i++){var edge=Math.exp(-i/4)+Math.exp(-(n-1-i)/4);w.push(1+2.6*edge);}
+    var s=w.reduce(function(a,b){return a+b;},0);return w.map(function(x){return x/s;});}
+  /* 100x projClose-vs-priceNow: shrink the noisy intraday drift toward a martingale by the fraction of the
+     session elapsed (early reads get less trust), size the remaining band off the U-SHAPED time-of-day
+     variance budget (the close carries more variance than midday), and turn the gap into PROBABILITIES:
+     P(close>now), P(green day vs prevClose), P(close>VWAP), the expected remaining move, and how much of
+     the projected day-move is already done. o = eodOutlook(...) output. No look-ahead. */
+  function closeVsNow(o, prevClose, total){
+    if(!o)return null; total=total||BPD;
+    var elapsed=o.elapsed, rem=Math.max(0,o.remaining), now=o.priceNow, vwap=o.vwap, sig=o.sigmaPerBucket||0;
+    var sessFrac=total>0?elapsed/total:0, driftShrunk=(o.driftPerBucket||0)*sessFrac;
+    var vprof=todVarianceProfile(total), remVarFrac=0; for(var i=elapsed;i<total;i++)remVarFrac+=(vprof[i]||0);
+    var bandSig=Math.sqrt(Math.max(sig*sig*total*Math.max(remVarFrac,0),0));
+    var pNow=now>0?Math.log(now):0, pMean=pNow+driftShrunk*rem, closeMean=Math.exp(pMean), z=1.6448536;
+    var pUp=bandSig>0?_Phi((pMean-pNow)/bandSig):(pMean>=pNow?1:0);
+    var pGreen=(prevClose>0)?(bandSig>0?_Phi((pMean-Math.log(prevClose))/bandSig):(closeMean>=prevClose?1:0)):null;
+    var pVwap=(vwap>0)?(bandSig>0?_Phi((pMean-Math.log(vwap))/bandSig):(closeMean>=vwap?1:0)):null;
+    var nowMove=(prevClose>0)?now/prevClose-1:null, projMove=(prevClose>0)?closeMean/prevClose-1:null;
+    return {sessFrac:sessFrac, remVarFrac:remVarFrac, driftShrunk:driftShrunk, bandSig:bandSig,
+      closeMean:closeMean, lo:Math.exp(pMean-z*bandSig), hi:Math.exp(pMean+z*bandSig),
+      pUp:pUp, pGreen:pGreen, pVwap:pVwap,
+      expRem:closeMean-now, expRemPct:(now>0?closeMean/now-1:null),
+      nowMovePct:nowMove, projMovePct:projMove,
+      completion:(projMove&&projMove!==0&&nowMove!=null)?nowMove/projMove:null};
+  }
+  var API = { intradayRV: intradayRV, todVolumeProfile: todVolumeProfile, volumePace: volumePace, todVarianceProfile: todVarianceProfile, closeVsNow: closeVsNow,
     eodCloseProjection: eodCloseProjection, eodOutlook: eodOutlook, BUCKETS_PER_DAY: BPD };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.MrktIntradayEOD = API;

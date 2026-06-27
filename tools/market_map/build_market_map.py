@@ -604,6 +604,18 @@ def build(names,mkt,ff,macro=None):
         n["hl"]=half_life(cl) if (cl and len(cl)>25) else None
         n["vr"]=variance_ratio(cl) if (cl and len(cl)>=20) else None
         n["jump"]=jump_ratio(cl) if (cl and len(cl)>=9) else None
+        # Quarterly-timeline analyst metrics (verified quarterly_timeline.py): drawdown depth + recovery + downside vol
+        try:
+            import quarterly_timeline as _qt
+            if cl and len(cl) > 30:
+                _ddq = _qt.drawdowns(cl); n["maxDD"] = round(_ddq["maxDD"] * 100, 1)
+                _eps = _ddq.get("episodes") or []
+                n["ddRec"] = (_eps[-1].get("recoveryDays") if (_eps and _eps[-1].get("recoveryDays") is not None) else None)
+                _lr = _qt.log_returns(cl)
+                if len(_lr) > 5:
+                    n["dvol"] = round(_qt.downside_vol(_lr) * 100, 1)
+        except Exception:
+            pass
         _pv=parkinson_vol(hi,lo) if (hi and lo) else None
         n["pvol"]=round(_pv*math.sqrt(252)*100,1) if _pv else None      # annualized Parkinson vol %
         vr=n["vr"]

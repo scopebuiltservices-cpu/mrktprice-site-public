@@ -1476,7 +1476,8 @@ def real_universe():
                 if len(_errs)<8: _errs.append("ALPACA %s: %s"%(n["t"], str(e)[:80]))
             _gcap+=1
     _kf=bool(_os.environ.get("FMP_API_KEY","").strip()); _ke=bool(_os.environ.get("EODHD_API_KEY","").strip())
-    _sys.stderr.write("ENRICH: FMP key=%s tried=%d ok=%d err=%d | EODHD key=%s tried=%d gex=%d err=%d\n"%(_kf,_fmp_try,_fmp_ok,_fmp_err,_ke,_eod_try,_eod_ok,_eod_err))
+    _ka=bool(_os.environ.get("ALPACA_API_KEY_ID","").strip() and _os.environ.get("ALPACA_API_SECRET_KEY","").strip())
+    _sys.stderr.write("ENRICH: FMP key=%s tried=%d ok=%d err=%d | EODHD key=%s tried=%d gex=%d err=%d | ALPACA key=%s bs=%d\n"%(_kf,_fmp_try,_fmp_ok,_fmp_err,_ke,_eod_try,_eod_ok,_eod_err,_ka,_alp_ok))
     _sys.stderr.write("FMP PREMIUM: earnings=%d dcf=%d priceTarget=%d (Ultimate)\n"%(_earn_ok,_dcf_ok,_ptgt_ok))
     for _e in _errs: _sys.stderr.write("  - %s\n"%_e)
     if _kf and not _fmp_live:

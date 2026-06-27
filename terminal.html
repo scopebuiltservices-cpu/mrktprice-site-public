@@ -206,6 +206,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
    <canvas id="coneZoomCv" style="width:100%;height:320px;display:block;background:var(--panel,#10141b);border:1px solid var(--line,#2a2f3a);border-radius:10px"></canvas>
    <div id="coneZoomMetrics" style="display:flex;flex-wrap:wrap;gap:7px;margin-top:7px"></div>
    <div id="coneZoomNote" style="font-size:9px;color:var(--faint,#646e7c);margin-top:5px"></div></div>
+ <div id="trigPanel" style="margin:8px 9px 0"></div>
  <div id="coneInstrument"></div>
  <div id="coneContext"></div>
  <div id="harqPanel"></div>
@@ -2214,10 +2215,24 @@ function buildBullBearBoard(){
   if(!S.length){el.innerHTML='<div class="note">Bull/Bear board — universe not loaded.</div>';return;}
   function z(a){var m=a.reduce(function(x,y){return x+y;},0)/a.length,sd=Math.sqrt(a.reduce(function(x,y){return x+(y-m)*(y-m);},0)/Math.max(1,a.length-1))||1;return a.map(function(x){return (x-m)/sd;});}
   var zt=z(S.map(function(s){return s.tilt;})),zse=z(S.map(function(s){return s.sector;})),zsh=z(S.map(function(s){return s.short;})),
-      zop=z(S.map(function(s){return s.opp;})),zem=z(S.map(function(s){return s.ema;})),zr=z(S.map(function(s){return s.r1m;})),zf=z(S.map(function(s){return s.flow;}));
+      zop=z(S.map(function(s){return s.opp;})),zem=z(S.map(function(s){return s.ema;})),zr=z(S.map(function(s){return s.r1m;})),zf=z(S.map(function(s){return s.flow;})),
+      zvel=z(S.map(function(s){return s.vel;})),zif=z(S.map(function(s){return s.iflow;}));
   var sigR=Math.sqrt(S.map(function(s){return s.r1m*s.r1m;}).reduce(function(x,y){return x+y;},0)/S.length)||1;   // realized 1m dispersion (calibration scale)
   var _cal=window.ALPHACALIB||null,_fit=!!(_cal&&_cal.mode==='fitted'&&_cal.coef!=null);
-  S.forEach(function(s,i){s.alpha=0.35*zt[i]+0.25*zse[i]+0.15*zsh[i]+0.15*zop[i]+0.07*((zem[i]+zr[i])/2)+0.03*zf[i];s.exp=_fit?(_cal.intercept+_cal.coef*s.alpha):(s.alpha*sigR);});
+  // composite edge: quality/momentum/flow factors + velocity (EMA-slope 1st derivative) + integral net-3m flow
+  S.forEach(function(s,i){s.alpha=0.28*zt[i]+0.20*zse[i]+0.12*zsh[i]+0.12*zop[i]+0.06*((zem[i]+zr[i])/2)+0.08*zvel[i]+0.05*zif[i]+0.03*zf[i];s.exp=_fit?(_cal.intercept+_cal.coef*s.alpha):(s.alpha*sigR);});
+  // ---- IC + BH-FDR factor diagnostic: cross-sectional Spearman corr of each factor vs trailing 1m return;
+  //      significance via normal approx z=|IC|*sqrt(N-1), Benjamini-Hochberg FDR at q=0.10; breadth = % significant ----
+  var _N=S.length;
+  function _rank(a){var ix=a.map(function(v,i){return [v,i];}).sort(function(x,y){return x[0]-y[0];}),r=new Array(a.length);for(var i=0;i<ix.length;i++)r[ix[i][1]]=i+1;return r;}
+  function _pear(a,b){var n=a.length,ma=a.reduce(function(x,y){return x+y;},0)/n,mb2=b.reduce(function(x,y){return x+y;},0)/n,sa=0,sb=0,sab=0;for(var i=0;i<n;i++){var da=a[i]-ma,db=b[i]-mb2;sa+=da*da;sb+=db*db;sab+=da*db;}return sab/(Math.sqrt(sa*sb)||1e-9);}
+  var _rret=_rank(S.map(function(s){return s.r1m;}));
+  var FAC=[['macro',zt],['sector',zse],['short',zsh],['opp',zop],['mom',zr],['velocity',zvel],['flow3m',zif],['ema',zem],['flow1m',zf]];
+  var ics=FAC.map(function(f){var ic=_pear(_rank(f[1]),_rret),zz=Math.abs(ic)*Math.sqrt(Math.max(_N-1,1)),p=2*(1-normCDF(zz));return {name:f[0],ic:ic,p:Math.max(0,Math.min(1,p))};});
+  var _ps=ics.slice().sort(function(a,b){return a.p-b.p;}),_q=0.10,_kmax=0;
+  for(var _i2=0;_i2<_ps.length;_i2++){if(_ps[_i2].p<=_q*(_i2+1)/_ps.length)_kmax=_i2+1;}
+  var _pcut=_kmax?_ps[_kmax-1].p:-1;ics.forEach(function(o){o.sig=(o.p<=_pcut);});
+  var _breadth=ics.filter(function(o){return o.sig;}).length/ics.length;
   // CONVICTION: standardize the composite edge cross-sectionally -> z = alpha / cross-sectional sd(alpha).
   // Equation-deduced numeric thresholds: |z|>=1.5 HIGH, >=0.7 MED, else LOW. TOTAL expected 1-month
   // return = idiosyncratic exp% (alpha-driven) + market-beta drag (beta x market move).
@@ -2254,6 +2269,8 @@ function buildBullBearBoard(){
     var body=arr.map(function(s,i){return rowH(s,isBull,i+1);}).join('')||'<div class="bbrow" style="color:#69727f">none</div>';
     return '<div class="bbcol"><div class="bbh" style="background:'+bg+';color:'+c+'"><span>'+lab+'</span><span>'+arr.length+'</span></div>'+body+'</div>';}
   var h=css+'<div class="note" style="margin:4px 0"><b style="color:var(--gold)">BULL / BEAR — every company ranked by TOTAL expected 1‑month return</b> · today: 10Y '+(DIR.RATE>=0?'+':'')+DIR.RATE.toFixed(1)+' · Oil '+(DIR.OIL>=0?'+':'')+DIR.OIL.toFixed(1)+'% · USD '+(DIR.DXY>=0?'+':'')+DIR.DXY.toFixed(1)+'% · Risk '+(DIR.VIX>0?'OFF':'ON')+' · exp% = '+(_fit?('empirically fitted (coef '+_cal.coef+' · IC '+_cal.ic+' · n='+_cal.n+')'):('α × realized 1m dispersion '+sigR.toFixed(1)+'% · calibrating, n='+((_cal&&_cal.n)||0)))+'. <b>Total = idiosyncratic α‑edge + market‑beta drag</b>; split BULL (total ≥0) vs BEAR (&lt;0). Conviction z = α ÷ cross‑sectional σ(α): <b style="color:#e8c14a">HIGH |z|≥1.5</b> · <b style="color:#9ab4e0">MED ≥0.7</b> · LOW. Click a row to load. ETFs excluded. Research only.</div>';
+  var icStrip=ics.map(function(o){var c=o.sig?(o.ic>=0?'#2ecc8f':'#ef5f4e'):'#69727f';return '<span style="color:'+c+'">'+o.name+' '+(o.ic>=0?'+':'')+o.ic.toFixed(2)+(o.sig?'★':'')+'</span>';}).join(' · ');
+  h+='<div class="note" style="font-size:9px;margin:0 0 5px">factor IC (Spearman vs trailing‑1m return · ★ = survives BH‑FDR q≤0.10): '+icStrip+' · <b>breadth '+(_breadth*100).toFixed(0)+'%</b>'+(_breadth<0.34?' <span style="color:#e0a13c">— LOW breadth: few factors significant, treat ranks as weak this regime</span>':'')+'. IC is a contemporaneous alignment diagnostic, not a predictive guarantee; live weights are fixed priors (no look‑ahead).</div>';
   h+='<div class="bbcols">'+colH(bull,true)+colH(bear,false)+'</div>';
   el.innerHTML=h;}
 (function(){var n=0,fetched=false;function build(){try{buildBullBearBoard();}catch(e){}}

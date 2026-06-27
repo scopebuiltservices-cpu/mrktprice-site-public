@@ -1411,7 +1411,7 @@ def real_universe():
     #      must look DIFFERENT from a working one. We count usable results per source, emit loud
     #      CI ::warning:: lines, and stash a dataHealth block into the published JSON. ----
     import sys as _sys, os as _os
-    _gcap=0; _fmp_try=_fmp_ok=_fmp_err=0; _eod_try=_eod_ok=_eod_err=0; _errs=[]
+    _gcap=0; _fmp_try=_fmp_ok=_fmp_err=0; _eod_try=_eod_ok=_eod_err=0; _alp_ok=0; _errs=[]
     _earn_ok=_dcf_ok=_ptgt_ok=0; _fmp_lim=None
     try:
         from ratelimit import Limiter as _Lim; _fmp_lim=_Lim("fmp")   # shared budget across valuation + premium pulls

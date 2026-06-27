@@ -1366,29 +1366,50 @@ function drawCalendarTimeline(g,G){try{
     while(col<end&&guard++<800){cur+=86400000;var dt=new Date(cur);if(!_isTradingDay(dt))continue;col++;var iso=dt.toISOString().slice(0,10);if(iso.slice(0,7)!==pm){tick(X(col),iso,true);pm=iso.slice(0,7);}}}
 }catch(_e){}}
 function buildQLedger(sym,c,d){var el=document.getElementById('qledger');if(!el)return;
- var C=(typeof FUND==='object'&&FUND)?FUND[sym]:null;
- if(!C||!C.quarters||!C.quarters.length){el.innerHTML='<span style="font-size:10px;color:var(--muted)"><b style="color:var(--gold)">QUARTERLY REPORT LEDGER</b> — no quarterly filings embedded for '+sym+'. Run the SEC EDGAR refresh (or live mode) to populate report dates &amp; figures.</span>';return;}
- var qs=C.quarters.filter(function(q){return (q.filedDate||q.endDate);});
- if(!qs.length){el.innerHTML='<span style="font-size:10px;color:var(--muted)"><b style="color:var(--gold)">QUARTERLY REPORT LEDGER</b> — quarters present but WITHOUT report dates for '+sym+', so they cannot be aligned to the chart. Re-run the SEC quarterly pull (needs filedDate).</span>';return;}
- qs=qs.slice().sort(function(a,b){var da=(a.filedDate||a.endDate),db=(b.filedDate||b.endDate);return da<db?1:-1;});
- var price=c[c.length-1],lastD=d[d.length-1];
- var dB=function(x){return x==null?'—':(Math.abs(x)>=1e9?'$'+(x/1e9).toFixed(2)+'B':Math.abs(x)>=1e6?'$'+(x/1e6).toFixed(0)+'M':'$'+x.toFixed(0));};
- var pR=function(x){return x==null?'—':((x>=0?'+':'')+(x*100).toFixed(0)+'%');};
- function closeOn(fd){for(var i=0;i<d.length;i++){if(d[i]>=fd)return {px:c[i],idx:i};}return null;}
- var body=qs.map(function(q){var fd=q.filedDate||q.endDate;var co=closeOn(fd);var px=co?co.px:null;var r5=(co&&co.idx+5<c.length)?(c[co.idx+5]/c[co.idx]-1):null;var adj=(q.adjEbitda!=null?q.adjEbitda:q.ebitda);
-   return '<tr style="border-top:1px solid var(--line)"><td style="padding:2px 6px"><b>'+(q.label||'Q')+'</b></td>'
-    +'<td style="padding:2px 6px;color:var(--gold)">'+fd+'</td>'
-    +'<td style="padding:2px 6px;text-align:right;color:#f5d489">'+(px!=null?'$'+px.toFixed(2):'—')+'</td>'
-    +'<td style="padding:2px 6px;text-align:right">'+dB(q.rev)+'</td>'
-    +'<td style="padding:2px 6px;text-align:right">'+(q.eps!=null?'$'+q.eps.toFixed(2):'—')+'</td>'
-    +'<td style="padding:2px 6px;text-align:right;color:var(--gold)">'+dB(adj)+'</td>'
-    +'<td style="padding:2px 6px;text-align:right;color:'+(((q.revYoY||0)>=0)?'var(--pass)':'var(--fail)')+'">'+pR(q.revYoY)+'</td>'
-    +'<td style="padding:2px 6px;text-align:right;color:'+(((r5||0)>=0)?'var(--pass)':'var(--fail)')+'">'+(r5!=null?((r5>=0?'+':'')+(r5*100).toFixed(0)+'%'):'—')+'</td></tr>';}).join('');
- var ne=(typeof nextEarnings==='function'&&lastD)?nextEarnings(lastD,sym):null;var neTxt=ne?ne.toISOString().slice(0,10):'—';
- var exp='';var yk=Object.keys(C.years||{}).sort();if(yk.length){var fy=yk[yk.length-1],ry=C.years[fy]||{};var g=(C.summary&&C.summary.revCAGR2!=null)?C.summary.revCAGR2:ry.revGrowth;var nrev=(ry._rev!=null&&g!=null)?ry._rev*(1+g):null;var neps=(ry.eps!=null&&g!=null)?ry.eps*(1+g):null;exp='exp next FY (mechanical trend, not consensus): rev '+dB(nrev)+(g!=null?' ('+(g>=0?'+':'')+(g*100).toFixed(0)+'%)':'')+(neps!=null?' · EPS $'+neps.toFixed(2):'');}
- el.innerHTML='<div style="font-size:10px;margin:2px 0 3px"><b style="color:var(--gold)">QUARTERLY REPORT LEDGER</b> · <b>'+sym+'</b> — every SEC-reported quarter, the close <b>locked in on the report date</b>, and the +5d reaction. <span style="color:var(--muted)">current price <b style="color:var(--ink)">$'+price.toFixed(2)+'</b> · next report <b style="color:var(--gold)">'+neTxt+'</b> · '+exp+'</span></div>'
-  +'<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:10px;min-width:560px"><tr style="color:var(--muted);text-align:left"><th style="padding:2px 6px">quarter</th><th style="padding:2px 6px">report date</th><th style="padding:2px 6px;text-align:right">close @ date</th><th style="padding:2px 6px;text-align:right">revenue</th><th style="padding:2px 6px;text-align:right">EPS</th><th style="padding:2px 6px;text-align:right">adj EBITDA</th><th style="padding:2px 6px;text-align:right">rev YoY</th><th style="padding:2px 6px;text-align:right">+5d</th></tr>'+body+'</table></div>'
-  +'<div style="font-size:9px;color:var(--muted);margin-top:2px">Reported = SEC actuals (10-Q). <b>Per-quarter analyst expectations are NOT embedded</b> — they need the FMP analyst-estimates feed; the "exp" above is a mechanical FY-trend projection, not consensus. <b>adj EBITDA</b> falls back to EBITDA where the stock-comp add-back is not yet populated (run the extended SEC quarterly pull).</div>';}
+ var n=_mmName(sym),price=c[c.length-1];
+ var EQ=(n&&n.earn&&n.earn.q)?n.earn.q.slice().filter(function(q){return q&&q.d;}):[];
+ EQ.sort(function(a,b){return a.d<b.d?-1:1;});
+ if(!EQ.length){el.innerHTML='<div style="font-size:10px;color:var(--muted)"><b style="color:var(--gold)">EARNINGS &amp; VALUATION LEDGER</b> — no dated earnings history embedded for '+sym+'. Populates from the FMP earnings calendar / SEC EDGAR refresh (needs FMP key or live mode).</div>';return;}
+ var FU=(typeof FUND==='object'&&FUND)?FUND[sym]:null,FQ={};if(FU&&FU.quarters){FU.quarters.forEach(function(q){var fd=q.filedDate||q.endDate;if(fd)FQ[fd]=q;});}
+ var v=(n&&n.val)?n.val:{},fpe=(v.fpe!=null)?v.fpe:null;
+ function idxOf(iso){for(var i=0;i<d.length;i++){if(d[i]>=iso)return i;}return -1;}
+ function ttm(up,useEst){if(up<3)return null;var s=0;for(var k=up-3;k<=up;k++){var x=(k===up&&useEst)?EQ[k].e:EQ[k].a;if(x==null)return null;s+=x;}return s;}   // trailing-4Q EPS (optionally swap the latest actual for its pre-earnings estimate)
+ var dB=function(x){return x==null?'—':(Math.abs(x)>=1e9?'$'+(x/1e9).toFixed(2)+'B':Math.abs(x)>=1e6?'$'+(x/1e6).toFixed(0)+'M':'$'+x.toFixed(2));};
+ var rows=[];
+ for(var i=EQ.length-1;i>=0&&rows.length<8;i--){var q=EQ[i],ix=idxOf(q.d);if(ix<0)continue;var px=c[ix];
+   var tA=ttm(i,false),tE=ttm(i,true),pe=(tA&&tA>0)?px/tA:null,prePE=(tE&&tE>0)?px/tE:null;
+   var adjPct=(pe!=null&&prePE!=null&&prePE>0)?(pe/prePE-1)*100:null;                 // post-call P/E vs pre-earnings-expectation P/E
+   var yoy=(i>=4&&EQ[i-4].a)?(q.a/EQ[i-4].a-1):null,peg=(pe!=null&&yoy!=null&&yoy>0)?pe/(yoy*100):null;
+   var r5=(ix+5<c.length)?(c[ix+5]/c[ix]-1):null,fq=FQ[q.d]||null;
+   rows.push({label:'Q'+(q.q||'?')+" '"+String(q.y||'').slice(2),d:q.d,est:q.e,act:q.a,surpr:q.s,px:px,pe:pe,peg:peg,adjPct:adjPct,r5:r5,rev:fq?fq.rev:null});}
+ rows.reverse();
+ var cell=function(t,col,b){return '<td style="padding:2px 7px;text-align:right'+(col?(';color:'+col):'')+(b?';font-weight:700':'')+'">'+t+'</td>';};
+ var body=rows.map(function(r){
+   var sCol=r.surpr==null?'var(--muted)':(r.surpr>=0?'var(--pass)':'var(--fail)');
+   var aCol=r.adjPct==null?'var(--muted)':(r.adjPct<=0?'var(--pass)':'var(--fail)');
+   var pegCol=r.peg==null?null:(r.peg<=1?'var(--pass)':r.peg<=2?'var(--caution)':'var(--fail)');
+   return '<tr style="border-top:1px solid var(--line)">'
+    +'<td style="padding:2px 7px"><b>'+r.label+'</b></td>'
+    +'<td style="padding:2px 7px;color:var(--gold)">'+r.d+'</td>'
+    +cell(r.est!=null?'$'+r.est.toFixed(2):'—')
+    +cell(r.act!=null?'$'+r.act.toFixed(2):'—',null,true)
+    +cell(r.surpr!=null?((r.surpr>=0?'+':'')+r.surpr+'%'):'—',sCol)
+    +cell(r.px!=null?'$'+r.px.toFixed(2):'—','#f5d489')
+    +cell(r.pe!=null?r.pe.toFixed(1)+'x':'—')
+    +cell(r.peg!=null?r.peg.toFixed(2):'—',pegCol)
+    +cell(r.adjPct!=null?((r.adjPct>=0?'+':'')+r.adjPct.toFixed(1)+'%'):'—',aCol)
+    +cell(r.r5!=null?((r.r5>=0?'+':'')+(r.r5*100).toFixed(0)+'%'):'—',r.r5==null?null:(r.r5>=0?'var(--pass)':'var(--fail)'))
+    +'</tr>';}).join('');
+ var nx=(n&&n.earn&&n.earn.next)?n.earn.next:null,nextRow='';
+ if(nx&&nx.d){nextRow='<tr style="border-top:2px solid var(--gold)">'
+   +'<td style="padding:2px 7px;color:#39b6ff"><b>NEXT</b></td><td style="padding:2px 7px;color:#39b6ff">'+nx.d+' ⚠</td>'
+   +cell(nx.e!=null?'$'+nx.e.toFixed(2):'—')+cell('—')+cell('—')+cell('$'+price.toFixed(2),'#f5d489')
+   +cell(v.pe!=null?v.pe.toFixed(1)+'x':'—')+cell(v.peg!=null?v.peg.toFixed(2):'—',v.peg==null?null:(v.peg<=1?'var(--pass)':v.peg<=2?'var(--caution)':'var(--fail)'))
+   +cell(fpe!=null?'fwd '+fpe.toFixed(1)+'x':'—','#39b6ff')+cell('—')+'</tr>';}
+ var hdr='<tr style="color:var(--muted)"><th style="padding:2px 7px;text-align:left">quarter</th><th style="padding:2px 7px;text-align:left">report date</th><th style="padding:2px 7px;text-align:right">EPS est</th><th style="padding:2px 7px;text-align:right">EPS act</th><th style="padding:2px 7px;text-align:right">surprise</th><th style="padding:2px 7px;text-align:right">price@date</th><th style="padding:2px 7px;text-align:right">P/E mult</th><th style="padding:2px 7px;text-align:right">PEG</th><th style="padding:2px 7px;text-align:right">adj P/E Δ</th><th style="padding:2px 7px;text-align:right">+5d</th></tr>';
+ el.innerHTML='<div style="font-size:10px;margin:2px 0 3px"><b style="color:var(--gold)">EARNINGS &amp; VALUATION LEDGER</b> · <b>'+sym+'</b> — every report date: the consensus it faced, what it printed, the surprise, the close that day, the trailing <b>multiple (P/E)</b>, <b>PEG</b>, and the <b>post-call P/E adjustment</b> vs the pre-earnings expectation. <span style="color:var(--muted)">spot <b style="color:var(--ink)">$'+price.toFixed(2)+'</b> · P/E '+(v.pe!=null?v.pe.toFixed(1)+'x':'—')+' · fwd P/E '+(fpe!=null?fpe.toFixed(1)+'x':'—')+' · PEG '+(v.peg!=null?v.peg.toFixed(2):'—')+'</span></div>'
+  +'<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:10px;min-width:660px">'+hdr+body+nextRow+'</table></div>'
+  +'<div style="font-size:9px;color:var(--muted);margin-top:3px"><b>EPS est</b> = consensus before the print; <b>surprise</b> = actual vs that estimate (the % up/down from pre-earnings expectations). <b>P/E</b> = price-on-date ÷ trailing-4Q actual EPS; <b>adj P/E Δ</b> = post-call P/E vs the P/E implied by the pre-earnings estimate (negative = the beat made the stock cheaper on earnings). <b>fwd P/E</b> from the valuation block. Full analyst <b>revision history</b> after each call needs the FMP analyst-estimates time series (not yet embedded); the surprise + adj-P/E here are the estimate-vs-actual realization.</div>';}
 function buildCadence(sym,c,d){const el=document.getElementById('cadence');if(!el)return;const n=c.length,price=c[n-1];
  const lv=[5,8,13,21].map(function(N){const e=(CUR.emaM&&CUR.emaM[N])?CUR.emaM[N].last:null;if(e==null)return '';const dd=(price/e-1)*100;return '<span style="font-size:9px;padding:1px 4px;border:1px solid var(--line);border-radius:4px;color:'+EMACOL[N]+'">EMA'+N+' '+e.toFixed(2)+' <b style="color:'+(dd>=0?'var(--pass)':'var(--fail)')+'">'+(dd>=0?'▲+':'▼')+dd.toFixed(1)+'%</b></span>';}).filter(Boolean).join(' ');
  var earn='';const last=(d&&d.length)?d[d.length-1]:null;if(last){const ne=nextEarnings(last,sym);if(ne){const days=Math.round((ne-Date.now())/86400000);earn='<b>≈ next earnings</b> '+ne.toISOString().slice(0,10)+' (~'+days+'d out, est. from fiscal calendar — the cone should widen here)';}}

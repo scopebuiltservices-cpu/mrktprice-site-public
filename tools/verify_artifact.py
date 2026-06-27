@@ -20,7 +20,7 @@ CLI
 
 Exit code is non-zero on any mismatch so this can gate a build. No third-party dependencies.
 """
-import argparse, hashlib, json, os, re, sys, tempfile
+import argparse, contextlib, hashlib, json, os, re, sys, tempfile, time
 
 
 def _read_bytes(path):
@@ -120,12 +120,88 @@ def guard(path, min_bytes=0, ends_with=None):
     return out
 
 
+# ---------------------------------------------------------------------------
+# Content-addressed store (CAS) + atomic promotion under a lock — the forensics
+# / concurrency layer of the hardened-workflow report. Build artifacts are first
+# written into a sha256-keyed store (immutable, deduplicated, self-verifying),
+# then *promoted* to their public path atomically while holding an exclusive
+# lock so two concurrent builders can never interleave a half-written publish.
+# ---------------------------------------------------------------------------
+
+def cas_put(store_dir, data=None, *, from_path=None):
+    """Put content into the content-addressed store keyed by sha256.
+    Returns (digest, stored_path). Idempotent: identical content is stored once;
+    an existing object whose bytes no longer hash to its name is rewritten."""
+    if from_path is not None:
+        data = _read_bytes(from_path)
+    elif isinstance(data, str):
+        data = data.encode("utf-8")
+    if data is None:
+        raise ValueError("cas_put needs data= or from_path=")
+    digest = hashlib.sha256(data).hexdigest()
+    obj = os.path.join(store_dir, digest[:2], digest)
+    if (not os.path.exists(obj)) or hashlib.sha256(_read_bytes(obj)).hexdigest() != digest:
+        write_atomic(obj, data)          # atomic + re-read verify into the store
+    return digest, obj
+
+
+def cas_path(store_dir, digest):
+    """Path an object WOULD live at (no existence guarantee)."""
+    return os.path.join(store_dir, digest[:2], digest)
+
+
+@contextlib.contextmanager
+def promotion_lock(dest, timeout=30.0, poll=0.1):
+    """Cross-process advisory lock for publishing `dest`, via an O_CREAT|O_EXCL
+    lockfile beside it. Prevents two builders racing on the same published path.
+    Raises TimeoutError if the lock can't be acquired within `timeout`."""
+    lock = dest + ".lock"
+    d = os.path.dirname(os.path.abspath(dest)) or "."
+    os.makedirs(d, exist_ok=True)
+    start = time.time(); fd = None
+    while True:
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            break
+        except FileExistsError:
+            if time.time() - start > timeout:
+                raise TimeoutError("could not acquire promotion lock %s within %.1fs" % (lock, timeout))
+            time.sleep(poll)
+    try:
+        os.write(fd, ("%d\n" % os.getpid()).encode()); os.close(fd)
+        yield
+    finally:
+        try: os.unlink(lock)
+        except OSError: pass
+
+
+def promote(store_dir, digest, dest, *, min_bytes=0, ends_with=None, timeout=30.0):
+    """Publish CAS object `digest` to `dest` atomically, under the promotion lock,
+    then guard the published bytes. Verifies the store object hashes to its name
+    before publishing. Returns the digest; raises on lock timeout, missing/corrupt
+    object, or a guard failure (empty/truncated/wrong-tail publish)."""
+    obj = cas_path(store_dir, digest)
+    if not os.path.exists(obj):
+        raise FileNotFoundError("CAS object %s not found under %s" % (digest[:12], store_dir))
+    data = _read_bytes(obj)
+    if hashlib.sha256(data).hexdigest() != digest:
+        raise RuntimeError("CAS object %s is corrupt (hash drift) — refusing to promote" % digest[:12])
+    with promotion_lock(dest, timeout=timeout):
+        write_atomic(dest, data)          # atomic publish + re-read verify
+        probs = guard(dest, min_bytes=min_bytes, ends_with=ends_with)
+        if probs:
+            raise RuntimeError("promote guard failed: " + "; ".join(probs))
+    return digest
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Hardened artifact manifest + verification.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     m = sub.add_parser("manifest"); m.add_argument("paths", nargs="+"); m.add_argument("--out", required=True)
     v = sub.add_parser("verify"); v.add_argument("manifest")
     g = sub.add_parser("guard"); g.add_argument("path"); g.add_argument("--min-bytes", type=int, default=0); g.add_argument("--ends-with", default=None)
+    cp = sub.add_parser("cas-put"); cp.add_argument("path"); cp.add_argument("--store", required=True)
+    pr = sub.add_parser("promote"); pr.add_argument("digest"); pr.add_argument("dest"); pr.add_argument("--store", required=True); pr.add_argument("--min-bytes", type=int, default=0); pr.add_argument("--ends-with", default=None)
     a = ap.parse_args(argv)
     if a.cmd == "manifest":
         man = build_manifest(a.paths)
@@ -145,6 +221,18 @@ def main(argv=None):
             print("::error title=artifact-guard::" + p)
         print("GUARD %s: %s" % (a.path, "OK" if not probs else "FAILED"))
         return 0 if not probs else 1
+    if a.cmd == "cas-put":
+        digest, obj = cas_put(a.store, from_path=a.path)
+        print("CAS %s -> %s" % (digest[:16], obj))
+        return 0
+    if a.cmd == "promote":
+        try:
+            promote(a.store, a.digest, a.dest, min_bytes=a.min_bytes, ends_with=a.ends_with)
+        except Exception as e:
+            print("::error title=promote::%s" % e)
+            return 1
+        print("PROMOTE %s -> %s OK" % (a.digest[:16], a.dest))
+        return 0
 
 
 if __name__ == "__main__":

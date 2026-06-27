@@ -53,6 +53,45 @@ try:
     # 6) atomic write leaves no temp files behind in the directory
     leftovers = [x for x in os.listdir(tmp) if x.startswith(".__atomic_")]
     ok("no atomic temp files left behind", leftovers == [], leftovers)
+
+    # 7) CAS: content-addressed put is sha256-keyed, idempotent, and self-verifying
+    store = os.path.join(tmp, "cas")
+    dig, obj = va.cas_put(store, "alpha\n")
+    import hashlib as _h
+    ok("cas_put returns the sha256 of the content", dig == _h.sha256(b"alpha\n").hexdigest())
+    ok("cas object stored under digest path", os.path.exists(obj) and va.cas_path(store, dig) == obj)
+    dig2, obj2 = va.cas_put(store, "alpha\n")
+    ok("cas_put is idempotent (same digest/path)", dig2 == dig and obj2 == obj)
+    dig3, _ = va.cas_put(store, "beta\n")
+    ok("different content -> different digest", dig3 != dig)
+
+    # 8) promote: publishes the CAS object atomically + passes the guard
+    dest = os.path.join(tmp, "published.txt")
+    va.promote(store, dig, dest, min_bytes=1)
+    ok("promote publishes exact CAS bytes", open(dest).read() == "alpha\n")
+
+    # 9) promote refuses a corrupt store object (hash drift) and a wrong guard sentinel
+    jdig, jobj = va.cas_put(store, '{"ok":true}')
+    with open(jobj, "wb") as f:
+        f.write(b'{"ok":fa')               # corrupt the stored object in place
+    drift = False
+    try:
+        va.promote(store, jdig, os.path.join(tmp, "x.json"))
+    except RuntimeError:
+        drift = True
+    ok("promote refuses a hash-drifted CAS object", drift)
+
+    # 10) promotion_lock is exclusive (second acquire times out while first is held)
+    locked = os.path.join(tmp, "locktarget")
+    timed_out = False
+    with va.promotion_lock(locked, timeout=5):
+        try:
+            with va.promotion_lock(locked, timeout=0.3):
+                pass
+        except TimeoutError:
+            timed_out = True
+    ok("promotion_lock is mutually exclusive", timed_out)
+    ok("promotion_lock cleaned up its lockfile", not os.path.exists(locked + ".lock"))
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

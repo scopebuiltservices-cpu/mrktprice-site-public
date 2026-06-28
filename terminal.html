@@ -2268,6 +2268,10 @@ function buildBullBearBoard(){
   function _qpen(s){var p=1;if(s.dq==='reject')p*=0.3;else if(s.dq==='degraded')p*=0.7;
     var dl=s.drift&&s.drift.level;if(dl==='significant')p*=0.5;else if(dl==='moderate')p*=0.85;return p;}
   S.forEach(function(s){s.qpen=_qpen(s);s.zc=((s.alpha-aMed)/aScale)*_convScale*s.qpen*_nShrink;s.tot=s.exp+s.drag;s.conv=(Math.abs(s.zc)>=1.5?'HIGH':(Math.abs(s.zc)>=0.7?'MED':'LOW'));});
+  // CONFIDENCE-ADJUSTED RANK SCORE (rank_engine.js): lower-confidence-bound with conviction-scaled sigma,
+  // so a high-edge LOW-conviction name no longer out-ranks a high-conviction one; zAdj = multiplicity-deflated z.
+  var _RK=(typeof window!=='undefined'&&window.MrktRank)?window.MrktRank:null;
+  S.forEach(function(s){s.score=_RK?_RK.compositeRankScore(s.tot,s.zc,sigR||9,0.5):s.tot;s.zAdj=_RK?_RK.deflatedConviction(s.zc,S.length):s.zc;});
   // EVERY company placed in exactly one column by TOTAL expected return (fixes the alpha-sign edge case):
   // tot>=0 -> BULL, tot<0 -> BEAR. Ranked within each by total expected return.
   var bull=S.filter(function(s){return s.tot>=0;}).sort(function(a,b){return b.tot-a.tot;}),

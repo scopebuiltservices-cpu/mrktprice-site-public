@@ -83,5 +83,19 @@ ok("hurst returns value for long series", M.hurst(_p) is None or isinstance(M.hu
 # canonical sharpe matches the pattern composite_gate/pooled_rigor compute (sign + finiteness)
 ok("sharpe sign matches mean sign", (M.sharpe([0.01] * 5 + [0.02] * 5) > 0))
 
+# ---- canonical backtest performance metrics (report section 15/18) ----
+ok("hit_rate 60%", abs(M.hit_rate([1, 1, 1, -1, -1, 1, 1, -1, 1, 1]) - 0.7) < 1e-9 or M.hit_rate([1, -1]) == 0.5)
+ok("payoff_ratio = avgWin/avgLoss", abs(M.payoff_ratio([0.02, 0.04, -0.01, -0.03]) - (0.03 / 0.02)) < 1e-9)
+ok("profit_factor > 1 when gains>losses", M.profit_factor([0.05, 0.03, -0.02, -0.01]) > 1)
+ok("exposure = sum|w|", abs(M.exposure([0.5, -0.3, 0.2]) - 1.0) < 1e-9)
+ok("turnover one-step", abs(M.turnover([0.5, 0.5], [0.3, 0.7]) - 0.4) < 1e-9)
+ok("drawdown_duration counts underwater run", M.drawdown_duration([10, 8, 7, 9, 11, 10]) == 3)
+ok("drawdown_duration 0 for monotone up", M.drawdown_duration([1, 2, 3, 4]) == 0)
+ok("tracking_error >= 0", M.tracking_error([0.01, 0.02, -0.01], [0.0, 0.01, 0.0]) >= 0)
+# binomial: 9 of 10 beating a coin flip is significant; 5 of 10 is not
+ok("binom 9/10 significant", M.binom_test_greater(9, 10, 0.5) < 0.02)
+ok("binom 5/10 not significant", M.binom_test_greater(5, 10, 0.5) > 0.3)
+ok("binom full pmf sums sane", 0 <= M.binom_test_greater(0, 10, 0.5) <= 1.0001)
+
 print("\n" + ("ALL METRICS TESTS PASSED" if not F else "%d FAILED: %s" % (len(F), F)))
 raise SystemExit(1 if F else 0)

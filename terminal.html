@@ -2094,7 +2094,19 @@ function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementByI
  var _To=(CUR.ou&&CUR.ou.meanRev&&isFinite(CUR.ou.mu)&&isFinite(CUR.ou.phi))?Math.exp(CUR.ou.mu+Math.pow(CUR.ou.phi,H)*(Math.log(P0)-CUR.ou.mu)):null;   // OU H-day fair-value target
  if(_autoMid){var _cd=[];if(_Tt&&_Tt>0)_cd.push(_Tt);if(_To&&_To>0)_cd.push(_To);
    var _Tm=_cd.length?(_cd.reduce(function(a,b){return a+b;},0)/_cd.length):P0;_V=P0+_SHR*(_Tm-P0);}
- CUR.driftDecomp={auto:_autoMid,shrink:_SHR,ema:(_Tt&&_Tt>0)?(_Tt/P0-1):null,ou:(_To&&_To>0)?(_To/P0-1):null,net:_V/P0-1};   // decomposition surfaced in the cone tile
+ // TWO-FACTOR CALIBRATED DRIFT (drift_calib2): when the universe predictive regression has a validated OOS
+ // edge, override the OU+EMA blend with E[r]=alpha+betaRev*gap+betaMom*mom on the CURRENT point-in-time
+ // signals (gap=log(SMA20/price), mom=log(price/price[-21])). Gated (no OOS edge) => blend/flat stands.
+ var _DB=(window.MMAP&&window.MMAP.driftBeta)?window.MMAP.driftBeta:null;
+ if(_autoMid&&_DB&&!_DB.gated&&isFinite(_DB.betaRev)){
+   var _cc=CUR.c,_nn=_cc.length,_w=Math.min(20,_nn),_sma=0;for(var _q=_nn-_w;_q<_nn;_q++)_sma+=_cc[_q];_sma=_w?_sma/_w:P0;
+   var _gap=(_sma>0&&P0>0)?Math.log(_sma/P0):0,_mom=(_nn>22&&_cc[_nn-22]>0)?Math.log(P0/_cc[_nn-22]):0;
+   var _rev=(_DB.betaRev||0)*_gap,_mo=(_DB.betaMom||0)*_mom,_df=Math.max(-0.25,Math.min(0.25,(_DB.alpha||0)+_rev+_mo));
+   _V=P0*Math.exp(_df);
+   CUR.driftDecomp={auto:true,mode:'2f',rev:_rev,mom:_mo,alpha:(_DB.alpha||0),net:_df,oosR2:_DB.oosR2,shrink:_SHR};
+ }else{
+   CUR.driftDecomp={auto:_autoMid,mode:'blend',shrink:_SHR,ema:(_Tt&&_Tt>0)?(_Tt/P0-1):null,ou:(_To&&_To>0)?(_To/P0-1):null,net:_V/P0-1};
+ }
  if(am==='ou'&&CUR.ou&&CUR.ou.meanRev){pj=projectOU(P0,H,CUR.ou,asym);}
  else if(am==='blend'&&CUR.ou&&CUR.ou.meanRev){const aa=project(P0,_V,H,sig,cf,asym),bb=projectOU(P0,H,CUR.ou,asym);pj={lam:aa.lam,sdn:aa.sdn,sup:aa.sup,path:aa.path.map((pp,k)=>({t:pp.t,price:(pp.price+bb.path[k].price)/2})),p80:aa.p80.map((pp,k)=>({t:pp.t,low:(pp.low+bb.p80[k].low)/2,high:(pp.high+bb.p80[k].high)/2})),p95:aa.p95.map((pp,k)=>({t:pp.t,low:(pp.low+bb.p95[k].low)/2,high:(pp.high+bb.p95[k].high)/2}))};}
  else{pj=project(P0,_V,H,sig,cf,asym);}
@@ -2597,7 +2609,12 @@ function renderConeZoom(){
     +chip('Conformal cov',conf&&conf.cov!=null?(conf.cov*100).toFixed(0)+'%':'—',conf&&conf.cov>=0.85?'#2ecc8f':'#e0c14a')
     +(function(){var dd=CUR.driftDecomp;if(!dd)return '';   // DRIFT DECOMPOSITION: makes the central path explainable, not just visible
       var f=function(x){return x==null?'—':((x>=0?'+':'')+(x*100).toFixed(2)+'%');},col=function(x){return x==null?'var(--muted,#8a93a0)':(x>=0?'#2ecc8f':'#ef5f4e');};
-      return '<div style="background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:5px 9px;min-width:170px"><div style="font-size:9px;color:var(--muted,#8a93a0);text-transform:uppercase;letter-spacing:.04em">Central drift · '+(dd.auto?'model':'manual')+'</div><div style="font-size:15px;font-weight:800;color:'+col(dd.net)+'">'+f(dd.net)+' net</div><div style="font-size:9px;color:var(--muted,#8a93a0)">OU rev <b style="color:'+col(dd.ou)+'">'+f(dd.ou)+'</b> · EMA trend <b style="color:'+col(dd.ema)+'">'+f(dd.ema)+'</b> · shrink ×'+dd.shrink.toFixed(2)+'</div></div>';})();
+      var lab,sub;
+      if(dd.mode==='2f'){lab='calibrated · OOS R² '+(dd.oosR2!=null?(dd.oosR2*100).toFixed(1)+'%':'—');
+        sub='rev <b style="color:'+col(dd.rev)+'">'+f(dd.rev)+'</b> · mom <b style="color:'+col(dd.mom)+'">'+f(dd.mom)+'</b> · α '+f(dd.alpha);}
+      else{lab=(dd.auto?'model blend':'manual');
+        sub='OU rev <b style="color:'+col(dd.ou)+'">'+f(dd.ou)+'</b> · EMA trend <b style="color:'+col(dd.ema)+'">'+f(dd.ema)+'</b> · shrink ×'+(dd.shrink!=null?dd.shrink.toFixed(2):'—');}
+      return '<div style="background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:5px 9px;min-width:184px"><div style="font-size:9px;color:var(--muted,#8a93a0);text-transform:uppercase;letter-spacing:.04em">Central drift · '+lab+'</div><div style="font-size:15px;font-weight:800;color:'+col(dd.net)+'">'+f(dd.net)+' net</div><div style="font-size:9px;color:var(--muted,#8a93a0)">'+sub+'</div></div>';})();
   if(vEl){var up=pUp>=0.5;vEl.textContent=(up?'▲ upward tilt · ':'▼ downward tilt · ')+(pUp*100).toFixed(0)+'% P(up)';vEl.style.color=up?'#2ecc8f':'#ef5f4e';}
   if(nEl)nEl.textContent='Central path = OU/blend mean; bands = '+(CUR.harqDrivingCone?'HARQ-σ conformal-calibrated':((document.getElementById('volsrc')?document.getElementById('volsrc').value:'parametric')+'-σ'))+' 80%/95% over '+H+' trading days. Reference range, not a point forecast — research only.';
 }

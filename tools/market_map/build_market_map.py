@@ -616,8 +616,16 @@ def build(names,mkt,ff,macro=None):
         _driftShrink=round(float(_ds.get("shrink",0.6)),4); _driftShrinkN=int(_ds.get("n",0))
     except Exception:
         _driftShrink=0.6; _driftShrinkN=0
+    # MASTER two-factor calibrated drift (drift_calib2): ridge predictive regression E[r]=a+bRev*gap+bMom*mom,
+    # HAC t-stats, purged walk-forward OOS R^2 gate. The cone uses betaRev/betaMom on the current point-in-time
+    # signals when not gated; gated (no OOS edge) => flat is the honest output. v1 driftShrink kept as fallback.
+    try:
+        import drift_calib2 as _dc2
+        _dbeta=_dc2.calibrate([n.get("_cl") for n in names if n.get("_cl")], H=20, win=20, mwin=21)
+    except Exception:
+        _dbeta=None
     return {"asof":dt.date.today().isoformat(),"source":"SAMPLE (synthetic, illustrative) — replaced by the nightly job","calibration":cal,
-            "driftShrink":_driftShrink,"driftShrinkN":_driftShrinkN,
+            "driftShrink":_driftShrink,"driftShrinkN":_driftShrinkN,"driftBeta":_dbeta,
             "indices":{"DOW":"Dow Jones 30","NDX":"Nasdaq-100","SPX":"S&P 500","RUT":"Russell 2000"},"sectors":SECTORS,"factors":FACTORS,"macrof":["MKT"]+MFAC,
             # factorMoves: latest move of EVERY macro driver (DXY, VIX, nominal RATE + the full commodity panel),
             # in the SAME units the per-name Lasso betas (n['mb']) were fit on. The board dots mb·factorMoves over

@@ -36,6 +36,9 @@ REQUIRED = [
     "mean", "stdev", "sharpe", "downside_dev", "sortino", "max_drawdown", "calmar", "cagr",
     "skewness", "kurtosis", "value_at_risk", "cvar", "ulcer_index", "information_ratio",
     "ewma_vol", "spearman", "hurst",
+    # canonical backtest performance metrics
+    "hit_rate", "payoff_ratio", "profit_factor", "exposure", "turnover", "drawdown_duration",
+    "tracking_error", "binom_test_greater",
 ]
 absent = [n for n in REQUIRED if not hasattr(M, n)]
 ok("all REQUIRED canonical estimators present (truncation tripwire)", not absent, absent)

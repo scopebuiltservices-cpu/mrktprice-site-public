@@ -19,7 +19,10 @@ __all__ = ["winsorize", "zscores", "ann_vol", "beta", "pearson", "_var", "_resid
            # canonical risk/return library (previously missing or duplicated across modules):
            "mean", "stdev", "sharpe", "downside_dev", "sortino", "max_drawdown", "calmar", "cagr",
            "skewness", "kurtosis", "value_at_risk", "cvar", "ulcer_index", "information_ratio",
-           "ewma_vol", "spearman", "hurst"]
+           "ewma_vol", "spearman", "hurst",
+           # canonical backtest performance metrics (report section 15/18):
+           "hit_rate", "payoff_ratio", "profit_factor", "exposure", "turnover", "drawdown_duration",
+           "tracking_error", "binom_test_greater"]
 
 
 def winsorize(xs,p=0.02):
@@ -481,3 +484,71 @@ def hurst(prices, max_lag=20):
         tau.append(s if s > 0 else 1e-12)
     b = beta([math.log(t) for t in tau], [math.log(L) for L in lags])   # slope = H
     return round(b, 3) if b == b else None
+
+
+# ---- canonical backtest performance metrics (close the report's section 15 / 18 gaps) ----
+def hit_rate(returns):
+    """Pr(R_t > 0)."""
+    v = _clean(returns)
+    return (sum(1 for x in v if x > 0) / len(v)) if v else float("nan")
+
+
+def payoff_ratio(returns):
+    """E[R | R>0] / |E[R | R<0]| (average-win over average-loss)."""
+    v = _clean(returns); up = [x for x in v if x > 0]; dn = [x for x in v if x < 0]
+    if not up or not dn:
+        return float("nan")
+    return (sum(up) / len(up)) / abs(sum(dn) / len(dn))
+
+
+def profit_factor(returns):
+    """sum(gains) / |sum(losses)| — gross profit over gross loss."""
+    v = _clean(returns); g = sum(x for x in v if x > 0); l = sum(x for x in v if x < 0)
+    return (g / abs(l)) if l < 0 else float("nan")
+
+
+def exposure(weights):
+    """Gross exposure sum_i |w_i| at one date."""
+    return sum(abs(w) for w in weights if w == w)
+
+
+def turnover(weights_now, weights_prev):
+    """One-step turnover sum_i |w_now - w_prev| (align by index; missing legs treated as 0)."""
+    n = max(len(weights_now), len(weights_prev))
+    a = list(weights_now) + [0.0] * (n - len(weights_now))
+    b = list(weights_prev) + [0.0] * (n - len(weights_prev))
+    return sum(abs((a[i] if a[i] == a[i] else 0.0) - (b[i] if b[i] == b[i] else 0.0)) for i in range(n))
+
+
+def drawdown_duration(equity_or_prices):
+    """Longest run (in periods) spent strictly below the prior running peak — the recovery-time risk."""
+    v = _clean(equity_or_prices)
+    if len(v) < 2:
+        return 0
+    peak = v[0]; cur = 0; longest = 0
+    for x in v:
+        if x >= peak:
+            peak = x; cur = 0
+        else:
+            cur += 1; longest = max(longest, cur)
+    return longest
+
+
+def tracking_error(returns, bench, periods=252):
+    """Annualized stdev of active (model - benchmark) returns."""
+    a = _clean(returns); b = _clean(bench); n = min(len(a), len(b))
+    if n < 2:
+        return float("nan")
+    return stdev([a[i] - b[i] for i in range(n)]) * math.sqrt(periods)
+
+
+def _binom_pmf(k, n, p):
+    return math.comb(n, k) * (p ** k) * ((1.0 - p) ** (n - k))
+
+
+def binom_test_greater(k, n, p=0.5):
+    """One-sided binomial p-value P(X >= k) under X~Binom(n, p). Inferential support for a headline like
+    'k of n horizons/names beat the naive benchmark' — a count is not evidence without this."""
+    if n <= 0 or k < 0 or k > n:
+        return float("nan")
+    return min(1.0, sum(_binom_pmf(i, n, p) for i in range(k, n + 1)))

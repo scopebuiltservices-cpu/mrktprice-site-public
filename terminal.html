@@ -2082,12 +2082,22 @@ function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementByI
  var _rr=lr(CUR.c),_dn=[],_up=[];for(var _i=0;_i<_rr.length;_i++){if(_rr[_i]<0)_dn.push(-_rr[_i]);else if(_rr[_i]>0)_up.push(_rr[_i]);}
  var _rms=function(a){return a.length?Math.sqrt(a.reduce(function(s,y){return s+y*y;},0)/a.length):0;};
  var _dv=_rms(_dn),_uv=_rms(_up),_tv=(_dv+_uv)/2||1;var asym=lev?{dn:_dv/_tv,up:_uv/_tv}:{dn:1,up:1};CUR.asym=asym;
- if(am==='ou'&&CUR.ou&&CUR.ou.meanRev){pj=projectOU(P0,H,CUR.ou,asym);}
- else if(am==='blend'&&CUR.ou&&CUR.ou.meanRev){const aa=project(P0,mid,H,sig,cf,asym),bb=projectOU(P0,H,CUR.ou,asym);pj={lam:aa.lam,sdn:aa.sdn,sup:aa.sup,path:aa.path.map((pp,k)=>({t:pp.t,price:(pp.price+bb.path[k].price)/2})),p80:aa.p80.map((pp,k)=>({t:pp.t,low:(pp.low+bb.p80[k].low)/2,high:(pp.high+bb.p80[k].high)/2})),p95:aa.p95.map((pp,k)=>({t:pp.t,low:(pp.low+bb.p95[k].low)/2,high:(pp.high+bb.p95[k].high)/2}))};}
- else{pj=project(P0,mid,H,sig,cf,asym);}
- CUR.pj=pj;CUR.anchors={low,mid,high};
+ // EMA trend (also used by the model-drift central path below and the EMA projection overlay)
  const eSel=document.getElementById('emaSel').value;const selN=(eSel==='best'||eSel==='all')?CUR.bestTrack:Number(eSel);
  CUR.emaShow=eSel==='all'?EMAP:[selN];const em=CUR.emaM[selN];const phi=0.9,dsum=(1-Math.pow(phi,H))/(1-phi);
+ // MODEL-DRIFT CENTRAL PATH: when the mid anchor is still the auto spot-default (no manual target), anchor the
+ // cone to the MODEL's expected level — OU fair-value reversion (if mean-reverting) blended with the damped EMA
+ // trend — shrunk 0.6 toward spot (research-only, avoids overconfident drift). Fixes the cone collapsing to a
+ // flat +0.0% line at spot. A user-entered target (mid != spot) is always honored as-is.
+ var _autoMid=Math.abs(mid-P0)<1e-6,_V=mid;
+ if(_autoMid){var _Tt=(em&&isFinite(em.slope))?(P0+em.slope*dsum):P0,
+   _To=(CUR.ou&&CUR.ou.meanRev&&isFinite(CUR.ou.mu)&&isFinite(CUR.ou.phi))?Math.exp(CUR.ou.mu+Math.pow(CUR.ou.phi,H)*(Math.log(P0)-CUR.ou.mu)):null,
+   _cd=[];if(isFinite(_Tt)&&_Tt>0)_cd.push(_Tt);if(_To&&_To>0)_cd.push(_To);
+   var _Tm=_cd.length?(_cd.reduce(function(a,b){return a+b;},0)/_cd.length):P0;_V=P0+0.6*(_Tm-P0);}
+ if(am==='ou'&&CUR.ou&&CUR.ou.meanRev){pj=projectOU(P0,H,CUR.ou,asym);}
+ else if(am==='blend'&&CUR.ou&&CUR.ou.meanRev){const aa=project(P0,_V,H,sig,cf,asym),bb=projectOU(P0,H,CUR.ou,asym);pj={lam:aa.lam,sdn:aa.sdn,sup:aa.sup,path:aa.path.map((pp,k)=>({t:pp.t,price:(pp.price+bb.path[k].price)/2})),p80:aa.p80.map((pp,k)=>({t:pp.t,low:(pp.low+bb.p80[k].low)/2,high:(pp.high+bb.p80[k].high)/2})),p95:aa.p95.map((pp,k)=>({t:pp.t,low:(pp.low+bb.p95[k].low)/2,high:(pp.high+bb.p95[k].high)/2}))};}
+ else{pj=project(P0,_V,H,sig,cf,asym);}
+ CUR.pj=pj;CUR.anchors={low,mid,high};CUR.driftTarget=_V;CUR.autoMid=_autoMid;
  const projDamp=P0+em.slope*dsum,projLin=P0+em.slope*H;CUR.emaProj={N:selN,path:emaProjPath(em.slope,P0,H,phi),projDamp,projLin};
  document.getElementById('ematab').innerHTML='<tr><td>EMA</td><td class=r>last</td><td class=r>slope/d</td><td class=r>R²</td><td class=r>RMSE</td><td class=r>dir</td></tr>'+EMAP.map(N=>{const m=CUR.emaM[N];const fl=(N===CUR.bestTrack?' ★':'')+(N===CUR.bestFit?' R':'');return `<tr><td style="color:${EMACOL[N]}">${N}d${fl}</td><td class=r>${m.last.toFixed(2)}</td><td class=r>${m.slope.toFixed(3)}</td><td class=r>${m.r2.toFixed(2)}</td><td class=r>${m.rmse.toFixed(2)}</td><td class=r>${(m.dir*100).toFixed(0)}%</td></tr>`;}).join('');
  document.getElementById('emaproj').innerHTML=`<tr><td>Selected</td><td class=r style="color:${EMACOL[selN]}">EMA${selN}${eSel==='best'?' (best)':''}</td></tr><tr><td>Slope/day</td><td class=r>${em.slope.toFixed(3)} ${em.slope>=0?'▲':'▼'}</td></tr><tr><td>Trend R²</td><td class=r>${em.r2.toFixed(2)}</td></tr><tr><td>Proj @${H}d damped</td><td class=r>${projDamp.toFixed(2)}</td></tr><tr><td>Proj @${H}d linear</td><td class=r>${projLin.toFixed(2)}</td></tr>`;

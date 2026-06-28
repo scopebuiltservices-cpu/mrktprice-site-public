@@ -2251,7 +2251,8 @@ function buildBullBearBoard(){
   // Equation-deduced numeric thresholds: |z|>=1.5 HIGH, >=0.7 MED, else LOW. TOTAL expected 1-month
   // return = idiosyncratic exp% (alpha-driven) + market-beta drag (beta x market move).
   var aSd=Math.sqrt(S.reduce(function(x,s){return x+s.alpha*s.alpha;},0)/Math.max(1,S.length))||1;
-  S.forEach(function(s){s.zc=s.alpha/aSd;s.tot=s.exp+s.drag;s.conv=(Math.abs(s.zc)>=1.5?'HIGH':(Math.abs(s.zc)>=0.7?'MED':'LOW'));});
+  var _convScale=(typeof window!=='undefined'&&window.MRKT_CONV_SCALE!=null)?window.MRKT_CONV_SCALE:1;  // composite deflated-Sharpe gate degrades conviction when the composite is over-searched / weak
+  S.forEach(function(s){s.zc=(s.alpha/aSd)*_convScale;s.tot=s.exp+s.drag;s.conv=(Math.abs(s.zc)>=1.5?'HIGH':(Math.abs(s.zc)>=0.7?'MED':'LOW'));});
   // EVERY company placed in exactly one column by TOTAL expected return (fixes the alpha-sign edge case):
   // tot>=0 -> BULL, tot<0 -> BEAR. Ranked within each by total expected return.
   var bull=S.filter(function(s){return s.tot>=0;}).sort(function(a,b){return b.tot-a.tot;}),

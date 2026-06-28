@@ -1823,6 +1823,30 @@ def main():
                 _oc=_tstore.read_outcomes(_tout,_k3); _mets[_k3]={"values":_oc["values"],"fwd":_oc["fwd"],"grid":_g3,"side":"ge","min_hits":20}
             snap["triggerCutoffs"]=_tcal.calibrate(_mets, defaults={"rvol":2.0,"z":2.0,"obvt":2.0})
     except Exception: pass
+    # ---- PER-NAME DRIFT (run-over-run, checkpointed): PSI/KS of each name's return distribution vs a
+    #      RETAINED reference window (drift_ref.json, refreshed ~monthly) + an immediate in-sample drift.
+    #      Flags regime change / a provider changing basis / corrupted pulls. Uses _PRECM (closes captured
+    #      before build() popped _cl). Persisted via drift_store.jsonl + drift_ref.json (committed nightly). ----
+    try:
+        import os as _o4, drift_store as _drift
+        _st4 = _o4.path.dirname(_o4.path.abspath(__file__))
+        _rmap = {}
+        for _n in (snap.get("names") or []):
+            _t = (_n.get("t") or "").upper(); _cl = _PRECM.get(_t)
+            if not _t or not _cl or len(_cl) < 41:
+                continue
+            _rmap[_t] = [_cl[i] / _cl[i - 1] - 1.0 for i in range(1, len(_cl)) if _cl[i - 1]]
+        if _rmap:
+            _dout = _drift.update(_o4.path.join(_st4, "drift_ref.json"), _o4.path.join(_st4, "drift_store.jsonl"),
+                                  snap.get("asof"), _rmap)
+            for _n in (snap.get("names") or []):
+                _dd = _dout.get((_n.get("t") or "").upper())
+                if _dd:
+                    _n["drift"] = _dd
+            if isinstance(snap.get("dataHealth"), dict):
+                snap["dataHealth"]["driftCensus"] = _drift.census(_dout)
+    except Exception as _de:
+        import sys as _s4; _s4.stderr.write("::warning::drift layer skipped: %s\n" % str(_de)[:140])
     snap.setdefault("schemaVersion","1.0")                                 # producer-stamped contract version (consumer version-gates)
     snap=_finite(snap)
     json.dump(snap,open(a.out,"w"),separators=(",",":"),allow_nan=False)   # allow_nan=False = hard guard: never emit invalid JSON

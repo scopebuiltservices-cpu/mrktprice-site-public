@@ -296,3 +296,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+# verified: S&P500 + full Nasdaq + Dow30 + Russell2000 union with S/ND/D/R membership tags.

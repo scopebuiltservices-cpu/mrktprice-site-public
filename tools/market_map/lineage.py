@@ -500,69 +500,153 @@ def _var(xs):
     return sum((x - m) ** 2 for x in xs) / (len(xs) - 1)
 
 
+def _quantile(xs: Sequence[float], q: float) -> float:
+    """Linear-interpolation empirical quantile (numpy default)."""
+    s = sorted(xs); n = len(s)
+    if n == 0:
+        return 0.0
+    if n == 1:
+        return s[0]
+    pos = q * (n - 1); lo = int(math.floor(pos)); hi = int(math.ceil(pos))
+    if lo == hi:
+        return s[lo]
+    return s[lo] + (s[hi] - s[lo]) * (pos - lo)
+
+
+def garch11_fit(returns: Sequence[float]) -> Optional[Dict]:
+    """GARCH(1,1) variance-targeting QMLE: uncond var fixed to the sample var, (alpha,beta)
+    found by 2-D grid + local refine on the Gaussian quasi-log-likelihood (alpha+beta<1).
+    Pure-stdlib, no optimizer dependency."""
+    r = [v for v in returns if v == v]
+    n = len(r)
+    if n < 40:
+        return None
+    uv = _var(r)
+    if uv <= 0:
+        return None
+
+    def nll(a, b):
+        if a < 0 or b < 0 or a + b >= 0.999:
+            return 1e18
+        om = (1 - a - b) * uv; h = uv; s = 0.0
+        for t in range(1, n):
+            h = om + a * r[t - 1] * r[t - 1] + b * h; h = max(h, 1e-14)
+            s += math.log(h) + r[t] * r[t] / h
+        return 0.5 * s
+    best = None
+    for a in (0.02, 0.05, 0.08, 0.12, 0.16, 0.20, 0.25, 0.30):
+        for b in (0.50, 0.60, 0.70, 0.78, 0.85, 0.90, 0.94, 0.97):
+            v = nll(a, b)
+            if best is None or v < best[0]:
+                best = (v, a, b)
+    _, a, b = best; step = 0.04
+    for _ in range(6):
+        improved = False
+        for da in (-step, 0, step):
+            for db in (-step, 0, step):
+                na, nb = a + da, b + db
+                if na <= 0 or nb <= 0 or na + nb >= 0.999:
+                    continue
+                v = nll(na, nb)
+                if v < best[0]:
+                    best = (v, na, nb); a, b = na, nb; improved = True
+        if not improved:
+            step *= 0.5
+    _, a, b = best
+    return {"omega": (1 - a - b) * uv, "alpha": a, "beta": b, "uncondVar": uv}
+
+
+def garch11_nstep_var(fit: Dict, returns: Sequence[float], n: int) -> float:
+    """Aggregate GARCH(1,1) variance over an n-step horizon: sum_{k=1..n} E[h_{t+k}],
+    E[h_{t+k}] = uncond + (alpha+beta)^{k-1}(h_{t+1} - uncond)."""
+    r = [v for v in returns if v == v]
+    a = fit["alpha"]; b = fit["beta"]; om = fit["omega"]; uv = fit["uncondVar"]
+    h = uv
+    for t in range(1, len(r)):
+        h = om + a * r[t - 1] * r[t - 1] + b * h
+    h1 = om + a * r[-1] * r[-1] + b * h
+    ph = a + b; tot = 0.0
+    for kk in range(0, n):
+        tot += uv + (ph ** kk) * (h1 - uv)
+    return max(tot, 1e-14)
+
+
 def calibrate_horizon(returns: Sequence[float], n_steps: int,
                       regimes: Optional[Sequence[int]] = None,
                       window: int = 26, alpha: float = 0.10) -> Optional[Dict]:
-    """Walk-forward (no-lookahead) calibration of an n-step Gaussian predictive built from a
-    trailing window. Reports coverage+Wilson CI, CRPS, interval score, PIT-KS, conformal pad
-    (and the post-pad coverage), DKW width — pooled and by regime. Target central coverage
-    for the band is (1-alpha)."""
+    """Studentized, ASYMMETRIC split-conformal calibration of an n-step predictive with an
+    H-EMBARGO between the calibration and test folds (acceptance criteria #1-#10).
+
+    Walk-forward samples (no lookahead): each i fits mu/sigma on the trailing `window` STRICTLY
+    before i, with outcome y=sum(r[i:i+n]) (label matures only after n steps, criterion #2).
+    Samples are split 60/40 into calibration/test with n observations PURGED at the boundary so
+    their n-step outcomes can't overlap (criterion #3). Studentized residuals e=(y-mu_n)/sig_n on
+    the calibration fold give SEPARATE lower/upper empirical quantiles qLo/qHi (criteria #5,#6).
+    Coverage / Wilson CI / interval score / mean width / CRPS / PIT-KS are reported on the TEST
+    fold only, pooled and by regime (criteria #7,#8,#10). `coverageGaussian` keeps the naive
+    symmetric +/-z number so the optimism the embargo+asymmetry remove is visible."""
     r = [v for v in returns if v == v]
     T = len(r)
     n = max(1, int(n_steps))
     z = 1.6448536269514722  # one-sided 95% -> 90% central
-    if T < window + n + 5:
+    if T < window + 3 * n + 20:
         return None
-    covs, crps_l, isc_l, pits, nonconf = [], [], [], [], []
+    samples = []  # (i, mu_n, sig_n, y, regime)
+    for i in range(window, T - n + 1):
+        win = r[i - window:i]
+        mu = _mean(win); var = _var(win)
+        mu_n = n * mu; sig_n = math.sqrt(max(n * var, 1e-12))
+        y = sum(r[i:i + n])
+        rg = regimes[i] if (regimes is not None and i < len(regimes)) else None
+        samples.append((i, mu_n, sig_n, y, rg))
+    M = len(samples)
+    if M < 30:
+        return None
+    cut = int(M * 0.6)
+    cal = samples[:max(1, cut - n)]   # purge: drop last n of calibration fold
+    test = samples[cut + n:]          # embargo: drop first n of test fold
+    if len(cal) < 15 or len(test) < 15:
+        return None
+    embargo_gap = test[0][0] - cal[-1][0]
+    e_cal = [(s[3] - s[1]) / s[2] for s in cal]                 # studentized residuals
+    qLo = _quantile(e_cal, alpha / 2.0)
+    qHi = _quantile(e_cal, 1.0 - alpha / 2.0)
+    qSym = _quantile(sorted(abs(x) for x in e_cal), 1.0 - alpha)
+    covA = covS = covG = 0
+    widths, crps_l, isc_l, pits = [], [], [], []
     reg_cov: Dict[int, List[int]] = {}
-    for i in range(window, T - n + 1):
-        win = r[i - window:i]
-        mu = _mean(win); var = _var(win)
-        mu_n = n * mu; sig_n = math.sqrt(max(n * var, 1e-12))
-        y = sum(r[i:i + n])
-        lo = mu_n - z * sig_n; hi = mu_n + z * sig_n
-        c = 1 if (lo <= y <= hi) else 0
-        covs.append(c)
+    for (i, mu_n, sig_n, y, rg) in test:
+        loA = mu_n + qLo * sig_n; hiA = mu_n + qHi * sig_n
+        cA = 1 if loA <= y <= hiA else 0; covA += cA
+        loS = mu_n - qSym * sig_n; hiS = mu_n + qSym * sig_n
+        covS += 1 if loS <= y <= hiS else 0
+        loG = mu_n - z * sig_n; hiG = mu_n + z * sig_n
+        covG += 1 if loG <= y <= hiG else 0
+        widths.append(hiA - loA)
         crps_l.append(crps_gaussian(y, mu_n, sig_n))
-        isc_l.append(interval_score(y, lo, hi, alpha))
+        isc_l.append(interval_score(y, loA, hiA, alpha))
         pits.append(norm_cdf((y - mu_n) / sig_n))
-        nonconf.append(max(lo - y, y - hi, 0.0))
-        if regimes is not None and i < len(regimes):
-            reg_cov.setdefault(regimes[i], []).append(c)
-    m = len(covs)
-    if m == 0:
-        return None
-    k = sum(covs)
-    wlo, whi = wilson_interval(k, m)
-    pad = conformal_pad(nonconf, alpha)
-    # post-pad coverage (re-walk with widened band)
-    kp = 0
-    idx = 0
-    for i in range(window, T - n + 1):
-        win = r[i - window:i]
-        mu = _mean(win); var = _var(win)
-        mu_n = n * mu; sig_n = math.sqrt(max(n * var, 1e-12))
-        y = sum(r[i:i + n])
-        lo = mu_n - z * sig_n - pad; hi = mu_n + z * sig_n + pad
-        if lo <= y <= hi:
-            kp += 1
-        idx += 1
+        if rg is not None:
+            reg_cov.setdefault(rg, []).append(cA)
+    mt = len(test); k = covA
+    wlo, whi = wilson_interval(k, mt)
     by_reg = {}
     for rg, cs in reg_cov.items():
         if len(cs) >= 15:
             by_reg[str(rg)] = {"n": len(cs), "coverage": round(sum(cs) / len(cs), 3)}
     ks = pit_ks(pits)
     return {
-        "n": m, "nSteps": n,
-        "coverage": round(k / m, 3), "wilsonLo": round(wlo, 3), "wilsonHi": round(whi, 3),
-        "target": round(1 - alpha, 3),
+        "n": mt, "nSteps": n, "nCal": len(cal), "embargo": n, "embargoGap": embargo_gap,
+        "coverage": round(k / mt, 3), "wilsonLo": round(wlo, 3), "wilsonHi": round(whi, 3),
+        "coverageGaussian": round(covG / mt, 3), "coverageSym": round(covS / mt, 3),
+        "qLo": round(qLo, 4), "qHi": round(qHi, 4), "target": round(1 - alpha, 3),
         "crps": round(_mean(crps_l), 6), "intervalScore": round(_mean(isc_l), 6),
+        "widthMean": round(_mean(widths), 6),
         "pitKS": (round(ks["D"], 3) if ks["D"] is not None else None),
         "pitUniformP": (round(ks["p"], 3) if ks["p"] is not None else None),
-        "conformalPad": round(pad, 6), "coveragePadded": round(kp / m, 3),
-        "dkw": (round(dkw_band(m), 4)),
+        "dkw": (round(dkw_band(mt), 4)),
         "byRegime": by_reg,
-        "calibrated": bool(abs(k / m - (1 - alpha)) <= 0.05),
+        "calibrated": bool(wlo <= (1 - alpha) <= whi),
     }
 
 
@@ -786,7 +870,18 @@ def challenger_scorecard(returns: Sequence[float], n_steps: int, iv_annual: Opti
             v = lam * v + (1 - lam) * r[t - 1] * r[t - 1]; ew[t] = v
     z = 1.6448536269514722
     sq_step = (iv_annual * math.sqrt(step_days / 252.0)) if iv_annual else None
-    crps = {"model": [], "rw": [], "ewma": []}
+    # GARCH(1,1) challenger: fit params once (benchmark), then a CAUSAL conditional-variance path
+    # so the n-step forecast at i uses only info <= i (no lookahead in the scoring).
+    g = garch11_fit(r)
+    hpath = None
+    if g:
+        ga, gb, gom, guv = g["alpha"], g["beta"], g["omega"], g["uncondVar"]
+        hpath = [guv] * T; hh = guv
+        for t in range(1, T):
+            hh = gom + ga * r[t - 1] * r[t - 1] + gb * hh; hpath[t] = hh
+    crps = {"model": [], "rw": [], "hv": [], "ewma": []}
+    if hpath is not None:
+        crps["garch"] = []
     if sq_step:
         crps["q"] = []
     covs = []
@@ -796,8 +891,12 @@ def challenger_scorecard(returns: Sequence[float], n_steps: int, iv_annual: Opti
         crps["model"].append(crps_gaussian(y, n * mu, sdw * rt))
         full = r[:i]; sdf = math.sqrt(max(_var(full), 1e-12)) if len(full) > 2 else sdw
         crps["rw"].append(crps_gaussian(y, 0.0, sdf * rt))
+        crps["hv"].append(crps_gaussian(y, 0.0, sdw * rt))   # empirical HV: zero-drift, trailing-window sigma
         sde = math.sqrt(max(ew[i] if ew[i] is not None else _var(win), 1e-12))
         crps["ewma"].append(crps_gaussian(y, n * mu, sde * rt))
+        if hpath is not None:
+            tot = sum(guv + ((ga + gb) ** kk) * (hpath[i] - guv) for kk in range(n))
+            crps["garch"].append(crps_gaussian(y, n * mu, math.sqrt(max(tot, 1e-14))))
         if sq_step:
             crps["q"].append(crps_gaussian(y, n * mu, sq_step * rt))
         lo = n * mu - z * sdw * rt; hi = n * mu + z * sdw * rt

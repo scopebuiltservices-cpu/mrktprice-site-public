@@ -221,6 +221,22 @@ def clustered_miss(z_errors, k=3, thr=1.5):
     return all(abs(x) > thr for x in tail) and (all(x > 0 for x in tail) or all(x < 0 for x in tail))
 
 
+def skill_mase(model_abs_errs, naive_abs_errs):
+    """Aggregate benchmark-relative skill over a horizon's resolved forecasts. MASE = mean|model err| /
+    mean|naive err|; skill = 1 - MASE (>0 => beats the naive random-walk benchmark). For overlapping long
+    horizons (21/34/55 issued daily) the skill must be tested with non-overlapping blocks or HAC/Diebold-
+    Mariano on the loss differential — reuse pooled_rigor (block bootstrap / RC / SPA) + quant-validity HAC."""
+    m = _clean(model_abs_errs); n = _clean(naive_abs_errs)
+    if not m or not n:
+        return {"mase": float("nan"), "skill": float("nan"), "n": len(m)}
+    mae_m = sum(abs(x) for x in m) / len(m)
+    mae_n = sum(abs(x) for x in n) / len(n)
+    if mae_n <= 0:
+        return {"mase": float("nan"), "skill": float("nan"), "n": len(m)}
+    mase = mae_m / mae_n
+    return {"mase": mase, "skill": 1.0 - mase, "n": len(m)}
+
+
 # ---- immutable forecast record (matches schemas/fib_forecast.schema.json) ----
 def build_record(asof, asset_class, preset, price_now, projections, target_dates, params):
     items = []

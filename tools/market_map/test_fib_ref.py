@@ -74,6 +74,48 @@ rec = FB.build_record("2026-06-27", "equity", "cadence", 100.0, proj,
 ok("record has required keys", all(k in rec for k in ("schemaVersion", "asof", "assetClass", "horizonPreset", "priceNow", "params", "horizons")))
 ok("record horizons carry targetDate", all("targetDate" in h for h in rec["horizons"]))
 
+# ---- report-driven improvements ----
+ok("fib preset is the full 1..55 lattice", FB.horizons("fib") == [1, 2, 3, 5, 8, 13, 21, 34, 55])
+us = FB.user_subset(FB.project(closes[-1], 0.001, closes, [1, 2, 5, 21]))
+ok("user_subset maps 24H/48H/1W/1M", us["24H"]["H"] == 1 and us["1W"]["H"] == 5 and us["1M"]["H"] == 21)
+
+# sigma decomposition
+ok("sigma_total combines process+model+event", abs(FB.sigma_total(0.03, 0.04, 0.12) - math.sqrt(0.03**2 + 0.04**2 + 0.12**2)) < 1e-12)
+ok("sigma_total process-only == process", FB.sigma_total(0.05) == 0.05)
+
+# direct-forecast path overrides the fallback + flags source
+pd = FB.project(closes[-1], 0.001, closes, [5, 21], mu_by_H={5: 0.07})
+ok("direct mu used + source=direct", pd[0]["source"] == "direct" and abs(pd[0]["muLog"] - 0.07) < 1e-12)
+ok("non-direct horizon falls back", pd[1]["source"] == "fallback")
+
+# daily edge cap
+pc = FB.project(closes[-1], 0.5, closes, [1], cap_daily=1.5)[0]
+sd_dbg = FB.blended_sigma_daily(FB._logret(closes))
+ok("daily edge cap clamps the 1-session drift", abs(pc["muLog"]) <= 1.5 * sd_dbg + 1e-9)
+
+# zEdge present
+ok("projection carries zEdge", "zEdge" in pd[0])
+
+# expected-path maturity consistency: path at e=H equals the stored horizon target
+s0 = 100.0; muH = 0.05; hlx = 3.0
+ok("expected_path_price(.,H) == target at maturity", abs(FB.expected_path_price(s0, muH, hlx, 5, 5) - s0 * math.exp(muH)) < 1e-9)
+ok("expected_path_price(.,0) ~ s0", abs(FB.expected_path_price(s0, muH, hlx, 0, 5) - s0) < 1e-9)
+
+# deviation + dual-condition anti-deviation
+dv = FB.deviation(101.0, 100.0, 0.02)
+ok("deviation gapLog sign", dv["gapLog"] > 0 and dv["zDeviation"] > 0)
+ok("anti_dev reverting when both improve", FB.anti_deviation(0.05, 0.02, 2.0, 1.0)["state"] == "reverting")
+ok("anti_dev diverging when both worsen", FB.anti_deviation(0.02, 0.05, 1.0, 2.0)["state"] == "diverging")
+ok("anti_dev stable when mixed (denominator artifact)", FB.anti_deviation(0.05, 0.02, 1.0, 2.0)["state"] == "stable")
+
+# probability tile
+ok("prob_above > 0.5 for positive drift", FB.prob_above(100.0, 0.05, 0.05, 100.0) > 0.5)
+ok("prob_above < 0.5 for high threshold", FB.prob_above(100.0, 0.0, 0.05, 110.0) < 0.5)
+
+# aggregate skill / MASE
+sk = FB.skill_mase([0.01, 0.012, 0.009], [0.03, 0.028, 0.031])
+ok("skill_mase > 0 when model beats naive", sk["skill"] > 0 and sk["mase"] < 1)
+
 # golden-fixture lock
 GOLD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fib_golden.json")
 if not os.path.exists(GOLD):

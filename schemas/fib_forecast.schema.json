@@ -16,7 +16,9 @@
         "projPrice": { "type": "number", "exclusiveMinimum": 0 },
         "muLog": { "type": "number" },
         "sigmaH": { "type": "number", "minimum": 0 },
+        "zEdge": { "type": ["number", "null"] },
         "capped": { "type": "boolean" },
+        "source": { "enum": ["direct", "fallback"] },
         "lo": { "type": "number", "exclusiveMinimum": 0 },
         "hi": { "type": "number", "exclusiveMinimum": 0 },
         "bandMethod": { "enum": ["conformal", "parametric"] }
@@ -29,6 +31,9 @@
     "assetClass": { "enum": ["equity", "crypto"] },
     "horizonPreset": { "enum": ["cadence", "fib", "powers"] },
     "priceNow": { "type": "number", "exclusiveMinimum": 0 },
+    "modelVersion": { "type": "string" },
+    "featureVersion": { "type": "string" },
+    "dataVersion": { "type": "string" },
     "params": {
       "type": "object",
       "required": ["halflife", "sigmaDaily"],

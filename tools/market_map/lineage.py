@@ -608,10 +608,15 @@ def calibrate_horizon(returns: Sequence[float], n_steps: int,
     if len(cal) < 15 or len(test) < 15:
         return None
     embargo_gap = test[0][0] - cal[-1][0]
-    e_cal = [(s[3] - s[1]) / s[2] for s in cal]                 # studentized residuals
-    qLo = _quantile(e_cal, alpha / 2.0)
-    qHi = _quantile(e_cal, 1.0 - alpha / 2.0)
-    qSym = _quantile(sorted(abs(x) for x in e_cal), 1.0 - alpha)
+    # finite-sample split-conformal quantiles of the studentized calibration residuals: the
+    # ceil((1-a/2)(ne+1))-th order statistic (upper) and floor((a/2)(ne+1))-th (lower) guarantee
+    # marginal coverage >= 1-alpha (Vovk; Lei et al.) — widens slightly vs the plain quantile at small ne.
+    e_sorted = sorted((s[3] - s[1]) / s[2] for s in cal)
+    ne = len(e_sorted)
+    qHi = e_sorted[min(ne, max(1, math.ceil((1.0 - alpha / 2.0) * (ne + 1)))) - 1]
+    qLo = e_sorted[min(ne, max(1, math.floor((alpha / 2.0) * (ne + 1)))) - 1]
+    ea_sorted = sorted(abs(x) for x in e_sorted)
+    qSym = ea_sorted[min(ne, max(1, math.ceil((1.0 - alpha) * (ne + 1)))) - 1]
     covA = covS = covG = 0
     widths, crps_l, isc_l, pits = [], [], [], []
     reg_cov: Dict[int, List[int]] = {}

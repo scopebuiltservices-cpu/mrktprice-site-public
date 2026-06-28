@@ -2436,26 +2436,24 @@ function conePathProbs(pj,last,levels){var nP=pj.path.length,N=2500;
   return {pUp:nUp/N,pFinAboveMid:(midL!=null)?nFin/N:null,pTouchHi:(hiL!=null)?nTHi/N:null,pTouchLo:(loL!=null)?nTLo/N:null,eMFE:sMFE/N,eMAE:sMAE/N,N:N};}
 /* walk-forward self-calibration: do the 50/80/90 bands actually cover at their advertised rate? */
 function coneCalibration(closes,H){
+  // CONSOLIDATED onto the authoritative engine: lineage.calibrateHorizon does studentized,
+  // ASYMMETRIC split-conformal coverage with an H-EMBARGO between calibration and test folds
+  // (acceptance criteria #1-#10). This replaces the old in-sample symmetric +/-z scorecard so the
+  // band that is coverage-tested matches the asymmetric cone that is drawn, and reports the naive
+  // Gaussian number alongside so the optimism the embargo+asymmetry remove is visible.
   if(!closes||closes.length<H+120)return null;
   var r=[];for(var i=1;i<closes.length;i++)r.push(Math.log(closes[i]/closes[i-1]));
-  var lam=0.94,s2=(r[0]*r[0])||1e-6,sig=[];for(var i=0;i<r.length;i++){s2=lam*s2+(1-lam)*r[i]*r[i];sig.push(Math.sqrt(s2));}
-  var n50=0,n80=0,n90=0,wsum=0,tot=0,isum=0,crpsum=0,pitT=0,pits=[],zs=[],SQ2PI=2.5066282746,stride=Math.max(1,Math.floor((closes.length-H-30)/250));
-  for(var t=30;t+H<closes.length;t+=stride){var s=sig[Math.min(t-1,sig.length-1)];if(!(s>0))continue;
-    var P0=closes[t],rz=closes[t+H],sd=s*Math.sqrt(H);
-    if(rz>=P0*Math.exp(-Z[50]*sd)&&rz<=P0*Math.exp(Z[50]*sd))n50++;
-    if(rz>=P0*Math.exp(-Z[80]*sd)&&rz<=P0*Math.exp(Z[80]*sd))n80++;
-    var lo90=P0*Math.exp(-Z90*sd),hi90=P0*Math.exp(Z90*sd);if(rz>=lo90&&rz<=hi90)n90++;
-    wsum+=(hi90-lo90)/P0;isum+=intervalScore(rz,lo90,hi90,0.10)/P0;
-    var zz=Math.log(rz/P0)/sd,Phi=normCDF(zz),phi=Math.exp(-0.5*zz*zz)/SQ2PI;
-    if(zz<-1.281551||zz>1.281551)pitT++;pits.push(Phi);zs.push(zz);
-    crpsum+=sd*(zz*(2*Phi-1)+2*phi-0.5641895835);
-    tot++;}
-  if(tot<20)return null;
-  var c50=n50/tot,c80=n80/tot,c90=n90/tot,dev=c90-0.90;
-  var verdict=Math.abs(dev)<=0.04?'well calibrated':(c90<0.90?'under-dispersed':'over-dispersed');
-  var tf=pitT/tot,pitShape=(tf>0.28)?'heavy-tailed (bands too tight)':(tf<0.12?'thin-tailed (bands too wide)':'~calibrated tails');
-  return {n:tot,H:H,c50:c50,c80:c80,c90:c90,width90:wsum/tot,dev:dev,verdict:verdict,
-    wilson:wilsonCI(n90,tot),dkw:dkwEps(tot,0.1),intervalScore:isum/tot,crps:crpsum/tot,pitTailFrac:tf,pitShape:pitShape,gof:gofUniform(pits),w1:w1Uniform(pits),energy:energyNormal(zs)};}
+  var lc=(window.MrktLineage&&window.MrktLineage.calibrateHorizon)?window.MrktLineage.calibrateHorizon(r,H,null,26,0.10):null;
+  if(!lc)return null;
+  var dev=lc.coverage-0.90;
+  var verdict=Math.abs(dev)<=0.04?'well calibrated':(lc.coverage<0.90?'under-dispersed (band too tight)':'over-dispersed (band too wide)');
+  var pitShape=(lc.pitKS!=null&&lc.pitKS>0.10)?('mis-calibrated tails (KS '+lc.pitKS.toFixed(2)+')'):'~calibrated tails';
+  return {n:lc.n,H:H,nCal:lc.nCal,embargo:lc.embargo,
+    c90:lc.coverage,coverageGaussian:lc.coverageGaussian,coverageSym:lc.coverageSym,
+    qLo:lc.qLo,qHi:lc.qHi,dev:dev,verdict:verdict,
+    wilson:{lo:lc.wilsonLo,hi:lc.wilsonHi},dkw:lc.dkw,
+    intervalScore:lc.intervalScore,crps:lc.crps,widthMean:lc.widthMean,
+    pitShape:pitShape,pitKS:lc.pitKS,byRegime:lc.byRegime};}
 /* event layer: is the next earnings inside the horizon, and how big is this name's own post-earnings move? */
 function coneEventInfo(sym,nP,lastDate){
   if(!lastDate)return null;var ne=(typeof nextEarnings==='function')?nextEarnings(lastDate,sym):null;if(!ne)return null;
@@ -2637,7 +2635,7 @@ function renderConeInstrument(sym,mcOverride){
     var iv=coneOptionsIV(sym);
     CUR.coneExtra={event:ev,iv:iv};
     var calCol=cal?(Math.abs(cal.dev)<=0.04?'#5fd08a':(cal.c90<0.90?'#e0c14a':'#9ab4e0')):'#8a93a0';
-    var calTxt=cal?('90% band hit '+_pc(cal.c90)+' \u00b7 '+cal.verdict+' (n='+cal.n+', '+cal.H+'d) \u00b7 Wilson ['+_pc(cal.wilson.lo)+'\u2013'+_pc(cal.wilson.hi)+'] \u00b7 IS '+cal.intervalScore.toFixed(3)+' \u00b7 CRPS '+cal.crps.toFixed(3)+' \u00b7 '+cal.pitShape+(cal.n<80?(' \u00b7 \u26a0 thin pool (DKW \u03b5='+cal.dkw.toFixed(2)+')'):'')):'calibration: need more history';
+    var calTxt=cal?('asym 90% band hit '+_pc(cal.c90)+' (naive \u00b1z '+_pc(cal.coverageGaussian)+') \u00b7 '+cal.verdict+' \u00b7 H-embargo '+cal.embargo+' (n='+cal.n+'/'+cal.nCal+'cal, '+cal.H+'d) \u00b7 Wilson ['+_pc(cal.wilson.lo)+'\u2013'+_pc(cal.wilson.hi)+'] \u00b7 tails qLo/qHi '+cal.qLo.toFixed(2)+'/'+cal.qHi.toFixed(2)+'\u03c3 \u00b7 IS '+cal.intervalScore.toFixed(3)+' \u00b7 CRPS '+cal.crps.toFixed(3)+' \u00b7 '+cal.pitShape+(cal.n<80?(' \u00b7 \u26a0 thin pool (DKW \u03b5='+cal.dkw.toFixed(2)+')'):'')):'calibration: need more history';
     var xhead='<tr><td style="color:var(--faint,#646e7c)">horizon</td>'+xs.map(function(x){return '<td class=r style="color:var(--faint,#646e7c)">+'+x.h+'d</td>';}).join('')+'</tr>';
     var rQ50='<tr><td>q50 (median)</td>'+xs.map(function(x){return '<td class=r style="font-weight:700">'+x.q50.toFixed(2)+'</td>';}).join('')+'</tr>';
     var rRet='<tr><td>vs spot</td>'+xs.map(function(x){return '<td class=r style="color:'+(x.retMid>=0?'#2ecc8f':'#ef5f4e')+'">'+_sg(x.retMid)+'</td>';}).join('')+'</tr>';

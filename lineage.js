@@ -190,9 +190,13 @@
     var cal=samples.slice(0,Math.max(1,cut-n)), test=samples.slice(cut+n);
     if(cal.length<15 || test.length<15) return null;
     var embargoGap=test[0][0]-cal[cal.length-1][0];
-    var eCal=cal.map(function(s){return (s[3]-s[1])/s[2];});
-    var qLo=quantile(eCal,alpha/2), qHi=quantile(eCal,1-alpha/2);
-    var qSym=quantile(eCal.map(function(x){return Math.abs(x);}),1-alpha);
+    // finite-sample split-conformal quantiles (rank-adjusted) -> marginal coverage >= 1-alpha
+    var eSorted=cal.map(function(s){return (s[3]-s[1])/s[2];}).sort(function(a,b){return a-b;});
+    var ne=eSorted.length;
+    var qHi=eSorted[Math.min(ne,Math.max(1,Math.ceil((1-alpha/2)*(ne+1))))-1];
+    var qLo=eSorted[Math.min(ne,Math.max(1,Math.floor((alpha/2)*(ne+1))))-1];
+    var eaSorted=eSorted.map(function(x){return Math.abs(x);}).sort(function(a,b){return a-b;});
+    var qSym=eaSorted[Math.min(ne,Math.max(1,Math.ceil((1-alpha)*(ne+1))))-1];
     var covA=0,covS=0,covG=0,widths=[],crps=[],isc=[],pits=[],regCov={};
     test.forEach(function(s){
       var muN=s[1],sigN=s[2],y=s[3],rg=s[4];

@@ -55,6 +55,9 @@ node tools/check-external-js.mjs >/tmp/_ce.out 2>&1 && tail -1 /tmp/_ce.out | se
 section "5b. file-size budget (no source file near the ~1756 mount boundary)"
 node tools/check-file-budget.mjs >/tmp/_cb.out 2>&1 && tail -2 /tmp/_cb.out | sed 's/^/  /' || { failmsg "check-file-budget.mjs"; grep OVER /tmp/_cb.out | sed 's/^/        /'; }
 
+section "5c. canonical-library duplication guard (one source of truth for risk/return estimators)"
+node tools/check-duplication.mjs >/tmp/_cd.out 2>&1 && tail -1 /tmp/_cd.out | sed 's/^/  /' || { failmsg "check-duplication.mjs"; grep DUP /tmp/_cd.out | sed 's/^/        /'; }
+
 section "6. JSON validity (root *.json)"
 shopt -s nullglob
 for j in *.json; do

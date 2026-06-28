@@ -21,7 +21,8 @@ def pearson(a,b):
     va=sum((x-ma)**2 for x in a); vb=sum((y-mb)**2 for y in b)
     return cov/math.sqrt(va*vb) if va>0 and vb>0 else 0.0
 
-def spearman(a,b): return pearson(_rank(a),_rank(b))
+from metrics import spearman   # canonical tie-averaged rank-corr (numerically identical: Pearson is
+#                                invariant to the 0- vs 1-based rank offset). Single source of truth.
 
 def _norm_sf(z): return 0.5*math.erfc(z/math.sqrt(2))
 

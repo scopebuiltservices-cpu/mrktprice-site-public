@@ -185,6 +185,7 @@ jobs:
           node tools/check-scripts.mjs
           node tools/check-external-js.mjs              # syntax-gate every external <script src> module (engine/panels)
           node tools/check-file-budget.mjs              # fail if any source file approaches the mount/read boundary (keeps modules small + verifiable)
+          node tools/check-duplication.mjs              # fail if a canonical risk/return estimator is redefined outside metrics.py (no divergent duplicates)
           python -m py_compile $(find tools -name '*.py')   # fast syntax gate for ALL python (catches the monolith even on content-only pushes)
           python tools/market_map/check_json.py _site/marketmap.json _site/xsection.json
           [ -f _site/xsection.json ] && python tools/market_map/validate_xsection.py _site/xsection.json || echo "::notice::xsection.json absent this run"

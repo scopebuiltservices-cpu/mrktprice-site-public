@@ -66,6 +66,20 @@ if [ -f xsection.json ] && [ -f tools/market_map/validate_xsection.py ]; then
   python3 tools/market_map/validate_xsection.py xsection.json >/tmp/_vx.out 2>&1 && passmsg "xsection.json vs schema" || { failmsg "xsection.json schema"; tail -3 /tmp/_vx.out | sed 's/^/        /'; }
 else echo "  skip  xsection.json (not built locally)"; fi
 
+section "8. secondary artifact contracts (cik/alpha_calib/events/universe)"
+if [ -f tools/market_map/validate_artifacts.py ]; then
+  ARTS=""; for a in cik.json alpha_calib.json events.json universe.json; do [ -f "$a" ] && ARTS="$ARTS $a"; done
+  if [ -n "$ARTS" ]; then
+    python3 tools/market_map/validate_artifacts.py $ARTS >/tmp/_va.out 2>&1 && sed 's/^/  /' /tmp/_va.out || { failmsg "artifact contracts"; sed 's/^/        /' /tmp/_va.out; }
+  else echo "  skip  no secondary artifacts present locally"; fi
+fi
+
+section "9. coverage-regression alarm (health_log.jsonl)"
+HL="$(find . -name health_log.jsonl 2>/dev/null | head -1)"
+if [ -n "$HL" ] && [ -f tools/market_map/coverage_regression.py ]; then
+  python3 tools/market_map/coverage_regression.py "$HL" >/tmp/_cr.out 2>&1 && sed 's/^/  /' /tmp/_cr.out || { failmsg "coverage regression (a data domain dropped to zero)"; sed 's/^/        /' /tmp/_cr.out; }
+else echo "  skip  health_log.jsonl not present locally"; fi
+
 printf '\n'
 if [ "$fail" -eq 0 ]; then printf '\033[32mVERIFY_ALL: ALL GATES PASSED\033[0m\n'; else printf '\033[31mVERIFY_ALL: FAILURES ABOVE\033[0m\n'; fi
 exit "$fail"

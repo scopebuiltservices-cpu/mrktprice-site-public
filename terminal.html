@@ -2250,13 +2250,24 @@ function buildBullBearBoard(){
   // CONVICTION: standardize the composite edge cross-sectionally -> z = alpha / cross-sectional sd(alpha).
   // Equation-deduced numeric thresholds: |z|>=1.5 HIGH, >=0.7 MED, else LOW. TOTAL expected 1-month
   // return = idiosyncratic exp% (alpha-driven) + market-beta drag (beta x market move).
-  var aSd=Math.sqrt(S.reduce(function(x,s){return x+s.alpha*s.alpha;},0)/Math.max(1,S.length))||1;
+  // CONVICTION SCALE — robustly standardize alpha cross-sectionally. Previous code used RMS
+  // sqrt(mean(alpha^2)) which (a) is NOT demeaned (a nonzero cross-sectional mean biased every z) and
+  // (b) let a couple of blow-out names inflate the scale and compress everyone. Median-center + MAD
+  // scale (x1.4826 ~ sd for normal data, so the HIGH|z|>=1.5 / MED>=0.7 thresholds still hold) fixes both.
+  var _alphaV=S.map(function(s){return s.alpha;}).sort(function(a,b){return a-b;});
+  function _med(a){var n=a.length;if(!n)return 0;var h=n>>1;return (n%2)?a[h]:(a[h-1]+a[h])/2;}
+  var aMed=_med(_alphaV);
+  var aMad=1.4826*_med(S.map(function(s){return Math.abs(s.alpha-aMed);}).sort(function(a,b){return a-b;}));
+  var _aSdEff=Math.sqrt(S.reduce(function(x,s){return x+(s.alpha-aMed)*(s.alpha-aMed);},0)/Math.max(1,S.length-1));
+  var aScale=(aMad>1e-9?aMad:(_aSdEff>1e-9?_aSdEff:1))||1;   // robust scale, fall back to SD then 1
+  // small-cross-section shrinkage: with few names the scale is noisy, so damp conviction toward 0.
+  var _nShrink=Math.min(1,Math.sqrt(S.length/8));
   var _convScale=(typeof window!=='undefined'&&window.MRKT_CONV_SCALE!=null)?window.MRKT_CONV_SCALE:1;  // composite deflated-Sharpe gate degrades conviction when the composite is over-searched / weak
   // PER-NAME QUALITY/DRIFT penalty: down-weight CONVICTION (not direction) for skewed/stale data or
   // significant return-distribution drift, so a flagged name cannot present as HIGH conviction.
   function _qpen(s){var p=1;if(s.dq==='reject')p*=0.3;else if(s.dq==='degraded')p*=0.7;
     var dl=s.drift&&s.drift.level;if(dl==='significant')p*=0.5;else if(dl==='moderate')p*=0.85;return p;}
-  S.forEach(function(s){s.qpen=_qpen(s);s.zc=(s.alpha/aSd)*_convScale*s.qpen;s.tot=s.exp+s.drag;s.conv=(Math.abs(s.zc)>=1.5?'HIGH':(Math.abs(s.zc)>=0.7?'MED':'LOW'));});
+  S.forEach(function(s){s.qpen=_qpen(s);s.zc=((s.alpha-aMed)/aScale)*_convScale*s.qpen*_nShrink;s.tot=s.exp+s.drag;s.conv=(Math.abs(s.zc)>=1.5?'HIGH':(Math.abs(s.zc)>=0.7?'MED':'LOW'));});
   // EVERY company placed in exactly one column by TOTAL expected return (fixes the alpha-sign edge case):
   // tot>=0 -> BULL, tot<0 -> BEAR. Ranked within each by total expected return.
   var bull=S.filter(function(s){return s.tot>=0;}).sort(function(a,b){return b.tot-a.tot;}),

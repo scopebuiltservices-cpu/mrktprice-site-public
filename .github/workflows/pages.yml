@@ -187,6 +187,12 @@ jobs:
           python -m py_compile $(find tools -name '*.py')   # fast syntax gate for ALL python (catches the monolith even on content-only pushes)
           python tools/market_map/check_json.py _site/marketmap.json _site/xsection.json
           [ -f _site/xsection.json ] && python tools/market_map/validate_xsection.py _site/xsection.json || echo "::notice::xsection.json absent this run"
+          # secondary artifact contracts (cik/alpha_calib/events/universe) — absent files are skipped
+          ARTS=""; for a in cik.json alpha_calib.json events.json universe.json; do [ -f "_site/$a" ] && ARTS="$ARTS _site/$a"; done
+          [ -n "$ARTS" ] && python tools/market_map/validate_artifacts.py $ARTS || echo "::notice::no secondary artifacts this run"
+          # coverage-regression alarm: fail if a data domain dropped to 0% vs the prior run (silent broken feed)
+          HL="$(find _site . -name health_log.jsonl 2>/dev/null | head -1)"
+          [ -n "$HL" ] && python tools/market_map/coverage_regression.py "$HL" || echo "::notice::health_log.jsonl absent this run"
 
       - name: Upload site
         uses: actions/upload-pages-artifact@v3

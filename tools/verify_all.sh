@@ -58,6 +58,9 @@ node tools/check-file-budget.mjs >/tmp/_cb.out 2>&1 && tail -2 /tmp/_cb.out | se
 section "5c. canonical-library duplication guard (one source of truth for risk/return estimators)"
 node tools/check-duplication.mjs >/tmp/_cd.out 2>&1 && tail -1 /tmp/_cd.out | sed 's/^/  /' || { failmsg "check-duplication.mjs"; grep DUP /tmp/_cd.out | sed 's/^/        /'; }
 
+section "5d. content-integrity tripwire (NUL/truncation/vanished-definition on the critical surface)"
+python3 tools/market_map/integrity_manifest.py --check >/tmp/_im.out 2>&1 && tail -1 /tmp/_im.out | sed 's/^/  /' || { failmsg "integrity tripwire"; grep -E 'HARD|INTEGRITY' /tmp/_im.out | sed 's/^/        /'; }
+
 section "6. JSON validity (root *.json)"
 shopt -s nullglob
 for j in *.json; do

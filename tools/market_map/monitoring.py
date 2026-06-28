@@ -135,14 +135,22 @@ def _skew_kurt(xs):
     return sk, ku
 
 
+def _find(root, name):
+    """Resolve a log by name across the repo's known split locations (root, root/data,
+    tools/market_map, tools/market_map/data). Returns the first existing path or None."""
+    cands = [os.path.join(root, name), os.path.join(root, "data", name),
+             os.path.join(root, "tools", "market_map", name),
+             os.path.join(root, "tools", "market_map", "data", name)]
+    for p in cands:
+        if os.path.exists(p):
+            return p
+    return None
+
+
 def compute(root=".", window=10, horizon=21):
-    alpha_log = os.path.join(root, "data", "alpha_log.jsonl")
-    if not os.path.exists(alpha_log):
-        alpha_log = os.path.join(root, "alpha_log.jsonl")
-    health_log = os.path.join(root, "health_log.jsonl")
-    ic_log = os.path.join(root, "data", "factor_ic.jsonl")
-    if not os.path.exists(ic_log):
-        ic_log = os.path.join(root, "factor_ic.jsonl")
+    alpha_log = _find(root, "alpha_log.jsonl")
+    health_log = _find(root, "health_log.jsonl")
+    ic_log = _find(root, "factor_ic.jsonl")
 
     arows = _read_jsonl(alpha_log)
     resolved = [r for r in arows if r.get("fwd") is not None and r.get("alpha") is not None]

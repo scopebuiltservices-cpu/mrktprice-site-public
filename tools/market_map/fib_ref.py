@@ -22,14 +22,22 @@ import json, math, os
 from metrics import half_life, ewma_vol, variance_ratio, stdev, _logret, _clean
 
 PRESETS = {
-    "cadence": [1, 5, 10, 21, 63],     # day / week / 2-week / month / quarter — maps to real market cadence
-    "fib": [1, 2, 3, 5, 8, 13, 21],    # quasi-geometric grid; NOT a predictive law
+    "cadence": [1, 5, 10, 21, 63],                 # day / week / 2-week / month / quarter
+    "fib": [1, 2, 3, 5, 8, 13, 21, 34, 55],        # full diagnostic lattice; NOT a predictive law
     "powers": [1, 2, 4, 8, 16],
 }
+# user-facing communication tiles map to a small intuitive subset (24H/48H/1W/1M -> equities sessions).
+USER_TILES = {"24H": 1, "48H": 2, "1W": 5, "1M": 21}
 
 
 def horizons(preset="cadence"):
     return list(PRESETS.get(preset, PRESETS["cadence"]))
+
+
+def user_subset(projections):
+    """Pick the user-facing 24H/48H/1W/1M tiles out of a full projection list (by horizon length)."""
+    byH = {p["H"]: p for p in projections}
+    return {label: byH.get(H) for label, H in USER_TILES.items() if H in byH}
 
 
 # ---- Default #1: fitted half-life (OU), fallback 3 ----
@@ -92,25 +100,47 @@ def _emp_interval(resids, alpha=0.90):
     return _quantile(resids, a), _quantile(resids, 1.0 - a)
 
 
-# ---- Phase 1: coherent multi-horizon projection ----
-def project(price_now, edge_per_session, closes, horizon_list,
-            hl=None, z=1.0, cap_mult=2.0, alpha=0.90, resid_by_H=None):
-    """One coherent log-space projection sampled at each horizon. Returns a list of per-horizon dicts.
-    edge_per_session is the 1-session base log-drift signal (decayed over H). Bands conformal-if-available."""
+# ---- horizon uncertainty decomposition: process + model + event (more honest than one scalar) ----
+def sigma_total(sigma_process, sigma_model=None, sigma_event=None):
+    s = sigma_process * sigma_process
+    if sigma_model:
+        s += sigma_model * sigma_model
+    if sigma_event:                              # scheduled-event overlay (earnings/FOMC/CPI...) via events_calendar
+        s += sigma_event * sigma_event
+    return math.sqrt(s)
+
+
+# ---- Phase 1: coherent multi-horizon projection (DIRECT first, decayed+capped FALLBACK) ----
+def project(price_now, edge_per_session, closes, horizon_list, hl=None, z=1.0,
+            cap_mult=2.0, cap_daily=None, alpha=0.90, resid_by_H=None,
+            mu_by_H=None, sigma_by_H=None, sigma_event_by_H=None):
+    """One coherent log-space projection per horizon. Hierarchy (per spec): use the DIRECT per-horizon
+    forecast (mu_by_H/sigma_by_H) when supplied; else the decayed+capped one-step FALLBACK. Optional daily
+    edge cap (cap_daily*sigma_d) BEFORE decay; calibrated horizon cap (cap_mult) AFTER. Horizon uncertainty
+    is the process/model/event decomposition. Bands conformal-if-residuals-else-parametric."""
     assert price_now > 0, "price_now must be > 0"
     rets = _logret(closes)
     sigma_d = blended_sigma_daily(rets)
     if hl is None:
         hl = fit_halflife(closes)
+    edge = edge_per_session
+    if cap_daily is not None and sigma_d == sigma_d:     # daily edge cap (capDailySigma) before decay
+        edge = max(-cap_daily * sigma_d, min(cap_daily * sigma_d, edge))
     p0 = math.log(price_now)
     out = []
     for H in horizon_list:
-        sH = horizon_sigma(closes, H, sigma_d)
-        mu = decayed_edge(edge_per_session, hl, H)
-        cap = cap_mult * sH                      # Default #3: cap in CALIBRATED units, not sqrt-time
-        capped = abs(mu) > cap
-        mu_c = max(-cap, min(cap, mu)) if cap == cap else mu
+        sH_proc = horizon_sigma(closes, H, sigma_d)
+        sH = sigma_total(sH_proc, (sigma_by_H or {}).get(H), (sigma_event_by_H or {}).get(H))
+        if mu_by_H is not None and H in mu_by_H:
+            mu_c, src, capped = mu_by_H[H], "direct", False
+        else:
+            mu = decayed_edge(edge, hl, H)
+            cap = cap_mult * sH_proc                      # calibrated horizon cap (process units, not sqrt-time)
+            capped = (cap == cap) and abs(mu) > cap
+            mu_c = max(-cap, min(cap, mu)) if cap == cap else mu
+            src = "fallback"
         proj_log = p0 + mu_c
+        zedge = (mu_c / sH) if (sH and sH > 0) else float("nan")
         rby = (resid_by_H or {}).get(H)
         if rby and len(rby) >= 8:
             lo_q, hi_q = _emp_interval(rby, alpha)
@@ -118,9 +148,44 @@ def project(price_now, edge_per_session, closes, horizon_list,
         else:
             lo, hi, method = math.exp(proj_log - z * sH), math.exp(proj_log + z * sH), "parametric"
         out.append({"H": H, "projLog": proj_log, "projPrice": math.exp(proj_log),
-                    "muLog": mu_c, "sigmaH": sH, "capped": bool(capped),
-                    "lo": lo, "hi": hi, "bandMethod": method})
+                    "muLog": mu_c, "sigmaH": sH, "zEdge": zedge, "capped": bool(capped),
+                    "source": src, "lo": lo, "hi": hi, "bandMethod": method})
     return out
+
+
+# ---- Phase D: path tracking — corrected elapsed-horizon weight w(e,H)=M(e,τ)/M(H,τ) ----
+def expected_path_price(s0_at_forecast, mu_H, hl, e, H):
+    """Expected price at elapsed time e on the path to horizon H. Guarantees expected_path_price(.,H)==target,
+    so the live path reaches the stored horizon forecast exactly at maturity (internal-consistency condition)."""
+    mH = decayed_edge(1.0, hl, H)
+    w = (decayed_edge(1.0, hl, e) / mH) if mH else 0.0
+    return s0_at_forecast * math.exp(w * mu_H)
+
+
+def deviation(current_price, expected_price, sigma_path):
+    gap_log = math.log(current_price / expected_price)
+    return {"gapLog": gap_log, "zDeviation": (gap_log / sigma_path) if sigma_path and sigma_path > 0 else float("nan")}
+
+
+def anti_deviation(gap_prev, gap_now, zdev_prev, zdev_now):
+    """Dual-condition reversion test: BOTH raw and z-normalized pressure must improve, else the shrinking
+    z can be a denominator artifact (path variance grows with elapsed time), not real reversion."""
+    raw = abs(gap_prev) - abs(gap_now)
+    zp = abs(zdev_prev) - abs(zdev_now)
+    state = "reverting" if (raw > 0 and zp > 0) else ("diverging" if (raw < 0 and zp < 0) else "stable")
+    return {"rawAntiDevPressure": raw, "zAntiDevPressure": zp, "state": state}
+
+
+# ---- probability tile (log-normal baseline; conformal/empirical preferred when residuals exist) ----
+def _norm_cdf(x):
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def prob_above(price_now, mu_H, sigma_H, K):
+    """P(S_H > K) under the log-normal baseline. Use for 'prob close above now / above threshold' tiles."""
+    if sigma_H is None or sigma_H <= 0:
+        return float("nan")
+    return 1.0 - _norm_cdf((math.log(K / price_now) - mu_H) / sigma_H)
 
 
 # ---- Phase 2: forecast scoring (immutable point-in-time; caller supplies the matched realized close) ----

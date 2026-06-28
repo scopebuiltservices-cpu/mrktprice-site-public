@@ -73,7 +73,10 @@ section "8. secondary artifact contracts (cik/alpha_calib/events/universe)"
 if [ -f tools/market_map/validate_artifacts.py ]; then
   ARTS=""; for a in cik.json alpha_calib.json events.json universe.json; do [ -f "$a" ] && ARTS="$ARTS $a"; done
   if [ -n "$ARTS" ]; then
-    python3 tools/market_map/validate_artifacts.py $ARTS >/tmp/_va.out 2>&1 && sed 's/^/  /' /tmp/_va.out || { failmsg "artifact contracts"; sed 's/^/        /' /tmp/_va.out; }
+    # (8a) declarative JSON Schema (Draft 2020-12) gate — skips if jsonschema absent, CI enforces
+    python3 tools/market_map/schema_validate.py $ARTS >/tmp/_vs.out 2>&1 && sed 's/^/  /' /tmp/_vs.out || { failmsg "JSON Schema contracts"; sed 's/^/        /' /tmp/_vs.out; }
+    # (8b) cross-field invariant gate (count==len, dup tickers) JSON Schema can't express
+    python3 tools/market_map/validate_artifacts.py $ARTS >/tmp/_va.out 2>&1 && sed 's/^/  /' /tmp/_va.out || { failmsg "artifact invariants"; sed 's/^/        /' /tmp/_va.out; }
   else echo "  skip  no secondary artifacts present locally"; fi
 fi
 

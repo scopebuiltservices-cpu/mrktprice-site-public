@@ -980,7 +980,17 @@ def real_universe():
         sec=SecClient()
     except Exception:
         sec=None   # not vendored in the public repo; SEC pulls below use the inline requests+UA path. 'sec' is unused.
-    for sym,nm,sec_name,code in SEED:        # phase-1 universe (extend to full big-3 once holdings parse is wired)
+    # EQUITY UNIVERSE: full Nasdaq Composite + Dow 30 via universe_fetch (FMP screener primary, keyless
+    # Nasdaq-Trader fallback). UNIVERSE_MODE=nasdaq_full (default) pulls the real index membership; any
+    # fetch failure or UNIVERSE_MODE=seed falls back to the hardcoded SEED so the build never breaks.
+    try:
+        import universe_fetch as _uf
+        _umode=os.environ.get("UNIVERSE_MODE","nasdaq_full")
+        _UNIV=_uf.fetch_universe(mode=_umode, key=(os.environ.get("FMP_API_KEY") or os.environ.get("FMP_ULTIMATE_API_KEY") or os.environ.get("FMP_UTIMATE_API_KEY")), session=_PSESS) or SEED
+    except Exception as _ue:
+        sys.stderr.write("universe_fetch failed (%s); using SEED\n"%_ue); _UNIV=SEED
+    sys.stderr.write("EQUITY UNIVERSE: %d names (source=%s)\n"%(len(_UNIV), "fetch" if _UNIV is not SEED else "SEED"))
+    for sym,nm,sec_name,code in _UNIV:        # full Nasdaq+Dow when UNIVERSE_MODE=nasdaq_full; SEED otherwise
         try:
             _ph=_get_hist(sym, min_rows=10)            # FMP Ultimate primary -> yfinance fallback
             if not _ph: raise ValueError("no price data (FMP+yfinance)")

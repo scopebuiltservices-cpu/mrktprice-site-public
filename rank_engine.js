@@ -32,6 +32,21 @@
     var w = (tau * tau) / (tau * tau + se * se);
     return center + w * (x - center);
   }
+  function ebTau2(values, ses) {
+    var a = values.filter(function (x) { return x === x; });
+    var s = ses.filter(function (x) { return x != null && x === x && x > 0; });
+    if (a.length < 3) return 0;
+    var m = a.reduce(function (p, x) { return p + x; }, 0) / a.length;
+    var varr = a.reduce(function (p, x) { return p + (x - m) * (x - m); }, 0) / (a.length - 1);
+    var mse = s.length ? s.reduce(function (p, x) { return p + x * x; }, 0) / s.length : 0;
+    return Math.max(0, varr - mse);
+  }
+  function ebPosterior(value, se, center, tau2) {
+    if (se == null || se <= 0 || tau2 == null || tau2 <= 0)
+      return { mu: value, sd: (se != null && se > 0 ? se : 0), w: 1 };
+    var w = tau2 / (tau2 + se * se);
+    return { mu: center + w * (value - center), sd: Math.sqrt(w) * se, w: w };
+  }
   function ewmaScore(prev, now, lam) {
     lam = (lam == null ? 0.5 : lam);
     if (prev == null || prev !== prev) return now;

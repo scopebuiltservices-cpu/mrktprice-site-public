@@ -2035,7 +2035,7 @@ function load(sym,s){const c=s.closes,d=s.dates,vol=s.volumes||c.map(()=>0);cons
  const bestFit=EMAP.reduce((a,b)=>emaM[b].r2>emaM[a].r2?b:a);
  const _mcs=(function(){try{return momentumContinuation(c,vol,20);}catch(e){return{validated:false,score:null};}})();
  CUR={sym,c,d,vol,r,last,rvDaily:sd(r),garch:g,icss:ic,curRms,roll:rollVol(r,21),dds:ddSeries(c),sk,
-   va,v20,rvolS,ao,hvT,cone,rvAnn,cv,dd,emaM,bestTrack,bestFit,sma20,std20,bbU2,bbL2,bbU1,bbL1,z:zS,obv:obvS,mfi:mfiS,macd:macdS,rsi:rsiS,vp,obvDiv,ou,avgVol20,vwStd,integrity,mcs:_mcs,harq:(function(){try{return harqRegimeForecast(c);}catch(_h){return null;}})()};
+   va,v20,rvolS,ao,hvT,cone,rvAnn,cv,dd,emaM,bestTrack,bestFit,sma20,std20,bbU2,bbL2,bbU1,bbL1,z:zS,obv:obvS,mfi:mfiS,macd:macdS,rsi:rsiS,vp,obvDiv,ou,avgVol20,vwStd,integrity,mcs:_mcs,harq:(function(){try{return (typeof window!=='undefined'&&window.MrktHARQ&&window.MrktHARQ.forecast)?window.MrktHARQ.forecast(c):harqRegimeForecast(c);}catch(_h){return null;}})()};
  document.getElementById('px').textContent=last.toFixed(2);
  const ce=document.getElementById('chg');ce.textContent=(chg>=0?'+':'')+(chg*100).toFixed(2)+'%';ce.className='chg '+(chg>=0?'up':'down');
  document.getElementById('sym').textContent=sym;document.getElementById('asof').textContent='as of '+d[d.length-1];

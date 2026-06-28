@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mrktprice.com/schemas/cik.schema.json",
+  "title": "cik",
+  "description": "Ticker -> 10-digit zero-padded SEC CIK map.",
+  "type": "object",
+  "minProperties": 1,
+  "propertyNames": { "pattern": "^[A-Z][A-Z0-9.\\-]*$" },
+  "additionalProperties": { "type": "string", "pattern": "^[0-9]{10}$" }
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mrktprice.com/schemas/universe.schema.json",
+  "title": "universe",
+  "description": "Universe roster + census emitted by emit_universe.py.",
+  "type": "object",
+  "required": ["asof", "schemaVersion", "count", "equities", "sectors", "indexMembership", "members"],
+  "properties": {
+    "asof": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}" },
+    "schemaVersion": { "type": "string" },
+    "source": { "type": ["string", "null"] },
+    "count": { "type": "integer", "minimum": 0 },
+    "equities": { "type": "integer", "minimum": 0 },
+    "sectors": { "type": "object" },
+    "indexMembership": { "type": "object" },
+    "dataQuality": { "type": ["object", "null"] },
+    "driftCensus": { "type": ["object", "null"] },
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["t"],
+        "properties": {
+          "t": { "type": "string", "minLength": 1 },
+          "sec": { "type": "string" },
+          "idx": { "type": "array", "items": { "type": "string" } },
+          "etf": { "type": "boolean" },
+          "dq": { "type": ["string", "null"] },
+          "drift": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

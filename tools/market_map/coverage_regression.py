@@ -78,22 +78,60 @@ def check_log(path, warn_frac=0.5):
     return rc, alerts, "compared %s -> %s" % (recs[-2].get("asof"), recs[-1].get("asof"))
 
 
+def latest_record(path):
+    recs = _read_records(path)
+    return recs[-1] if recs else None
+
+
+def check_against_baseline(baseline_path, current_path, warn_frac=0.5):
+    """Compare the latest record of `current` against the latest of `baseline` (e.g. the protected
+    branch's committed health_log via `git show origin/main:...`). This catches a PR that would zero
+    out a domain RELATIVE TO MAIN, before merge — stronger than the sequential within-file check."""
+    base = latest_record(baseline_path)
+    curr = latest_record(current_path)
+    if base is None or curr is None:
+        return 0, [], "baseline=%s current=%s -> nothing to compare" % (
+            (base or {}).get("asof"), (curr or {}).get("asof"))
+    alerts = compare(base, curr, warn_frac=warn_frac)
+    rc = 1 if any(a[0] == "HARD" for a in alerts) else 0
+    return rc, alerts, "baseline %s -> current %s" % (base.get("asof"), curr.get("asof"))
+
+
+def markdown(note, alerts):
+    lines = ["### Coverage regression", "", "_%s_" % note, ""]
+    if not alerts:
+        lines.append("No coverage regressions.")
+    else:
+        lines += ["| severity | metric | prev | curr | note |", "|---|---|---|---|---|"]
+        lines += ["| %s | %s | %s | %s | %s |" % (sev, k, pv, cv, msg) for sev, k, pv, cv, msg in alerts]
+    return "\n".join(lines)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("log")
+    ap.add_argument("log", help="current health_log.jsonl")
+    ap.add_argument("--baseline", help="baseline health_log.jsonl (e.g. from `git show origin/main:...`); "
+                                       "if given, compares current-latest vs baseline-latest instead of last-two")
     ap.add_argument("--warn-frac", type=float, default=0.5)
     ap.add_argument("--soft", action="store_true", help="downgrade HARD to warning (always exit 0)")
+    ap.add_argument("--md", action="store_true", help="emit a markdown report (for CI step summary)")
     a = ap.parse_args(argv)
     try:
-        rc, alerts, note = check_log(a.log, warn_frac=a.warn_frac)
-    except FileNotFoundError:
-        print("  skip  %s (absent)" % a.log)
+        if a.baseline:
+            rc, alerts, note = check_against_baseline(a.baseline, a.log, warn_frac=a.warn_frac)
+        else:
+            rc, alerts, note = check_log(a.log, warn_frac=a.warn_frac)
+    except FileNotFoundError as e:
+        print("  skip  %s (absent)" % e.filename)
         return 0
-    print("coverage_regression: " + note)
-    for sev, k, pv, cv, msg in alerts:
-        print("  %-4s %s" % (sev, msg))
-    if not alerts:
-        print("  ok    no coverage regressions")
+    if a.md:
+        print(markdown(note, alerts))
+    else:
+        print("coverage_regression: " + note)
+        for sev, k, pv, cv, msg in alerts:
+            print("  %-4s %s" % (sev, msg))
+        if not alerts:
+            print("  ok    no coverage regressions")
     if a.soft:
         return 0
     return rc

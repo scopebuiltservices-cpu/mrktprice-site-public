@@ -2239,6 +2239,8 @@ function _bbMacroDir(names){
   var dMKT=rw('SPY'),dUSMV=rw('USMV');
   return {MKT:dMKT,OIL:rw('USO'),DXY:rw('UUP'),RATE:-rw('TLT'),VIX:dUSMV-dMKT,GOLD:rw('GLD'),COPPER:rw('CPER'),NATGAS:rw('UNG'),DBC:rw('DBC')};
 }
+function _bbSetEB(k,v){try{var m=JSON.parse(localStorage.getItem('bbEBModes')||'{}')||{};m[k]=!!v;localStorage.setItem('bbEBModes',JSON.stringify(m));}catch(e){}try{buildBullBearBoard();}catch(e){}}
+if(typeof window!=='undefined')window._bbSetEB=_bbSetEB;
 function buildBullBearBoard(){
   var el=document.getElementById('bullBearBoard');if(!el)return;
   var names=(window.MMAP&&window.MMAP.names&&window.MMAP.names.length)?window.MMAP.names:(window.MMAP?Object.keys(window.MMAP).map(function(k){return window.MMAP[k];}).filter(function(v){return v&&v.t;}):[]);  if(!names.length){el.innerHTML='<div class="note" style="font-size:10px;color:var(--muted)">Bull/Bear board — loading universe (marketmap.json)…</div>';return;}
@@ -2258,7 +2260,7 @@ function buildBullBearBoard(){
     S.push({t:t,sec:n.sec||'',beta:beta,drag:beta*DIR.MKT,tilt:tilt,short:-shp,lvl:lvl,tr:sh.trend,
       sector:(n.secRel!=null?n.secRel:0),opp:(n.opp!=null?n.opp:0),ema:(n.ema21sig!=null?n.ema21sig:0),
       vel:(n.ema21sl!=null?n.ema21sl:0),iflow:(n.flow&&n.flow.net3m!=null?n.flow.net3m:0),   // velocity = EMA21 slope (1st derivative); iflow = integral net 3m flow
-      r1m:(n.ret&&n.ret['1m']!=null?n.ret['1m']:0),flow:(n.flow&&n.flow.net1m!=null?n.flow.net1m:0),rate:(n.rate||null),volp:(n.rvol!=null?n.rvol:1),mb:mb,deps:n.deps||[],dq:(n.dq||null),drift:(n.drift||null)});});
+      r1m:(n.ret&&n.ret['1m']!=null?n.ret['1m']:0),flow:(n.flow&&n.flow.net1m!=null?n.flow.net1m:0),rate:(n.rate||null),volp:(n.rvol!=null?n.rvol:1),reg:(n.regime!=null?String(n.regime):''),mb:mb,deps:n.deps||[],dq:(n.dq||null),drift:(n.drift||null)});});
   if(!S.length){el.innerHTML='<div class="note">Bull/Bear board — universe not loaded.</div>';return;}
   function z(a){var m=a.reduce(function(x,y){return x+y;},0)/a.length,sd=Math.sqrt(a.reduce(function(x,y){return x+(y-m)*(y-m);},0)/Math.max(1,a.length-1))||1;return a.map(function(x){return (x-m)/sd;});}
   var zt=z(S.map(function(s){return s.tilt;})),zse=z(S.map(function(s){return s.sector;})),zsh=z(S.map(function(s){return s.short;})),
@@ -2318,11 +2320,38 @@ function buildBullBearBoard(){
   var _residN=0,_residSS=0;
   S.forEach(function(s){var e=(s.r1m!=null&&s.exp!=null)?(s.r1m-s.exp):null;if(e!=null&&e===e){_residSS+=e*e;_residN++;}});
   var _residSd=_residN>1?Math.sqrt(_residSS/_residN):null;   // RMS calibration residual (return %), the SE scale
+  // pass 1: per-name leverage-aware estimation SE
+  S.forEach(function(s){s.alphaSE=(_RK&&_residSd)?_RK.alphaForecastSe(_residSd,s.alpha,_aMean,_Sxx,S.length):null;});
+  // EMPIRICAL-BAYES shrinkage (user-toggled). The displayed expected return `tot` is NEVER overwritten; we
+  // produce a SEPARATE noise-corrected estimate (adjTot) and a posterior SE, and rank by their lower bound so
+  // shrinkage + uncertainty are ONE coherent posterior (no double penalty). Checked priors form a fallback
+  // ladder: each name shrinks toward the most-specific ENABLED center with >= minN peers (sector x regime ->
+  // sector -> global); if none qualifies, EB is off for that name (adjTot=tot, postSd=alphaSE).
+  var _ebm={};try{_ebm=JSON.parse(localStorage.getItem('bbEBModes')||'{}')||{};}catch(_e){}
+  var _ebOn=!!(_RK&&(_ebm.sector||_ebm.regime||_ebm.global)),_MINN=6;
+  function _grpStats(keyf){var g={};S.forEach(function(s){var k=keyf(s);if(k==null)return;(g[k]=g[k]||[]).push(s);});
+    var out={};Object.keys(g).forEach(function(k){var a=g[k],ex=a.map(function(s){return s.exp;}),se=a.map(function(s){return s.alphaSE;});
+      out[k]={n:a.length,center:ex.reduce(function(p,x){return p+x;},0)/a.length,tau2:_RK.ebTau2(ex,se)};});return out;}
+  var _gSR=_ebm.regime?_grpStats(function(s){return s.sec+'|'+s.reg;}):{};
+  var _gSec=_ebm.sector?_grpStats(function(s){return s.sec;}):{};
+  var _gGlob=null;
+  if(_ebm.global){var _ex=S.map(function(s){return s.exp;}),_se=S.map(function(s){return s.alphaSE;});
+    _gGlob={n:S.length,center:_ex.reduce(function(p,x){return p+x;},0)/Math.max(1,S.length),tau2:_RK.ebTau2(_ex,_se)};}
+  function _pickGrp(s){var k;
+    if(_ebm.regime){k=s.sec+'|'+s.reg;if(_gSR[k]&&_gSR[k].n>=_MINN)return {g:_gSR[k],lvl:'sector×regime'};}
+    if(_ebm.sector){k=s.sec;if(_gSec[k]&&_gSec[k].n>=_MINN)return {g:_gSec[k],lvl:'sector'};}
+    if(_ebm.global&&_gGlob&&_gGlob.n>=_MINN)return {g:_gGlob,lvl:'global'};
+    return null;}
   var _prev={};try{_prev=JSON.parse(localStorage.getItem('bbPrevScores')||'{}')||{};}catch(_e){}
+  // pass 2: posterior (shrink) + confidence-adjusted score on the posterior; persist for EWMA
   S.forEach(function(s){
-    s.alphaSE=(_RK&&_residSd)?_RK.alphaForecastSe(_residSd,s.alpha,_aMean,_Sxx,S.length):null;
-    s.score=_RK?_RK.compositeRankScore(s.tot,s.zc,sigR||9,0.5,S.length,(_prev[s.t]!=null?_prev[s.t]:null),0.5,s.alphaSE):s.tot;
+    var gp=_ebOn?_pickGrp(s):null;
+    if(gp&&s.alphaSE!=null){var p=_RK.ebPosterior(s.exp,s.alphaSE,gp.g.center,gp.g.tau2);
+      s.expAdj=p.mu;s.postSd=p.sd;s.ebW=p.w;s.adjTot=p.mu+s.drag;s.ebLvl=gp.lvl;}
+    else{s.expAdj=s.exp;s.postSd=s.alphaSE;s.ebW=1;s.adjTot=s.tot;s.ebLvl=null;}
+    s.score=_RK?_RK.compositeRankScore(s.adjTot,s.zc,sigR||9,0.5,S.length,(_prev[s.t]!=null?_prev[s.t]:null),0.5,s.postSd):s.tot;
     s.zAdj=_RK?_RK.deflatedConviction(s.zc,S.length):s.zc;});
+  S._ebOn=_ebOn;S._ebm=_ebm;
   try{var _ns={};S.forEach(function(s){if(s.score!=null&&s.score===s.score)_ns[s.t]=s.score;});localStorage.setItem('bbPrevScores',JSON.stringify(_ns));}catch(_e){}
   // EVERY company placed in exactly one column by TOTAL expected return (tot>=0 -> BULL, tot<0 -> BEAR);
   // ranked within each by the CONFIDENCE-ADJUSTED score (falls back to tot if the rank engine is absent), so
@@ -2340,17 +2369,17 @@ function buildBullBearBoard(){
     return out||'<span class="bt" style="color:#69727f">no significant macro correlation</span>';}
   function rowH(s,isBull,rank,mx){var col=isBull?'#2ecc8f':'#ef5f4e';var cc=(s.conv==='HIGH'?'#e8c14a':s.conv==='MED'?'#9ab4e0':'#69727f');
     var aw=(s.conv==='HIGH'?4:s.conv==='MED'?3:2),ah=(s.conv==='HIGH'?'':s.conv==='MED'?'aa':'55'),pct=Math.max(2,Math.min(100,Math.abs(s.tot)/(mx||1)*100));
-    return '<div class="bbrow" data-tk="'+s.t+'" data-tot="'+s.tot.toFixed(4)+'" data-score="'+(s.score!=null?s.score:s.tot).toFixed(4)+'" data-conv="'+s.conv+'" data-z="'+Math.abs(s.zc).toFixed(4)+'" data-sec="'+s.sec+'" data-se="'+(s.alphaSE!=null?s.alphaSE.toFixed(4):'')+'" style="border-left:'+aw+'px solid '+col+ah+'" onclick="try{load(\''+s.t+'\',DATA[\''+s.t+'\'])}catch(e){}" title="load '+s.t+' · '+s.conv+' conviction · confidence score '+(s.score!=null?s.score.toFixed(1):'?')+(s.alphaSE!=null?(' · ±'+s.alphaSE.toFixed(1)+'% est. SE'):'')+'"><div class="bbhd">'+
+    return '<div class="bbrow" data-tk="'+s.t+'" data-tot="'+s.tot.toFixed(4)+'" data-score="'+(s.score!=null?s.score:s.tot).toFixed(4)+'" data-conv="'+s.conv+'" data-z="'+Math.abs(s.zc).toFixed(4)+'" data-sec="'+s.sec+'" data-se="'+(s.alphaSE!=null?s.alphaSE.toFixed(4):'')+'" data-adj="'+(s.adjTot!=null?s.adjTot.toFixed(4):'')+'" data-ebw="'+(s.ebW!=null?s.ebW.toFixed(4):'')+'" style="border-left:'+aw+'px solid '+col+ah+'" onclick="try{load(\''+s.t+'\',DATA[\''+s.t+'\'])}catch(e){}" title="load '+s.t+' · '+s.conv+' conviction · confidence score '+(s.score!=null?s.score.toFixed(1):'?')+(s.alphaSE!=null?(' · ±'+s.alphaSE.toFixed(1)+'% est. SE'):'')+(s.ebLvl?(' · EB-shrunk toward '+s.ebLvl+' (w='+(s.ebW!=null?s.ebW.toFixed(2):'?')+'): raw '+(s.tot>=0?'+':'')+s.tot.toFixed(1)+'% → adj '+(s.adjTot>=0?'+':'')+s.adjTot.toFixed(1)+'%'):'')+'"><div class="bbhd">'+
       '<span class="bbrk">'+rank+'</span><span class="bbt">'+s.t+'</span><span class="bbsec">'+s.sec+'</span>'+
       '<span class="bbconv" style="color:'+cc+';border-color:'+cc+'66">'+s.conv+'</span>'+
-      '<span class="bbexp" style="color:'+col+'">'+(s.tot>=0?'+':'')+s.tot.toFixed(1)+'% tot</span></div>'+
+      '<span class="bbexp" style="color:'+col+'">'+(s.tot>=0?'+':'')+s.tot.toFixed(1)+'% tot</span>'+(s.ebLvl&&Math.abs((s.adjTot!=null?s.adjTot:s.tot)-s.tot)>=0.05?'<span class="bbadj" title="empirical-Bayes noise-corrected total (shrunk toward '+s.ebLvl+' mean · weight w='+(s.ebW!=null?s.ebW.toFixed(2):'?')+'); ranking uses this, raw stays shown">&rarr; '+(s.adjTot>=0?'+':'')+s.adjTot.toFixed(1)+'% adj</span>':'')+'</div>'+
       '<div class="bbsub">edge α'+(s.alpha>=0?'+':'')+s.alpha.toFixed(2)+' (z'+(s.zc>=0?'+':'')+s.zc.toFixed(1)+') · idio '+(s.exp>=0?'+':'')+s.exp.toFixed(1)+'% · mkt '+(s.drag>=0?'+':'')+s.drag.toFixed(1)+'% β'+s.beta.toFixed(2)+(s.rate&&s.rate.class?' · <span style="color:#9ab4e0" title="real-rate duration class (βL '+(s.rate.bL!=null?s.rate.bL:'?')+', t '+(s.rate.tL!=null?s.rate.tL:'?')+')">'+s.rate.class.split(' (')[0]+'</span>':'')+(s.qpen!=null&&s.qpen<0.999?' · <span style="color:#e0a13c" title="conviction down-weighted ×'+s.qpen.toFixed(2)+' for data-quality / drift">⚠ '+(s.drift&&s.drift.level==='significant'?'drift':(s.dq==='reject'||s.dq==='degraded'?'data':'flag'))+'</span>':'')+'</div>'+
       '<div class="bbtiles">'+tiles(s)+'</div><div class="bbbar"><i style="width:'+pct.toFixed(0)+'%;background:'+col+'"></i></div></div>';}
   var css='<style>#bullBearBoard{position:relative;z-index:6;isolation:isolate;clear:both;background:#0b0e13;border-radius:10px;padding:6px;margin:12px 0}'+
     '#bullBearBoard .bbcols{display:flex;gap:10px;align-items:flex-start;position:relative;z-index:1;background:#0b0e13}#bullBearBoard .bbcol{flex:1;min-width:0;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#0b0e13}'+
     '#bullBearBoard .bbrow{border-top:1px solid var(--line);padding:5px 7px;cursor:pointer}#bullBearBoard .bbrow:hover{background:rgba(255,255,255,.03)}'+
     '#bullBearBoard .bbhd{display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}#bullBearBoard .bbrk{font-size:9px;color:#69727f;min-width:16px}'+
-    '#bullBearBoard .bbt{font-weight:800;font-size:13px}#bullBearBoard .bbsec{font-size:9px;color:var(--muted)}#bullBearBoard .bbexp{font-weight:700;font-size:12px;margin-left:auto}'+
+    '#bullBearBoard .bbt{font-weight:800;font-size:13px}#bullBearBoard .bbsec{font-size:9px;color:var(--muted)}#bullBearBoard .bbexp{font-weight:700;font-size:12px;margin-left:auto}#bullBearBoard .bbadj{font-size:9px;font-weight:700;color:#b98ad0;margin-left:6px;white-space:nowrap}'+
     '#bullBearBoard .bbsub{font-size:9px;color:#8a93a3;margin-top:1px}#bullBearBoard .bba{font-size:9px;color:#69727f}#bullBearBoard .bbconv{font-size:8px;font-weight:700;border:1px solid;border-radius:4px;padding:0 4px}'+
     '#bullBearBoard .bbtiles{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}#bullBearBoard .bt{font-size:9px;border:1px solid var(--line);border-radius:4px;padding:0 4px;color:#cfd8e3}'+
     '#bullBearBoard .bbbar{height:3px;border-radius:2px;background:rgba(255,255,255,.06);margin-top:4px;overflow:hidden}#bullBearBoard .bbbar i{display:block;height:100%;border-radius:2px}'+
@@ -2371,6 +2400,13 @@ function buildBullBearBoard(){
   var icStrip=ics.map(function(o){var c=o.sig?(o.ic>=0?'#2ecc8f':'#ef5f4e'):'#69727f';return '<span style="color:'+c+'">'+o.name+' '+(o.ic>=0?'+':'')+o.ic.toFixed(2)+(o.sig?'★':'')+'</span>';}).join(' · ');
   var _srvB=(window.MMAP&&window.MMAP.factorBreadth!=null)?window.MMAP.factorBreadth:null;
   h+='<div class="note" style="font-size:9px;margin:0 0 5px"><b>weights: '+_wMode+'</b>'+(_wMode==='fitted'?' (server forward‑IC, BH‑FDR‑gated'+(_srvB!=null?', breadth '+(_srvB*100).toFixed(0)+'%':'')+')':' (fixed priors — fitted forward‑IC weights activate once the IC history matures)')+' · factor IC (Spearman vs trailing‑1m · ★ = BH‑FDR q≤0.10): '+icStrip+' · breadth '+(_breadth*100).toFixed(0)+'%'+(_breadth<0.34?' <span style="color:#e0a13c">— LOW: treat ranks as weak this regime</span>':'')+'. The strip is a contemporaneous diagnostic; the live weights above are the no‑look‑ahead engine output.</div>';
+  var _em=S._ebm||{};
+  h+='<div class="note" id="bbEB" style="font-size:9px;margin:0 0 6px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">'
+    +'<b style="color:#b98ad0">Noise-correct (empirical-Bayes shrink):</b>'
+    +'<label style="cursor:pointer"><input type="checkbox" '+(_em.regime?'checked':'')+' onchange="_bbSetEB(\'regime\',this.checked)"> sector&times;regime</label>'
+    +'<label style="cursor:pointer"><input type="checkbox" '+(_em.sector?'checked':'')+' onchange="_bbSetEB(\'sector\',this.checked)"> sector</label>'
+    +'<label style="cursor:pointer"><input type="checkbox" '+(_em.global?'checked':'')+' onchange="_bbSetEB(\'global\',this.checked)"> global</label>'
+    +'<span style="color:var(--faint)">'+(S._ebOn?'ON — raw % always shown; ranked by the noise-corrected lower bound (each name shrinks toward the most-specific checked group with ≥6 peers; "&rarr; adj" = corrected total).':'OFF — ranked by the raw lower bound. Check a level to pull noisy estimates toward their peer mean.')+'</span></div>';
   h+='<div class="bbcols">'+colH(bull,true)+colH(bear,false)+'</div>';
   el.innerHTML=h;}
 (function(){var n=0,fetched=false;function build(){try{buildBullBearBoard();}catch(e){var _el=document.getElementById('bullBearBoard');if(_el&&!_el.querySelector('.bbcols'))_el.innerHTML='<div class="note" style="font-size:10px;color:var(--fail,#e05a4e)">Bull/Bear board error: '+((e&&e.message)||e)+'</div>';}}

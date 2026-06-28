@@ -75,7 +75,9 @@
     try {
       var host = document.getElementById('pooledRigorPlusPanel');
       if (!host) {
-        var anchor = document.querySelector('[data-board="bullbear"]') || document.getElementById('scanner') || document.querySelector('.chartcard');
+        // mount next to the EXISTING pooled panel (#rigorPanel) so the two pooled-rigor blocks sit together;
+        // fall back through known-stable containers.
+        var anchor = document.getElementById('rigorPanel') || document.getElementById('scanEdge') || document.getElementById('scanner') || document.querySelector('.chartcard');
         if (!anchor || !anchor.parentNode) return;
         host = document.createElement('div'); host.id = 'pooledRigorPlusPanel'; host.style.cssText = 'margin:8px 0;padding:9px 11px;border:1px solid var(--line,#222);border-radius:7px;background:var(--panel2,#111721)';
         anchor.parentNode.insertBefore(host, anchor.nextSibling);

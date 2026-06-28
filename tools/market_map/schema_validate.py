@@ -23,6 +23,7 @@ MAP = {
     "alpha_calib.json": "alpha_calib.schema.json",
     "events.json": "events.schema.json",
     "universe.json": "universe.schema.json",
+    "fib_forecast.json": "fib_forecast.schema.json",
 }
 
 

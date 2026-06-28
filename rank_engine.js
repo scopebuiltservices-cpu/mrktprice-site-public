@@ -3,11 +3,16 @@
 (function (root) {
   'use strict';
   function grinoldKahn(ic, sigma, z) { return ic * sigma * z; }
+  function alphaForecastSe(residSd, alpha, alphaMean, sxx, n) {
+    // mean-response (estimation) SE of the alpha->return calibration prediction; leverage-aware.
+    if (!(residSd > 0 && sxx > 0 && n >= 3)) return null;
+    return residSd * Math.sqrt(1 / n + (alpha - alphaMean) * (alpha - alphaMean) / sxx);
+  }
   function convictionSigma(base, z, floor, full) {
     floor = (floor == null ? 0.2 : floor); full = (full == null ? 1.5 : full);
     var rel = full > 0 ? Math.abs(z) / full : 0;
     rel = Math.max(floor, Math.min(1, rel));
-    return rel > 0 ? base / rel : base;
+    return base / rel;
   }
   function lcbScore(mu, sigma, k) {
     k = (k == null ? 0.5 : k);
@@ -21,23 +26,29 @@
     var excess = Math.max(0, Math.abs(z) - bar);
     return z === 0 ? 0 : (z < 0 ? -excess : excess);
   }
-  function steinShrink(x, se, tau) {
+  function steinShrink(x, se, tau, center) {
+    center = (center == null ? 0 : center);
     if (se == null || se <= 0 || tau == null || tau <= 0) return x;
     var w = (tau * tau) / (tau * tau + se * se);
-    return w * x;
+    return center + w * (x - center);
   }
   function ewmaScore(prev, now, lam) {
     lam = (lam == null ? 0.5 : lam);
     if (prev == null || prev !== prev) return now;
     return lam * now + (1 - lam) * prev;
   }
-  function compositeRankScore(tot, z, base, k, n, prev, lam) {
+  function compositeRankScore(tot, z, base, k, n, prev, lam, se) {
     k = (k == null ? 0.5 : k); lam = (lam == null ? 1 : lam);
-    var s = lcbScore(tot, convictionSigma(base, z), k);
+    var sigma = (se != null && se === se && se > 0) ? se : convictionSigma(base, z);
+    var s = lcbScore(tot, sigma, k);
+    if (n != null && n >= 2) {
+      var bar = Math.sqrt(2 * Math.log(n));
+      if (bar > 0) s = s * Math.min(1, Math.abs(z) / bar);
+    }
     return (prev != null) ? ewmaScore(prev, s, lam) : s;
   }
-  var API = { grinoldKahn: grinoldKahn, convictionSigma: convictionSigma, lcbScore: lcbScore,
-    deflatedConviction: deflatedConviction, steinShrink: steinShrink, ewmaScore: ewmaScore,
+  var API = { grinoldKahn: grinoldKahn, alphaForecastSe: alphaForecastSe, convictionSigma: convictionSigma,
+    lcbScore: lcbScore, deflatedConviction: deflatedConviction, steinShrink: steinShrink, ewmaScore: ewmaScore,
     compositeRankScore: compositeRankScore };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.MrktRank = API;

@@ -2307,14 +2307,29 @@ function buildBullBearBoard(){
   function _qpen(s){var p=1;if(s.dq==='reject')p*=0.3;else if(s.dq==='degraded')p*=0.7;
     var dl=s.drift&&s.drift.level;if(dl==='significant')p*=0.5;else if(dl==='moderate')p*=0.85;return p;}
   S.forEach(function(s){s.qpen=_qpen(s);s.zc=((s.alpha-aMed)/aScale)*_convScale*s.qpen*_nShrink;s.tot=s.exp+s.drag;s.conv=(Math.abs(s.zc)>=1.5?'HIGH':(Math.abs(s.zc)>=0.7?'MED':'LOW'));});
-  // CONFIDENCE-ADJUSTED RANK SCORE (rank_engine.js): lower-confidence-bound with conviction-scaled sigma,
-  // so a high-edge LOW-conviction name no longer out-ranks a high-conviction one; zAdj = multiplicity-deflated z.
+  // CONFIDENCE-ADJUSTED RANK SCORE (rank_engine.js): lower-confidence bound on the expected return using a
+  // PER-NAME alpha standard error — the leverage-aware prediction SE of the alpha->return calibration
+  // (resid_sd*sqrt(1/n + (alpha-mean)^2/Sxx)). This is genuine estimation uncertainty, INDEPENDENT of the
+  // point estimate, so noisy / extreme-alpha names get wider haircuts (vs. the old universe-wide sigR proxy).
+  // n_tests applies a soft multiplicity discount; prev (persisted per ticker) gives EWMA rank stability.
   var _RK=(typeof window!=='undefined'&&window.MrktRank)?window.MrktRank:null;
-  S.forEach(function(s){s.score=_RK?_RK.compositeRankScore(s.tot,s.zc,sigR||9,0.5):s.tot;s.zAdj=_RK?_RK.deflatedConviction(s.zc,S.length):s.zc;});
-  // EVERY company placed in exactly one column by TOTAL expected return (fixes the alpha-sign edge case):
-  // tot>=0 -> BULL, tot<0 -> BEAR. Ranked within each by total expected return.
-  var bull=S.filter(function(s){return s.tot>=0;}).sort(function(a,b){return b.tot-a.tot;}),
-      bear=S.filter(function(s){return s.tot<0;}).sort(function(a,b){return a.tot-b.tot;});
+  var _aMean=S.reduce(function(x,s){return x+s.alpha;},0)/Math.max(1,S.length);
+  var _Sxx=S.reduce(function(x,s){return x+(s.alpha-_aMean)*(s.alpha-_aMean);},0);
+  var _residN=0,_residSS=0;
+  S.forEach(function(s){var e=(s.r1m!=null&&s.exp!=null)?(s.r1m-s.exp):null;if(e!=null&&e===e){_residSS+=e*e;_residN++;}});
+  var _residSd=_residN>1?Math.sqrt(_residSS/_residN):null;   // RMS calibration residual (return %), the SE scale
+  var _prev={};try{_prev=JSON.parse(localStorage.getItem('bbPrevScores')||'{}')||{};}catch(_e){}
+  S.forEach(function(s){
+    s.alphaSE=(_RK&&_residSd)?_RK.alphaForecastSe(_residSd,s.alpha,_aMean,_Sxx,S.length):null;
+    s.score=_RK?_RK.compositeRankScore(s.tot,s.zc,sigR||9,0.5,S.length,(_prev[s.t]!=null?_prev[s.t]:null),0.5,s.alphaSE):s.tot;
+    s.zAdj=_RK?_RK.deflatedConviction(s.zc,S.length):s.zc;});
+  try{var _ns={};S.forEach(function(s){if(s.score!=null&&s.score===s.score)_ns[s.t]=s.score;});localStorage.setItem('bbPrevScores',JSON.stringify(_ns));}catch(_e){}
+  // EVERY company placed in exactly one column by TOTAL expected return (tot>=0 -> BULL, tot<0 -> BEAR);
+  // ranked within each by the CONFIDENCE-ADJUSTED score (falls back to tot if the rank engine is absent), so
+  // the server-side order already matches the score sort even before bullbear_controls re-applies it.
+  var _bk=function(s){return (s.score!=null&&s.score===s.score)?s.score:s.tot;};
+  var bull=S.filter(function(s){return s.tot>=0;}).sort(function(a,b){return _bk(b)-_bk(a);}),
+      bear=S.filter(function(s){return s.tot<0;}).sort(function(a,b){return _bk(a)-_bk(b);});
   var MOVE={RATE:DIR.RATE,OIL:DIR.OIL,DXY:DIR.DXY,VIX:DIR.VIX},MLAB={RATE:'10Y',OIL:'Oil',DXY:'USD',VIX:'Risk'};
   function tiles(s){var out='';['RATE','OIL','DXY','VIX'].forEach(function(k){var b=s.mb[k];if(b==null)return;var mv=MOVE[k],tw=b*mv,c=tw>0?'#2ecc8f':(tw<0?'#ef5f4e':'#8a93a3');
       out+='<span class="bt" style="border-color:'+c+'55"><b>'+MLAB[k]+'</b> β'+b.toFixed(2)+' <span style="color:'+c+'">'+(mv>=0?'+':'')+mv.toFixed(1)+'%'+(tw>0?' ▲':tw<0?' ▼':'')+'</span></span>';});
@@ -2325,7 +2340,7 @@ function buildBullBearBoard(){
     return out||'<span class="bt" style="color:#69727f">no significant macro correlation</span>';}
   function rowH(s,isBull,rank,mx){var col=isBull?'#2ecc8f':'#ef5f4e';var cc=(s.conv==='HIGH'?'#e8c14a':s.conv==='MED'?'#9ab4e0':'#69727f');
     var aw=(s.conv==='HIGH'?4:s.conv==='MED'?3:2),ah=(s.conv==='HIGH'?'':s.conv==='MED'?'aa':'55'),pct=Math.max(2,Math.min(100,Math.abs(s.tot)/(mx||1)*100));
-    return '<div class="bbrow" data-tk="'+s.t+'" data-tot="'+s.tot.toFixed(4)+'" data-score="'+(s.score!=null?s.score:s.tot).toFixed(4)+'" data-conv="'+s.conv+'" data-z="'+Math.abs(s.zc).toFixed(4)+'" data-sec="'+s.sec+'" style="border-left:'+aw+'px solid '+col+ah+'" onclick="try{load(\''+s.t+'\',DATA[\''+s.t+'\'])}catch(e){}" title="load '+s.t+' · '+s.conv+' conviction"><div class="bbhd">'+
+    return '<div class="bbrow" data-tk="'+s.t+'" data-tot="'+s.tot.toFixed(4)+'" data-score="'+(s.score!=null?s.score:s.tot).toFixed(4)+'" data-conv="'+s.conv+'" data-z="'+Math.abs(s.zc).toFixed(4)+'" data-sec="'+s.sec+'" data-se="'+(s.alphaSE!=null?s.alphaSE.toFixed(4):'')+'" style="border-left:'+aw+'px solid '+col+ah+'" onclick="try{load(\''+s.t+'\',DATA[\''+s.t+'\'])}catch(e){}" title="load '+s.t+' · '+s.conv+' conviction · confidence score '+(s.score!=null?s.score.toFixed(1):'?')+(s.alphaSE!=null?(' · ±'+s.alphaSE.toFixed(1)+'% est. SE'):'')+'"><div class="bbhd">'+
       '<span class="bbrk">'+rank+'</span><span class="bbt">'+s.t+'</span><span class="bbsec">'+s.sec+'</span>'+
       '<span class="bbconv" style="color:'+cc+';border-color:'+cc+'66">'+s.conv+'</span>'+
       '<span class="bbexp" style="color:'+col+'">'+(s.tot>=0?'+':'')+s.tot.toFixed(1)+'% tot</span></div>'+

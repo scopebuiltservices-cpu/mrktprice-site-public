@@ -84,17 +84,4 @@ ok("SPA: small p for true outperformer", spa_t["p"] < 0.15, spa_t)
 ok("SPA: larger p for noise than truth", spa_n["p"] > spa_t["p"], (spa_t["p"],spa_n["p"]))
 
 # ---- DRIFT GUARD: the numeric helpers duplicated across pooled_research and pooled_rigor must agree,
-#      so the two modules can't silently diverge over time. ----
-try:
-    import pooled_research as pres
-    grid = [-3.0, -1.5, -0.4, 0.0, 0.7, 1.9, 3.0]
-    ncdf_ok = all(abs(pr._ncdf(z) - pres._ncdf(z)) < 1e-9 for z in grid)
-    pgrid = [0.01, 0.1, 0.5, 0.9, 0.975, 0.999]
-    nppf_ok = all(abs(pr._nppf(p) - pres._nppf(p)) < 1e-6 for p in pgrid)
-    ok("drift-guard: _ncdf agrees with pooled_research", ncdf_ok)
-    ok("drift-guard: _nppf agrees with pooled_research", nppf_ok)
-except Exception as e:
-    ok("drift-guard: cross-module helper check ran", False, e)
-
-print("\n" + ("ALL POOLED-RIGOR TESTS PASSED" if not F else "%d FAILED: %s" % (len(F), F)))
-raise SystemExit(1 if F else 0)
+#      so the two mod

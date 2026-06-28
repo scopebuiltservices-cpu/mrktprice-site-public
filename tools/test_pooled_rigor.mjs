@@ -46,5 +46,8 @@ const Dt = [], Dn = [];
 for (let t = 0; t < 160; t++) { const b = []; for (let k = 0; k < 6; k++) b.push(gauss()); const bt2 = b.slice(); bt2[0] = gauss() + 0.25; Dt.push(bt2); Dn.push(Array.from({ length: 6 }, () => gauss())); }
 ok('RC p(true) < p(noise)', R.realityCheck(Dt, 300).p < R.realityCheck(Dn, 300).p, [R.realityCheck(Dt, 300).p, R.realityCheck(Dn, 300).p]);
 
+const _D=[];for(let t=0;t<48;t++){const r=[];for(let k=0;k<4;k++)r.push(Math.sin(t*0.3+k)*0.01+(k===0?0.003:0));_D.push(r);}
+ok('exact cross-lang parity: RC p', Math.abs(R.realityCheck(_D,500).p-0.103792415170)<1e-9, R.realityCheck(_D,500).p);
+ok('exact cross-lang parity: SPA p', Math.abs(R.spa(_D,500).p-0.119760479042)<1e-9, R.spa(_D,500).p);
 console.log('\n' + (F.length ? F.length + ' FAILED: ' + F.join(', ') : 'ALL POOLED-RIGOR JS TESTS PASSED'));
 process.exit(F.length ? 1 : 0);

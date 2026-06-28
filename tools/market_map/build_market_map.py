@@ -1879,6 +1879,18 @@ def main():
                     _gv,_gr=_dqm.guard(_n.get(_k),_lo,_hi,_k)
                     if _gv is None: _n[_k]=None; _sani+=1
         if isinstance(snap.get("dataHealth"),dict): snap["dataHealth"]["sanitizedFields"]=_sani
+        # PROVENANCE: a REAL raw-data hash (sha256 of the canonical input close panel) + a config hash
+        # (sha256 of the composite weights/params), so a pooled run is reproducible — same data + config
+        # reproduce the same outputs — beyond qa_signoff's source-code fingerprint.
+        try:
+            import hashlib as _hl
+            _raw={_t:[round(_x,4) for _x in (_PRECM.get(_t) or [])] for _t in sorted(_PRECM)}
+            _rawh=_hl.sha256(_j5.dumps(_raw,separators=(",",":"),sort_keys=True).encode("utf-8")).hexdigest()
+            _cfg={"weights":{"sMR":0.35,"sMom":0.30,"sSig":0.25,"sVol":0.10},"thr":0.3,"H":10,"schema":snap.get("schemaVersion")}
+            _cfgh=_hl.sha256(_j5.dumps(_cfg,separators=(",",":"),sort_keys=True).encode("utf-8")).hexdigest()
+            if isinstance(snap.get("dataHealth"),dict):
+                snap["dataHealth"]["rawDataHash"]=_rawh; snap["dataHealth"]["configHash"]=_cfgh
+        except Exception: pass
         try:
             _dh5=snap.get("dataHealth") or {}; _dq5=_dh5.get("dataQuality") or {}; _drc5=_dh5.get("driftCensus") or {}
             _hl={"asof":snap.get("asof"),"source":(snap.get("source") or "")[:70],

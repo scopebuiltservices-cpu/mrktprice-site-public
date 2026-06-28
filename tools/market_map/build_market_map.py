@@ -1252,34 +1252,14 @@ def real_universe():
             import yfinance as yf
         except Exception as _yfe:
             sys.stderr.write("yfinance import failed (%s); running FMP-only\n"%_yfe); yf=None
-    PH={"fmp":0,"yf":0,"miss":0,"fmpLastOk":None,"yfEnabled":bool(YF_ON),
-        "yfImported":bool(yf is not None),"fmpKeyPresent":bool(_fmph.have_key())}
-    def _now_utc():
-        return _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime())
+    # PRICE HIERARCHY extracted to price_source.PriceSource (FMP Ultimate -> yfinance), unit-tested in
+    # test_price_source.py. PH is the shared health tracker the dataHealth block reads. Thin import keeps
+    # the monolith from carrying the (truncation-prone) logic inline.
+    import price_source as _psrc
+    _PS=_psrc.PriceSource(fmp=_fmph, yf=yf, session=_PSESS)
+    PH=_PS.health
     def _get_hist(sym, min_rows=10):
-        """Price getter — FMP Ultimate FIRST, yfinance FALLBACK (if enabled). dict(cl,hi,lo,vo,src) or None."""
-        rows=None
-        try: rows=_fmph.eod_ohlcv(sym, sess=_PSESS, min_rows=min_rows)
-        except Exception: rows=None
-        if rows:
-            PH["fmp"]+=1; PH["fmpLastOk"]=_now_utc()
-            return {"cl":[r[4] for r in rows],"hi":[r[2] for r in rows],"lo":[r[3] for r in rows],
-                    "vo":[float(r[5]) for r in rows],"src":"fmp"}
-        if yf is not None:
-            try:
-                h=yf.Ticker(sym).history(period="1y",interval="1d",auto_adjust=True)
-                cl=[];vo=[];hi=[];lo=[]
-                for c,v,H,Lw in zip(h["Close"].tolist(),h["Volume"].tolist(),h["High"].tolist(),h["Low"].tolist()):
-                    c=float(c)
-                    if c==c and c>0:
-                        cl.append(c); vo.append(float(v) if v==v else 0.0)
-                        H=float(H); Lw=float(Lw); hi.append(H if H==H else c); lo.append(Lw if Lw==Lw else c)
-                if len(cl)>=min_rows:
-                    PH["yf"]+=1
-                    return {"cl":cl,"hi":hi,"lo":lo,"vo":vo,"src":"yfinance"}
-            except Exception: pass
-        PH["miss"]+=1
-        return None
+        return _PS.get(sym, min_rows)
     try:
         from free_financial_data.sec_client import SecClient  # optional EDGAR client (vendored in private repo only)
         sec=SecClient()

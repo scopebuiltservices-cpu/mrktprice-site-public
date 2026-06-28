@@ -2448,12 +2448,21 @@ function coneCalibration(closes,H){
   var dev=lc.coverage-0.90;
   var verdict=Math.abs(dev)<=0.04?'well calibrated':(lc.coverage<0.90?'under-dispersed (band too tight)':'over-dispersed (band too wide)');
   var pitShape=(lc.pitKS!=null&&lc.pitKS>0.10)?('mis-calibrated tails (KS '+lc.pitKS.toFixed(2)+')'):'~calibrated tails';
+  // Distributional GoF (PIT uniformity / Wasserstein / energy) is a SEPARATE question from coverage
+  // honesty: compute it on the EWMA-sigma PIT series so the Authenticated-confidence panel keeps its
+  // integral goodness-of-fit. Coverage/Wilson/CRPS/interval-score remain the embargoed lineage numbers.
+  var lam=0.94,s2=(r[0]*r[0])||1e-6,sig=[];for(var i=0;i<r.length;i++){s2=lam*s2+(1-lam)*r[i]*r[i];sig.push(Math.sqrt(s2));}
+  var pits=[],zs=[],stride=Math.max(1,Math.floor((closes.length-H-30)/250));
+  for(var t=30;t+H<closes.length;t+=stride){var s=sig[Math.min(t-1,sig.length-1)];if(!(s>0))continue;
+    var P0=closes[t],rz=closes[t+H],sd=s*Math.sqrt(H),zz=Math.log(rz/P0)/sd;pits.push(normCDF(zz));zs.push(zz);}
+  var gof=pits.length>=20?gofUniform(pits):null,w1=pits.length>=20?w1Uniform(pits):null,energy=zs.length>=20?energyNormal(zs):null;
   return {n:lc.n,H:H,nCal:lc.nCal,embargo:lc.embargo,
     c90:lc.coverage,coverageGaussian:lc.coverageGaussian,coverageSym:lc.coverageSym,
     qLo:lc.qLo,qHi:lc.qHi,dev:dev,verdict:verdict,
     wilson:{lo:lc.wilsonLo,hi:lc.wilsonHi},dkw:lc.dkw,
     intervalScore:lc.intervalScore,crps:lc.crps,widthMean:lc.widthMean,
-    pitShape:pitShape,pitKS:lc.pitKS,byRegime:lc.byRegime};}
+    pitShape:pitShape,pitKS:lc.pitKS,byRegime:lc.byRegime,
+    gof:gof,w1:w1,energy:energy};}
 /* event layer: is the next earnings inside the horizon, and how big is this name's own post-earnings move? */
 function coneEventInfo(sym,nP,lastDate){
   if(!lastDate)return null;var ne=(typeof nextEarnings==='function')?nextEarnings(lastDate,sym):null;if(!ne)return null;

@@ -1211,7 +1211,7 @@ def real_universe():
             return {"pw":round(pw,2) if pw else None,"cw":round(cw,2) if cw else None,"pcr":pcr,"gex":gex}
         except Exception: return None
     try:
-        optlim=int(os.environ.get("OPT_LIMIT","40"))
+        optlim=int(os.environ.get("OPT_LIMIT", str(min(200, max(40, len(names)//15)))))   # scale option-wall coverage with universe size (capped), env-overridable
         big=sorted([n for n in names if "RUT" not in n["idx"] and n.get("_cl")], key=lambda n:-n["mcap"])
         for n in big[:optlim]:
             n["_opt"]=fetch_opt(n["t"], n["_cl"][-1])
@@ -1231,7 +1231,8 @@ def real_universe():
     #      must look DIFFERENT from a working one. We count usable results per source, emit loud
     #      CI ::warning:: lines, and stash a dataHealth block into the published JSON. ----
     import sys as _sys, os as _os
-    _gcap=0; _fmp_try=_fmp_ok=_fmp_err=0; _eod_try=_eod_ok=_eod_err=0; _alp_ok=0; _errs=[]
+    _gcap=0; _GCAP=int(os.environ.get("GEX_CAP", str(min(400, max(140, len(names)//8)))))   # GEX/BS coverage cap scales with universe (capped), env-overridable
+    _fmp_try=_fmp_ok=_fmp_err=0; _eod_try=_eod_ok=_eod_err=0; _alp_ok=0; _errs=[]
     _earn_ok=_dcf_ok=_ptgt_ok=_est_ok=0; _fmp_lim=None
     _EST_HIST=_os.path.join(_os.path.dirname(_os.path.abspath(__file__)),"est_history.jsonl")   # accumulating consensus snapshots (committed)
     _TODAY_ISO=__import__("datetime").date.today().isoformat()
@@ -1290,7 +1291,7 @@ def real_universe():
                     _pt=n.get("ptgt") or {}
                     if _pt.get("tgt"): n["tgtUpside"]=round((_pt["tgt"]-_lastpx)/_lastpx,4) # +upside to consensus
         sp=(n.get("_cl") or [None])[-1]
-        if _eod and sp and _gcap<140:
+        if _eod and sp and _gcap<_GCAP:
             _eod_try+=1
             try:
                 ox=_eod.enrich_options(n["t"], sp, n.get("_cl"))   # GEX + Black-Scholes fair value/greeks/richness
@@ -1301,7 +1302,7 @@ def real_universe():
                 _eod_err+=1
                 if len(_errs)<8: _errs.append("EODHD %s: %s"%(n["t"], str(e)[:80]))
             _gcap+=1
-        if _alp and sp and not n.get("bs") and _gcap<140:          # free Alpaca fallback when EODHD has no options add-on
+        if _alp and sp and not n.get("bs") and _gcap<_GCAP:          # free Alpaca fallback when EODHD has no options add-on
             try:
                 ax=_alp.enrich_options(n["t"], sp, n.get("_cl"))     # IV+greeks+BS richness (GEX only if OI present)
                 if ax:

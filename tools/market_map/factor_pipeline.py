@@ -117,6 +117,26 @@ def run(names, store_dir, is_etf=None, horizon=HORIZON):
                      "acc": (round(r["_acc"], 4) if r["_acc"] is not None else None),
                      "acc20": round(r["F"]["acc20"], 4), "acc40": round(r["F"]["acc40"], 4),
                      "acc63": round(r["F"]["acc63"], 4)} for r in rows}
+    # ---- COMPOSITE deflated-Sharpe gate (deep-research spec): score the weighted composite over the IC
+    #      history with an HONEST trial count, and emit a conviction SCALE that degrades the board's
+    #      conviction when the composite cannot clear the DSR hurdle or factor breadth is thin. The honest
+    #      trial count = every candidate factor evaluated (a tested hypothesis) + any persisted ledger
+    #      trials (threshold grids, lookback/horizon variants, rebalancing rules). ----
+    composite_gate_out = None
+    try:
+        import composite_gate as _cgate, trial_ledger as _tled
+        ledger_path = os.path.join(store_dir, "trial_ledger.jsonl")
+        n_factor_trials = max(len(PRIORS), (len(hist) if hist else 0))
+        n_trials = _tled.totals(ledger_path, extra=n_factor_trials)["total"]
+        if have:
+            composite_gate_out = _cgate.gate({f: hist[f] for f in hist}, weights,
+                                             horizon=horizon, n_trials=n_trials, breadth=breadth)
+    except Exception:
+        composite_gate_out = None
+    conviction_scale = (composite_gate_out["convictionScale"]
+                        if (composite_gate_out and composite_gate_out.get("convictionScale") is not None)
+                        else (1.0 if mode == "fitted" else 0.6))  # priors mode: mild discount, not full trust
     return {"factorMode": mode, "factorWeights": {k: round(v, 4) for k, v in weights.items()},
+            "compositeGate": composite_gate_out, "convictionScale": round(conviction_scale, 4),
             "factorBreadth": round(breadth, 3), "factorIC": ic_means,
             "factorHistoryN": (min((len(v) for v in hist.values())) if hist else 0), "calc": calc}

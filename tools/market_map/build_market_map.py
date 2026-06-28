@@ -1769,7 +1769,7 @@ def main():
         _store=_o2.path.dirname(_o2.path.abspath(__file__))
         _etf=set((nn.get("t") or "").upper() for nn in names if ("ETF" in (nn.get("idx") or []) or nn.get("etf")))
         _fx=_fpipe.run(names, _store, is_etf=lambda t:(t in _etf))
-        for _k in ("factorWeights","factorMode","factorBreadth","factorIC","factorHistoryN"):
+        for _k in ("factorWeights","factorMode","factorBreadth","factorIC","factorHistoryN","compositeGate","convictionScale"):
             if _k in _fx: snap[_k]=_fx[_k]
         _calc=_fx.get("calc") or {}
         for _nn in names:

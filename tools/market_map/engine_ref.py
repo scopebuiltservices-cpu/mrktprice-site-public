@@ -100,10 +100,8 @@ def _mul32(seed):
     def rnd():
         nonlocal a
         a = (a + 0x6D2B79F5) & 0xFFFFFFFF
-        t = a
-        t = (t ^ (t >> 15)) * (1 | t) & 0xFFFFFFFF
-        t = (t + ((t ^ (t >> 7)) * (61 | t) & 0xFFFFFFFF)) & 0xFFFFFFFF
-        t ^= t
+        t = ((a ^ (a >> 15)) * (1 | a)) & 0xFFFFFFFF
+        t = ((t + (((t ^ (t >> 7)) * (61 | t)) & 0xFFFFFFFF)) ^ t) & 0xFFFFFFFF
         return ((t ^ (t >> 14)) & 0xFFFFFFFF) / 4294967296.0
     return rnd
 

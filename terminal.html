@@ -3569,12 +3569,8 @@ document.getElementById('alertClose').onclick=()=>document.getElementById('alert
   e.addEventListener('change',function(){try{localStorage.setItem('mrkt.ui.'+id,e.type==='checkbox'?(e.checked?'1':'0'):e.value);}catch(_e2){}});});
  if(_did){try{if(typeof CUR==='object'&&CUR&&CUR.c){redraw();if(typeof renderHARQ==='function')renderHARQ();}}catch(_e3){}}})();
 window.addEventListener('resize',()=>{draw();drawCone();try{renderConeZoom();}catch(e){}});try{const _ro=new ResizeObserver(()=>{draw();drawCone();try{renderConeZoom();}catch(e){}});_ro.observe(document.querySelector('.chartcard'));}catch(e){}
-const dz=document.getElementById('dz');dz.onclick=()=>{const i=document.createElement('input');i.type='file';i.accept='.csv';i.onchange=e=>readCSV(e.target.files[0]);i.click();};
-['dragover','dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.toggle('drag',ev==='dragover');if(ev==='drop')readCSV(e.dataTransfer.files[0]);}));
-function readCSV(f){if(!f)return;const rd=new FileReader();rd.onload=()=>{const L=rd.result.split(/\r?\n/).filter(x=>x.trim());const h=L[0].toLowerCase().split(',');const di=h.indexOf('date'),ci=h.indexOf('close'),vi=h.indexOf('volume');if(di<0||ci<0){alert('need date,close columns');return;}
- const dates=[],closes=[],vols=[];for(let i=1;i<L.length;i++){const p=L[i].split(',');const c=parseFloat(p[ci]);if(isFinite(c)){dates.push(p[di]);closes.push(c);vols.push(vi>=0?parseFloat(p[vi])||0:0);}}
- const sym=(f.name.split('_')[0]||'CSV').toUpperCase();if(![...sel.options].some(o=>o.value===sym)){const o=document.createElement('option');o.value=sym;o.textContent=sym;sel.appendChild(o);}
- DATA[sym]={dates:dates.slice(-252),closes:closes.slice(-252),volumes:vols.slice(-252)};SCANROWS=null;sel.value=sym;load(sym,DATA[sym]);if(typeof updateStrip==='function')updateStrip();};rd.readAsText(f);}
+/* CSV drop-zone removed — all ticker data comes from live pulls + the nightly hist/ cache (no user-file ingestion),
+   which avoids the "imported CSV freezes at the file's date" staleness trap. Type a ticker to load live data. */
 sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnimationFrame(()=>{draw();drawCone();});
 </script>
 <script>

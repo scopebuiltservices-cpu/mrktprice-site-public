@@ -126,6 +126,8 @@ jobs:
             python tools/market_map/emit_cik.py --out cik.json --marketmap marketmap.json --cards cards || echo "::warning::cik.json refresh skipped"
             # DATA-DRIVEN UNIVERSE: emit universe.json (membership + sector census + dq/drift rollup) from the map
             python tools/market_map/emit_universe.py --map marketmap.json --out universe.json || echo "::warning::universe.json emit skipped"
+            # EVENT-AWARE: high-impact US macro calendar (FMP) -> events.json (served + committed)
+            FMP_API_KEY="$FMP_API_KEY" python tools/market_map/events_calendar.py events.json || echo "::warning::events.json emit skipped"
             # KEYLESS feedback loop: log today's Bull/Bear α + attach matured realized returns + refit
             # so the board reads α as an empirically-calibrated expected return % (accumulates nightly).
             python tools/market_map/alpha_calib.py --mm marketmap.json --hist hist --log data/alpha_log.jsonl --out alpha_calib.json --horizon 21 || echo "::warning::alpha calibration skipped"
@@ -151,7 +153,7 @@ jobs:
         run: |
           git config user.name  "mrktprice-bot"
           git config user.email "bot@mrktprice.com"
-          git add -A marketmap.json xsection.json universe.json hist/ tools/market_map/est_history.jsonl tools/market_map/factor_snapshots.jsonl tools/market_map/factor_ic.jsonl tools/market_map/trig_snap.jsonl tools/market_map/trig_out.jsonl tools/market_map/drift_ref.json tools/market_map/drift_store.jsonl tools/market_map/trial_ledger.jsonl tools/market_map/health_log.jsonl 2>/dev/null || true
+          git add -A marketmap.json xsection.json universe.json events.json hist/ tools/market_map/est_history.jsonl tools/market_map/factor_snapshots.jsonl tools/market_map/factor_ic.jsonl tools/market_map/trig_snap.jsonl tools/market_map/trig_out.jsonl tools/market_map/drift_ref.json tools/market_map/drift_store.jsonl tools/market_map/trial_ledger.jsonl tools/market_map/health_log.jsonl 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "::notice::no data changes to commit"
           else
@@ -166,7 +168,7 @@ jobs:
         run: |
           python build_reports.py || echo "::warning::reports index rebuild skipped"
           mkdir -p _site/reports
-          for f in *.html *.js robots.txt sitemap.xml marketmap.json xsection.json universe.json marketmap.schema.json xsection.schema.json; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
+          for f in *.html *.js robots.txt sitemap.xml marketmap.json xsection.json universe.json events.json marketmap.schema.json xsection.schema.json; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
           mkdir -p _site/.build && cp .build/qa-signoff.json _site/.build/ 2>/dev/null || true   # ship the signed QA manifest for audit
           cp -r reports/*.html _site/reports/ 2>/dev/null || true
           rm -f _site/reports/report-template.html

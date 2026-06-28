@@ -1314,6 +1314,16 @@ def real_universe():
                     _h=_dq.series_health(cl, vo); names[-1]["_dq"]=_h["verdict"]
                     if _h["verdict"]!="clean": names[-1]["_dqr"]=_h["reasons"][:3]
                 except Exception: pass
+            # CROSS-SOURCE agreement (SAMPLED ~1/7 to bound API load): when FMP supplied the price, spot-check
+            # a yfinance pull and flag provider disagreement (a skew between feeds = suspect data).
+            if _dq is not None and _ph.get("src")=="fmp" and yf is not None and (len(names)%7==0):
+                try:
+                    _yh=yf.Ticker(sym).history(period="3mo",interval="1d",auto_adjust=True)
+                    _yc=[float(x) for x in _yh["Close"].tolist() if float(x)==float(x) and float(x)>0]
+                    if len(_yc)>=5:
+                        _xa=_dq.cross_source_agree(cl, _yc)
+                        names[-1]["xsrc"]={"agree":_xa.get("agree"),"dev":_xa.get("maxRelDev"),"n":_xa.get("n")}
+                except Exception: pass
         except Exception as e:
             sys.stderr.write(f"skip {sym}: {e}\n")
     # ---- factor panel: lightweight closes for cross-asset conditioning (tagged idx=["FACTOR"]) ----
@@ -1603,10 +1613,14 @@ def real_universe():
                     ("instOk","SEC 13F institutional"),("insiderOk","SEC insider"),("shortOk","SEC short/FTD")):
         if _cov[_k]==0:
             _sys.stderr.write("::warning::%s pull returned 0/%d - source down or throttled\n"%(_lbl,len(names)))
-    _dqv={"clean":0,"degraded":0,"reject":0,"unknown":0,"flagged":[]}                 # data-quality census across the universe
+    _dqv={"clean":0,"degraded":0,"reject":0,"unknown":0,"flagged":[],"xsrcChecked":0,"xsrcDisagree":0}  # data-quality census
     for _n in names:
         _v=_n.get("_dq") or "unknown"
         _dqv[_v]=_dqv.get(_v,0)+1
+        _xs=_n.get("xsrc")
+        if _xs and _xs.get("agree") is not None:
+            _dqv["xsrcChecked"]+=1
+            if _xs.get("agree") is False: _dqv["xsrcDisagree"]+=1
         if _v in ("degraded","reject") and len(_dqv["flagged"])<30:
             _dqv["flagged"].append({"t":_n.get("t"),"v":_v,"why":_n.get("_dqr")})
     globals()["_DATA_HEALTH"]={"asof":dt.date.today().isoformat(),
@@ -1877,6 +1891,14 @@ def main():
         except Exception: pass
     except Exception as _se:
         import sys as _s5; _s5.stderr.write("::warning::output-integrity layer skipped: %s\n"%str(_se)[:140])
+    # ---- EVENT-AWARE LAYER: high-impact US macro calendar (FMP) -> snap['events'] (next event + window +
+    #      daysToNext) so the conviction/drift layers can treat signals cautiously right before a major
+    #      print and expect a distribution shift right after one. Fail-soft (no key / no data -> skipped). ----
+    try:
+        import events_calendar as _ev
+        _evraw=_ev.fetch_economic_calendar()
+        if _evraw is not None: snap["events"]=_ev.build_events(_evraw)
+    except Exception: pass
     snap.setdefault("schemaVersion","1.0")                                 # producer-stamped contract version (consumer version-gates)
     snap=_finite(snap)
     json.dump(snap,open(a.out,"w"),separators=(",",":"),allow_nan=False)   # allow_nan=False = hard guard: never emit invalid JSON

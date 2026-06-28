@@ -266,7 +266,7 @@
     straddleLabels: straddleLabels, eventVariance: eventVariance, houseBlend: houseBlend,
     driverContributions: driverContributions, DRIVER_LABELS: DRIVER_LABELS,
     crpsGaussian: crpsGaussian, intervalScore: intervalScore, wilsonInterval: wilsonInterval,
-    pitKs: pitKs, dkwBand: dkwBand, calibrateHorizon: calibrateHorizon, normCdf: normCdf,
+    pitKs: pitKs, dkwBand: dkwBand, calibrateHorizon: calibrateHorizon, quantile: quantile, normCdf: normCdf,
     firstPassageUp: firstPassageUp, firstPassageDown: firstPassageDown,
     volumeAhead: volumeAhead, touchOdds: touchOdds
   };

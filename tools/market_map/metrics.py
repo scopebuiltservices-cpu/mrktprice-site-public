@@ -15,7 +15,11 @@ __all__ = ["winsorize", "zscores", "ann_vol", "beta", "pearson", "_var", "_resid
            "_betacf", "_betai", "_t_two_sided_p", "ols_betas", "cluster_order", "money_flow", "MACROF",
            "_ok", "mfi", "atr", "zstd", "lasso_cd", "macro_fit", "ema_series", "daily_logvol", "_logret",
            "half_life", "variance_ratio", "parkinson_vol", "jump_ratio", "_phi", "prob_touch",
-           "contradiction", "_Q75", "median_touch_days", "_dvol", "regime_flip_prob", "calibrate_touch"]
+           "contradiction", "_Q75", "median_touch_days", "_dvol", "regime_flip_prob", "calibrate_touch",
+           # canonical risk/return library (previously missing or duplicated across modules):
+           "mean", "stdev", "sharpe", "downside_dev", "sortino", "max_drawdown", "calmar", "cagr",
+           "skewness", "kurtosis", "value_at_risk", "cvar", "ulcer_index", "information_ratio",
+           "ewma_vol", "spearman", "hurst"]
 
 
 def winsorize(xs,p=0.02):
@@ -320,3 +324,160 @@ def calibrate_touch(samples, T=21, lookback=150, win=63):
     out=[{"pmid":round((i+0.5)/5,2),"pred":round(sp_/nn,3),"real":round(hh/nn,3),"n":nn}
          for i,(sp_,nn,hh) in enumerate(bins) if nn>0]
     return {"bins":out,"brier":round(bn/bcount,4) if bcount else None,"n":bcount}
+
+
+# ============================================================================================
+# CANONICAL RISK / RETURN LIBRARY
+# Audit finding: sharpe was duplicated (composite_gate.py + pooled_rigor.py), spearman duplicated
+# (factor_eval.py + signal_linkage.py), ewma in 3 modules; and Sortino/Calmar/skew/kurtosis/CVaR/
+# Hurst/information-ratio/max-drawdown existed NOWHERE in Python. These are the single source of truth.
+# All pure-stdlib, NaN/None-robust, unit-tested in test_metrics.py.
+# ============================================================================================
+def _clean(xs):
+    return [float(x) for x in xs if x is not None and x == x]
+
+def mean(xs):
+    v = _clean(xs); return sum(v) / len(v) if v else float("nan")
+
+def stdev(xs, ddof=1):
+    v = _clean(xs)
+    if len(v) <= ddof: return float("nan")
+    m = sum(v) / len(v); return (sum((x - m) ** 2 for x in v) / (len(v) - ddof)) ** 0.5
+
+def sharpe(returns, rf=0.0, periods=252):
+    """Annualized Sharpe of a per-period simple-return series (rf annualized)."""
+    v = _clean(returns)
+    if len(v) < 2: return float("nan")
+    ex = [x - rf / periods for x in v]; sd = stdev(ex)
+    if not sd or sd != sd: return float("nan")
+    return (sum(ex) / len(ex)) / sd * math.sqrt(periods)
+
+def downside_dev(returns, mar=0.0, periods=252):
+    """Annualized downside deviation below a minimum-acceptable return (full-sample denominator)."""
+    v = _clean(returns)
+    if not v: return float("nan")
+    d = [min(0.0, x - mar / periods) for x in v]
+    return (sum(x * x for x in d) / len(v)) ** 0.5 * math.sqrt(periods)
+
+def sortino(returns, rf=0.0, periods=252):
+    v = _clean(returns)
+    if len(v) < 2: return float("nan")
+    dd = downside_dev(v, rf, periods)
+    if not dd or dd != dd: return float("nan")
+    return (sum(x - rf / periods for x in v) / len(v)) * periods / dd
+
+def max_drawdown(equity_or_prices):
+    """Max peak-to-trough drawdown (fraction in [-1,0]) of a price/equity LEVEL series."""
+    v = _clean(equity_or_prices)
+    if len(v) < 2: return 0.0
+    peak = v[0]; mdd = 0.0
+    for x in v:
+        if x > peak: peak = x
+        if peak > 0: mdd = min(mdd, x / peak - 1.0)
+    return round(mdd, 6)
+
+def cagr(returns, periods=252):
+    v = _clean(returns)
+    if not v: return float("nan")
+    eq = 1.0
+    for r in v: eq *= (1.0 + r)
+    return eq ** (periods / len(v)) - 1.0
+
+def calmar(returns, periods=252):
+    """Annualized return / |max drawdown| of the cumulative equity built from the returns."""
+    v = _clean(returns)
+    if len(v) < 2: return float("nan")
+    eq = [1.0]
+    for r in v: eq.append(eq[-1] * (1.0 + r))
+    mdd = max_drawdown(eq)
+    return (cagr(v, periods) / abs(mdd)) if mdd < 0 else float("nan")
+
+def skewness(xs):
+    """Sample (bias-corrected) skewness."""
+    v = _clean(xs); n = len(v)
+    if n < 3: return float("nan")
+    m = sum(v) / n; sd = (sum((x - m) ** 2 for x in v) / n) ** 0.5
+    if sd == 0: return 0.0
+    return (n / ((n - 1) * (n - 2))) * sum(((x - m) / sd) ** 3 for x in v)
+
+def kurtosis(xs, excess=True):
+    """Sample (bias-corrected) excess kurtosis (set excess=False for raw)."""
+    v = _clean(xs); n = len(v)
+    if n < 4: return float("nan")
+    m = sum(v) / n; sd = (sum((x - m) ** 2 for x in v) / n) ** 0.5
+    if sd == 0: return 0.0
+    g2 = (n * (n + 1) / ((n - 1) * (n - 2) * (n - 3))) * sum(((x - m) / sd) ** 4 for x in v) \
+        - 3 * (n - 1) ** 2 / ((n - 2) * (n - 3))
+    return g2 if excess else g2 + 3.0
+
+def value_at_risk(returns, alpha=0.05):
+    """Historical VaR at level alpha (positive number = loss magnitude)."""
+    v = sorted(_clean(returns))
+    if not v: return float("nan")
+    i = max(0, min(len(v) - 1, int(alpha * len(v))))
+    return -v[i]
+
+def cvar(returns, alpha=0.05):
+    """Historical CVaR / expected shortfall: mean of the worst alpha tail (positive = avg loss)."""
+    v = sorted(_clean(returns))
+    if not v: return float("nan")
+    k = max(1, int(alpha * len(v))); tail = v[:k]
+    return -(sum(tail) / len(tail))
+
+def ulcer_index(prices):
+    """Ulcer Index: RMS of percent drawdowns from the running peak (downside-only risk)."""
+    v = _clean(prices)
+    if len(v) < 2: return float("nan")
+    peak = v[0]; s = 0.0
+    for x in v:
+        if x > peak: peak = x
+        dd = 100.0 * (x / peak - 1.0) if peak > 0 else 0.0
+        s += dd * dd
+    return (s / len(v)) ** 0.5
+
+def information_ratio(returns, bench, periods=252):
+    """Annualized active-return / tracking-error vs a benchmark return series."""
+    a = _clean(returns); b = _clean(bench); n = min(len(a), len(b))
+    if n < 2: return float("nan")
+    act = [a[i] - b[i] for i in range(n)]; te = stdev(act)
+    if not te or te != te: return float("nan")
+    return (sum(act) / n) / te * math.sqrt(periods)
+
+def ewma_vol(returns, lam=0.94, annualize=252):
+    """RiskMetrics EWMA volatility; annualized if `annualize` periods/yr else per-period."""
+    v = _clean(returns)
+    if not v: return float("nan")
+    var = v[0] * v[0]
+    for r in v[1:]: var = lam * var + (1 - lam) * r * r
+    s = var ** 0.5
+    return s * math.sqrt(annualize) if annualize else s
+
+def _rank(xs):
+    order = sorted(range(len(xs)), key=lambda i: xs[i]); rk = [0.0] * len(xs); i = 0
+    while i < len(order):
+        j = i
+        while j + 1 < len(order) and xs[order[j + 1]] == xs[order[i]]: j += 1
+        avg = (i + j) / 2.0 + 1.0
+        for k in range(i, j + 1): rk[order[k]] = avg
+        i = j + 1
+    return rk
+
+def spearman(a, b):
+    """Spearman rank correlation (ties averaged). Canonical home for the duplicated copies."""
+    pr = [(x, y) for x, y in zip(a, b) if x == x and y == y]
+    if len(pr) < 3: return float("nan")
+    return pearson(_rank([p[0] for p in pr]), _rank([p[1] for p in pr]))
+
+def hurst(prices, max_lag=20):
+    """Hurst exponent via lag-variance (log-price) regression. H>0.5 trending, <0.5 mean-reverting."""
+    v = [math.log(x) for x in _clean(prices) if x > 0]
+    n = len(v)
+    if n < 2 * max_lag + 8: return None
+    lags = list(range(2, max_lag + 1)); tau = []
+    for L in lags:
+        d = [v[i] - v[i - L] for i in range(L, n)]
+        if len(d) < 3: return None
+        m = sum(d) / len(d); s = (sum((x - m) ** 2 for x in d) / len(d)) ** 0.5
+        tau.append(s if s > 0 else 1e-12)
+    b = beta([math.log(t) for t in tau], [math.log(L) for L in lags])   # slope = H
+    return round(b, 3) if b == b else None

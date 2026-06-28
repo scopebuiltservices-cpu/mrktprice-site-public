@@ -52,6 +52,9 @@ node tools/check-scripts.mjs >/tmp/_cs.out 2>&1 && tail -1 /tmp/_cs.out | sed 's
 section "5. external <script src> modules"
 node tools/check-external-js.mjs >/tmp/_ce.out 2>&1 && tail -1 /tmp/_ce.out | sed 's/^/  /' || { failmsg "check-external-js.mjs"; tail -8 /tmp/_ce.out | sed 's/^/        /'; }
 
+section "5b. file-size budget (no source file near the ~1756 mount boundary)"
+node tools/check-file-budget.mjs >/tmp/_cb.out 2>&1 && tail -2 /tmp/_cb.out | sed 's/^/  /' || { failmsg "check-file-budget.mjs"; grep OVER /tmp/_cb.out | sed 's/^/        /'; }
+
 section "6. JSON validity (root *.json)"
 shopt -s nullglob
 for j in *.json; do

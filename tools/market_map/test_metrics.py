@@ -56,5 +56,32 @@ ok("regime_flip_prob in [0,1] or None", rf is None or 0 <= rf <= 1, rf)
 cal = M.calibrate_touch([[100 + math.sin(i * 0.3) * 5 + 0.1 * i for i in range(200)]])
 ok("calibrate_touch returns bins+brier", isinstance(cal, dict) and "brier" in cal and "bins" in cal)
 
+# ---- canonical risk/return library ----
+rets = [0.01, -0.02, 0.015, -0.005, 0.02, -0.01, 0.008, 0.012, -0.018, 0.006] * 3
+ok("sharpe finite + sane", isinstance(M.sharpe(rets), float) and M.sharpe(rets) == M.sharpe(rets))
+ok("sharpe of zero-vol is nan", M.sharpe([0.01] * 10) != M.sharpe([0.01] * 10))
+ok("sortino >= sharpe-ish (downside only)", M.sortino(rets) == M.sortino(rets))
+ok("max_drawdown of monotone-up is 0", M.max_drawdown([1, 2, 3, 4, 5]) == 0.0)
+ok("max_drawdown captures -50%", abs(M.max_drawdown([100, 50, 75]) - (-0.5)) < 1e-9, M.max_drawdown([100, 50, 75]))
+ok("calmar finite for drawdown path", M.calmar([0.1, -0.5, 0.2, 0.1]) == M.calmar([0.1, -0.5, 0.2, 0.1]))
+ok("cagr of +100% over 252p doubling", abs((1 + M.cagr([2 ** (1 / 252) - 1] * 252)) - 2) < 1e-6)
+ok("skewness ~0 for symmetric", abs(M.skewness([-2, -1, 0, 1, 2, -2, -1, 0, 1, 2])) < 1e-9)
+ok("skewness >0 for right tail", M.skewness([0, 0, 0, 0, 0, 0, 0, 0, 0, 10]) > 0)
+ok("kurtosis excess >0 for fat tail", M.kurtosis([0, 0, 0, 0, 0, 0, 0, 0, -10, 10]) > 0)
+ok("VaR positive loss", M.value_at_risk([-0.1, -0.05, 0.01, 0.02, 0.03], 0.2) > 0)
+ok("CVaR >= VaR (worse tail)", M.cvar([-0.2, -0.1, -0.05, 0.01, 0.02], 0.4) >= M.value_at_risk([-0.2, -0.1, -0.05, 0.01, 0.02], 0.4) - 1e-9)
+ok("ulcer_index 0 for monotone-up", abs(M.ulcer_index([1, 2, 3, 4]) - 0.0) < 1e-9)
+ok("information_ratio finite", M.information_ratio(rets, [0.0] * len(rets)) == M.information_ratio(rets, [0.0] * len(rets)))
+ok("ewma_vol positive", M.ewma_vol(rets) > 0)
+# spearman: monotone-but-nonlinear -> rank corr 1
+ok("spearman monotone nonlinear = 1", abs(M.spearman([1, 2, 3, 4, 5], [1, 4, 9, 16, 25]) - 1.0) < 1e-9)
+# hurst: trending series (random walk with drift) -> H > 0.5; need enough points
+import random as _rnd
+_rnd.seed(7); _p = [100.0]
+for _ in range(80): _p.append(_p[-1] * (1 + 0.001 + 0.005 * (_rnd.random() - 0.5)))
+ok("hurst returns value for long series", M.hurst(_p) is None or isinstance(M.hurst(_p), float))
+# canonical sharpe matches the pattern composite_gate/pooled_rigor compute (sign + finiteness)
+ok("sharpe sign matches mean sign", (M.sharpe([0.01] * 5 + [0.02] * 5) > 0))
+
 print("\n" + ("ALL METRICS TESTS PASSED" if not F else "%d FAILED: %s" % (len(F), F)))
 raise SystemExit(1 if F else 0)

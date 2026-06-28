@@ -131,6 +131,10 @@ jobs:
             # KEYLESS feedback loop: log today's Bull/Bear α + attach matured realized returns + refit
             # so the board reads α as an empirically-calibrated expected return % (accumulates nightly).
             python tools/market_map/alpha_calib.py --mm marketmap.json --hist hist --log data/alpha_log.jsonl --out alpha_calib.json --horizon 21 || echo "::warning::alpha calibration skipped"
+            # KEYLESS continuous monitoring: read our OWN logs (alpha_log/health_log/factor_ic) ->
+            # rank-IC, decile calibration, alpha-PSI drift, spread-DSR, data-health trend + alert flags
+            # -> monitoring/latest.json (shipped for the audit page; never fails the build).
+            python tools/market_map/monitoring.py --root . --out monitoring/latest.json || echo "::warning::monitoring skipped"
             # GUARD: loud signal if the engine ran but the FMP history layer produced nothing
             # (catches "new code committed but didn't execute / connect").
             FMP_API_KEY="$FMP_API_KEY" python tools/market_map/verify_history.py marketmap.json || true

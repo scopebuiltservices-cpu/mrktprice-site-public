@@ -27,22 +27,29 @@ enters alpha exactly as before, so every commodity and the real-rate curve now d
 Verified: `test_macro_tilt.py` (planted structure), `test_macro_parity.mjs` (Py↔JS 1e-9), and a board
 behavioral check showing copper/gold/nat-gas/real-rate contributions that the legacy path ignored.
 
-## 2. Universe = full Nasdaq Composite + Dow 30 (was a hardcoded 92-name SEED)
+## 2. Universe = S&P 500 + full Nasdaq + Dow 30 + Russell 2000 (was a hardcoded 92-name SEED)
 
 The "~155" was `len(SEED)=92` equities + 64 factor-ETF nodes; the index-constituent fetch was a dead stub.
 
-`tools/market_map/universe_fetch.py` now builds the equity universe from:
-- **FMP company-screener** (primary) — every actively-trading **NASDAQ** common stock, ETFs/funds
-  excluded, returned **market-cap-sorted** with sector.
-- **Nasdaq Trader `nasdaqlisted.txt`** (keyless fallback) if the screener is unavailable.
-- **Dow 30** merged in (fixed list; many are NYSE-listed).
+`tools/market_map/universe_fetch.py` now unions the **real membership of all four indices**, each from its
+best free/credible source, and tags every name with the indices it belongs to (`S`/`ND`/`D`/`R` →
+NDX/DOW/SPX/RUT via `membership()`), so a name in several indices accumulates several tags (e.g. AAPL = `S ND D`):
 
-Wired into `real_universe()`; controlled by env:
-- `UNIVERSE_MODE` = `nasdaq_full` (default) | `seed` (legacy 92).
-- `UNIVERSE_LIMIT` = optional integer throttle (0/unset = the entire composite, ~3,000+ names; Dow always kept).
+- **S&P 500** — FMP `sp500-constituent` (stable; v3 `sp500_constituent` fallback). This is what adds the
+  ~400 **NYSE-listed** S&P members the Nasdaq screener can't see.
+- **Nasdaq (full Composite)** — FMP `company-screener` exchange=NASDAQ (market-cap-sorted, ETFs/funds
+  excluded) + `nasdaq-constituent` for guaranteed Nasdaq-100 sectors; **keyless** `nasdaqlisted.txt` fallback.
+- **Dow 30** — FMP `dowjones-constituent` (v3 fallback); hardcoded DOW30 fallback.
+- **Russell 2000** — **keyless** iShares **IWM** daily holdings CSV (`parse_iwm_csv`).
+
+Wired into `real_universe()`; the legacy yfinance Russell path is now a SEED-only fallback (no double-add).
+Controlled by env:
+- `UNIVERSE_MODE` = `all` (default; all four) | `seed` (legacy 92).
+- `UNIVERSE_INDEXES` = comma list of `{sp500,nasdaq,dow,russell2000}` to include (default all four).
+- `UNIVERSE_LIMIT` = optional integer throttle (0/unset = the entire union, ~4–5k names; **S&P + Dow always kept**, Russell/Nasdaq tail trimmed first).
 - `DOW30` = optional comma-separated override.
 
-Any fetch failure falls back to SEED, so the build never breaks.
+Every source is fail-soft and the whole thing falls back to SEED on total failure, so the build never breaks.
 
 ### Coverage & cost note (honest degradation)
 Every name in the universe gets: price history → returns/vol/beta, **macro betas (rate + all

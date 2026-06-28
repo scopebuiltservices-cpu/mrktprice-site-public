@@ -985,7 +985,7 @@ def real_universe():
     # fetch failure or UNIVERSE_MODE=seed falls back to the hardcoded SEED so the build never breaks.
     try:
         import universe_fetch as _uf
-        _umode=os.environ.get("UNIVERSE_MODE","nasdaq_full")
+        _umode=os.environ.get("UNIVERSE_MODE","all")   # S&P 500 + full Nasdaq + Dow 30 + Russell 2000 union
         _UNIV=_uf.fetch_universe(mode=_umode, key=(os.environ.get("FMP_API_KEY") or os.environ.get("FMP_ULTIMATE_API_KEY") or os.environ.get("FMP_UTIMATE_API_KEY")), session=_PSESS) or SEED
     except Exception as _ue:
         sys.stderr.write("universe_fetch failed (%s); using SEED\n"%_ue); _UNIV=SEED
@@ -1047,15 +1047,18 @@ def real_universe():
         except Exception as fe:
             sys.stderr.write("factor skip %s: %s\n"%(fsym,fe))
     sys.stderr.write("factor panel: %d/%d proxies loaded\n"%(_fok,len(FACTOR_PANEL)))
-    # ---- Russell 2000 (phase 2): iShares IWM holdings, batch-downloaded (env RUSSELL_LIMIT caps size; 0 = all) ----
-    try:
-        lim=int(os.environ.get("RUSSELL_LIMIT","2000")); lim=lim or None
-        if yf is None:
-            raise RuntimeError("Russell batch fetch needs yfinance (disabled via MRKT_YF_ENABLED=0); skipping")
-        rus=fetch_russell(yf, lim, UA)
-        sys.stderr.write(f"russell: fetched {len(rus)} constituents\n"); names+=rus
-    except Exception as e:
-        sys.stderr.write(f"russell skip: {e}\n")
+    # ---- Russell 2000 (legacy yfinance/IWM path): now only a FALLBACK. In the normal path universe_fetch
+    #      already merged the Russell 2000 (tag 'R') into _UNIV via the keyless iShares CSV, so this block runs
+    #      ONLY when we fell back to SEED (universe_fetch unavailable) — prevents double-adding constituents. ----
+    if _UNIV is SEED:
+        try:
+            lim=int(os.environ.get("RUSSELL_LIMIT","2000")); lim=lim or None
+            if yf is None:
+                raise RuntimeError("Russell batch fetch needs yfinance (disabled via MRKT_YF_ENABLED=0); skipping")
+            rus=fetch_russell(yf, lim, UA)
+            sys.stderr.write(f"russell: fetched {len(rus)} constituents\n"); names+=rus
+        except Exception as e:
+            sys.stderr.write(f"russell skip: {e}\n")
     # market proxy = SPY weekly
     def _wret(sym):
         _wh=_get_hist(sym, min_rows=10)               # FMP-first; yfinance fallback for index/macro proxies

@@ -42,15 +42,21 @@ ok("all REQUIRED canonical estimators present (truncation tripwire)", not absent
 ok("REQUIRED is a subset of __all__ (kept in sync)", set(n for n in REQUIRED if not n.startswith("_")).issubset(set(M.__all__)),
    [n for n in REQUIRED if not n.startswith("_") and n not in M.__all__])
 
-# 2) behavioral smoke — catch a present-but-broken def
+# 2) behavioral smoke — catch a present-but-broken def (crash-proof: report FAIL, don't raise)
+def smoke(name, fn):
+    try:
+        ok(name, bool(fn()))
+    except Exception as e:
+        ok(name, False, "raised %s" % e)
+
 r = [0.01, -0.02, 0.015, -0.005, 0.02, -0.01, 0.008, 0.012]
-ok("sharpe runs", isinstance(M.sharpe(r), float))
-ok("ewma_vol runs (>0)", M.ewma_vol(r) > 0)
-ok("sortino runs", M.sortino(r) == M.sortino(r) or True)
-ok("max_drawdown bounded", -1.0 <= M.max_drawdown([100, 50, 75]) <= 0.0)
-ok("spearman monotone == 1", abs(M.spearman([1, 2, 3, 4], [1, 4, 9, 16]) - 1.0) < 1e-9)
-ok("value_at_risk positive loss", M.value_at_risk([-0.1, -0.05, 0.01, 0.02, 0.03], 0.2) > 0)
-ok("cvar >= var", M.cvar([-0.2, -0.1, -0.05, 0.01], 0.5) >= M.value_at_risk([-0.2, -0.1, -0.05, 0.01], 0.5) - 1e-9)
+smoke("sharpe runs", lambda: isinstance(M.sharpe(r), float))
+smoke("ewma_vol runs (>0)", lambda: M.ewma_vol(r) > 0)
+smoke("sortino runs", lambda: M.sortino(r) == M.sortino(r) or True)
+smoke("max_drawdown bounded", lambda: -1.0 <= M.max_drawdown([100, 50, 75]) <= 0.0)
+smoke("spearman monotone == 1", lambda: abs(M.spearman([1, 2, 3, 4], [1, 4, 9, 16]) - 1.0) < 1e-9)
+smoke("value_at_risk positive loss", lambda: M.value_at_risk([-0.1, -0.05, 0.01, 0.02, 0.03], 0.2) > 0)
+smoke("cvar >= var", lambda: M.cvar([-0.2, -0.1, -0.05, 0.01], 0.5) >= M.value_at_risk([-0.2, -0.1, -0.05, 0.01], 0.5) - 1e-9)
 
 # 3) on-disk source integrity — the literal corruption signatures
 raw = open(M.__file__, "rb").read()

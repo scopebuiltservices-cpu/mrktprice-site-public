@@ -37,6 +37,7 @@ def validate(path):
         return None, "schema file missing: %s" % sf
     try:
         import jsonschema
+        from jsonschema import validators
     except Exception:
         return None, "jsonschema not installed (CI enforces)"
     try:
@@ -44,7 +45,9 @@ def validate(path):
         inst = json.load(open(path))
     except Exception as e:
         return False, ["invalid JSON: %s" % e]
-    validator = jsonschema.Draft202012Validator(schema)
+    # Version-robust: prefer the Draft 2020-12 validator; on older jsonschema, auto-select from $schema.
+    cls = getattr(jsonschema, "Draft202012Validator", None) or validators.validator_for(schema)
+    validator = cls(schema)
     errs = sorted(validator.iter_errors(inst), key=lambda e: list(e.path))
     if errs:
         return False, ["%s: %s" % ("/".join(map(str, e.path)) or "<root>", e.message) for e in errs[:25]]

@@ -607,7 +607,17 @@ def build(names,mkt,ff,macro=None):
         n["opp"]=round(oppv[i],2)
         n["oppPct"]=int(round(100.0*_bis.bisect_right(oppr,oppv[i])/len(oppr))) if oppr else 50
     cal=calibrate_touch(_calib)                    # idea 1: reliability backtest of the touch model
+    # LEARNED DRIFT SHRINK: calibrate the projection-cone central-path shrink from realized outcomes across the
+    # universe (regress realized H-day fwd return on the reversion gap; slope = fraction of predicted move that
+    # realizes). Small samples blend toward the 0.60 prior. The terminal reads snap.driftShrink (fallback 0.60).
+    try:
+        import drift_calib as _dcal
+        _ds=_dcal.calibrate_universe([n.get("_cl") for n in names if n.get("_cl")], H=20, win=20)
+        _driftShrink=round(float(_ds.get("shrink",0.6)),4); _driftShrinkN=int(_ds.get("n",0))
+    except Exception:
+        _driftShrink=0.6; _driftShrinkN=0
     return {"asof":dt.date.today().isoformat(),"source":"SAMPLE (synthetic, illustrative) — replaced by the nightly job","calibration":cal,
+            "driftShrink":_driftShrink,"driftShrinkN":_driftShrinkN,
             "indices":{"DOW":"Dow Jones 30","NDX":"Nasdaq-100","SPX":"S&P 500","RUT":"Russell 2000"},"sectors":SECTORS,"factors":FACTORS,"macrof":["MKT"]+MFAC,
             # factorMoves: latest move of EVERY macro driver (DXY, VIX, nominal RATE + the full commodity panel),
             # in the SAME units the per-name Lasso betas (n['mb']) were fit on. The board dots mb·factorMoves over

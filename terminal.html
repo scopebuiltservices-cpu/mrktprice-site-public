@@ -2286,7 +2286,7 @@ function buildBullBearBoard(){
     return out||'<span class="bt" style="color:#69727f">no significant macro correlation</span>';}
   function rowH(s,isBull,rank,mx){var col=isBull?'#2ecc8f':'#ef5f4e';var cc=(s.conv==='HIGH'?'#e8c14a':s.conv==='MED'?'#9ab4e0':'#69727f');
     var aw=(s.conv==='HIGH'?4:s.conv==='MED'?3:2),ah=(s.conv==='HIGH'?'':s.conv==='MED'?'aa':'55'),pct=Math.max(2,Math.min(100,Math.abs(s.tot)/(mx||1)*100));
-    return '<div class="bbrow" data-tk="'+s.t+'" data-tot="'+s.tot.toFixed(4)+'" data-conv="'+s.conv+'" data-z="'+Math.abs(s.zc).toFixed(4)+'" data-sec="'+s.sec+'" style="border-left:'+aw+'px solid '+col+ah+'" onclick="try{load(\''+s.t+'\',DATA[\''+s.t+'\'])}catch(e){}" title="load '+s.t+' · '+s.conv+' conviction"><div class="bbhd">'+
+    return '<div class="bbrow" data-tk="'+s.t+'" data-tot="'+s.tot.toFixed(4)+'" data-score="'+(s.score!=null?s.score:s.tot).toFixed(4)+'" data-conv="'+s.conv+'" data-z="'+Math.abs(s.zc).toFixed(4)+'" data-sec="'+s.sec+'" style="border-left:'+aw+'px solid '+col+ah+'" onclick="try{load(\''+s.t+'\',DATA[\''+s.t+'\'])}catch(e){}" title="load '+s.t+' · '+s.conv+' conviction"><div class="bbhd">'+
       '<span class="bbrk">'+rank+'</span><span class="bbt">'+s.t+'</span><span class="bbsec">'+s.sec+'</span>'+
       '<span class="bbconv" style="color:'+cc+';border-color:'+cc+'66">'+s.conv+'</span>'+
       '<span class="bbexp" style="color:'+col+'">'+(s.tot>=0?'+':'')+s.tot.toFixed(1)+'% tot</span></div>'+

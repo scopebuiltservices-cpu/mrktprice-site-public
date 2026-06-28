@@ -11,7 +11,7 @@
 
   function ls(k, d) { try { var v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } }
   function setls(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
-  var state = { sort: ls(KEY.sort, 'tot'), filt: ls(KEY.filt, 'all'), q: ls(KEY.q, '') };
+  var state = { sort: ls(KEY.sort, 'score'), filt: ls(KEY.filt, 'all'), q: ls(KEY.q, '') };
 
   function seg(items, getCur, on) {
     var s = document.createElement('span'); s.className = 'seg';
@@ -28,7 +28,7 @@
     if (document.getElementById('bbCtl')) return;
     var bar = document.createElement('div'); bar.id = 'bbCtl';
     var l1 = document.createElement('span'); l1.textContent = 'sort'; bar.appendChild(l1);
-    bar.appendChild(seg([['tot', 'Total'], ['conv', 'Conviction'], ['z', '|z|'], ['tk', 'Ticker']],
+    bar.appendChild(seg([['score', 'Confidence'], ['tot', 'Total'], ['conv', 'Conviction'], ['z', '|z|'], ['tk', 'Ticker']],
       function () { return state.sort; },
       function (v) { state.sort = v; setls(KEY.sort, v); refreshChips(); apply(board); }));
     var l2 = document.createElement('span'); l2.textContent = 'conviction'; bar.appendChild(l2);
@@ -55,6 +55,7 @@
       if (state.sort === 'tk') return a.dataset.tk < b.dataset.tk ? -1 : (a.dataset.tk > b.dataset.tk ? 1 : 0);
       if (state.sort === 'z') return Math.abs(+b.dataset.z) - Math.abs(+a.dataset.z);
       if (state.sort === 'conv') return (CONVRANK[b.dataset.conv] || 0) - (CONVRANK[a.dataset.conv] || 0) || (Math.abs(+b.dataset.z) - Math.abs(+a.dataset.z));
+      if (state.sort === 'score') return side === 'bull' ? (+b.dataset.score - +a.dataset.score) : (+a.dataset.score - +b.dataset.score);  // confidence-adjusted, by own direction
       return side === 'bull' ? (+b.dataset.tot - +a.dataset.tot) : (+a.dataset.tot - +b.dataset.tot);   // tot: by own direction
     };
   }

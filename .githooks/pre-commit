@@ -1,30 +1,44 @@
 #!/bin/sh
-# Block a commit that would break the build. Catches the three failure classes that have
-# actually bitten this repo: a broken inline <script>, a Python syntax error in the engine,
-# and a truncated/invalid published JSON.
+# MrktPrice pre-commit hook — runs the ONE-COMMAND, CI-equivalent gate (tools/verify_all.sh)
+# so nothing un-gated reaches GitHub. verify_all.sh runs: py_compile all *.py, every
+# test_*.py + test_*.mjs, inline + external <script> checks, JSON validity, and the
+# payload schema gates (marketmap/xsection/cik/alpha_calib/events/universe).
 #
-# Enable once per clone:
-#     git config core.hooksPath .githooks
+# Enable once per clone:          git config core.hooksPath .githooks
 # Bypass once (not recommended):  git commit --no-verify
+#
+# Fast mode: set MRKT_PRECOMMIT_FAST=1 to only check STAGED files (skips the full suite)
+# for quick WIP commits; the full gate still runs in CI regardless.
 
-fail=0
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT" || exit 2
 
-# 1) inline <script> blocks parse
-node tools/check-scripts.mjs || { echo "x commit blocked: an inline <script> block has a syntax error."; fail=1; }
+if [ "${MRKT_PRECOMMIT_FAST:-0}" = "1" ]; then
+  echo "pre-commit (FAST): staged-file checks only ..."
+  fail=0
+  node tools/check-scripts.mjs || { echo "x inline <script> syntax error"; fail=1; }
+  for f in $(git diff --cached --name-only --diff-filter=ACM | grep '\.py$'); do
+    python3 -m py_compile "$f" 2>/dev/null || { echo "x Python syntax error in $f"; fail=1; }
+  done
+  for j in $(git diff --cached --name-only --diff-filter=ACM | grep '\.json$'); do
+    python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$j" 2>/dev/null || { echo "x invalid/truncated JSON: $j"; fail=1; }
+  done
+  [ "$fail" -ne 0 ] && { echo "  Fix the above, or bypass with: git commit --no-verify"; exit 1; }
+  exit 0
+fi
 
-# 2) every STAGED Python file compiles
-for f in $(git diff --cached --name-only --diff-filter=ACM | grep '\.py$'); do
-  python3 -m py_compile "$f" 2>/dev/null || { echo "x commit blocked: Python syntax error in $f"; fail=1; }
-done
-
-# 3) if a published JSON is staged, it must be valid + non-truncated
-for j in marketmap.json xsection.json cards_index.json; do
-  if git diff --cached --name-only | grep -qx "$j"; then
-    python3 -c "import json; json.load(open('$j'))" 2>/dev/null || { echo "x commit blocked: $j is invalid/truncated JSON"; fail=1; }
-  fi
-done
-
-if [ "$fail" -ne 0 ]; then
-  echo "  Fix the above, or bypass once with: git commit --no-verify"
+echo "pre-commit: running tools/verify_all.sh (full gate) ..."
+if [ -x tools/verify_all.sh ]; then
+  tools/verify_all.sh
+else
+  sh tools/verify_all.sh
+fi
+rc=$?
+if [ "$rc" -ne 0 ]; then
+  echo ""
+  echo "pre-commit: VERIFY_ALL FAILED — commit blocked. Fix the failures above,"
+  echo "            run a WIP commit with MRKT_PRECOMMIT_FAST=1, or bypass with --no-verify."
   exit 1
 fi
+echo "pre-commit: all gates passed."
+exit 0

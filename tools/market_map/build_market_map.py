@@ -296,9 +296,16 @@ def build(names,mkt,ff,macro=None):
             return round(x,nd) if (x is not None and x==x) else 0.0
         if cl and vo:
             net1,i1,o1,li,lo=money_flow(cl[-21:],vo[-21:]); net3,_,_,_,_=money_flow(cl[-63:],vo[-63:])
-            n["flow"]={"net1m":_rf(net1,3),"net3m":_rf(net3,3),"in":_ri(i1),"out":_ri(o1),"din":_ri(li),"dout":_ri(lo)}
+            n["flow"]={"net1m":_rf(net1,3),"net3m":_rf(net3,3),"in":_ri(i1),"out":_ri(o1),"din":_ri(li),"dout":_ri(lo),"src":"price×volume"}
         else:
-            n["flow"]={"net1m":0.0,"net3m":0.0,"in":0,"out":0,"din":0,"dout":0}
+            n["flow"]={"net1m":0.0,"net3m":0.0,"in":0,"out":0,"din":0,"dout":0,"src":"none"}
+        # REAL institutional flow (keyless SEC 13F): when the 13F record is present, override net3m/net1m with
+        # the QoQ change in institutional shares held (genuine positioning) instead of the price×volume proxy.
+        try:
+            import flow_keyless as _flk
+            _if=_flk.flow_from_13f(n.get("inst"))
+            if _if: n["flow"].update(_if)
+        except Exception: pass
         fcf=n.pop("_fcf",None); n["fcf"]=round(fcf) if fcf is not None else None
         n["fcfY"]=round(fcf/n["mcap"]*100,2) if (fcf is not None and n["mcap"]) else None
         # MFI (0..100) + ATR% + breakout flag from daily High/Low/Close/Volume

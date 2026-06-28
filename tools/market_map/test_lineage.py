@@ -161,6 +161,67 @@ def test_lineage_object_shape_and_decomposition():
     for label, _d, _p in L.PRIMARY_HORIZONS:
         h = lo["horizons"][label]
         assert abs(h["diffusive"] + h["branching"] - 1.0) < 1e-3, (label, h)
+
+
+def test_calibrate_horizon_embargo_and_asymmetry():
+    # acceptance criteria #1-#3,#5,#6: studentized asymmetric split-conformal with an H-embargo.
+    random.seed(7)
+    skewed = []
+    for _ in range(900):
+        x = random.gauss(0.0, 0.01)
+        if random.random() < 0.10:      # occasional big DOWN moves -> heavier lower tail
+            x -= abs(random.gauss(0, 0.03))
+        skewed.append(x)
+    c = L.calibrate_horizon(skewed, 5)
+    assert c is not None
+    assert c["embargoGap"] >= c["embargo"]                  # #3 calibration/test separated by >= H
+    assert abs(c["qLo"]) > abs(c["qHi"])                    # #5 lower tail genuinely heavier
+    assert "coverageGaussian" in c and "widthMean" in c     # #8/#10 naive contrast + width tracked
+
+
+def test_calibrate_horizon_marginal_coverage_iid():
+    # finite-sample conformal quantiles -> Wilson CI of the (1-alpha) band contains the target on iid data
+    random.seed(3)
+    r = [random.gauss(0.0003, 0.011) for _ in range(1200)]
+    c = L.calibrate_horizon(r, 5)
+    assert c is not None
+    assert c["wilsonLo"] <= 0.90 <= c["wilsonHi"], (c["coverage"], c["wilsonLo"], c["wilsonHi"])
+
+
+def test_calibrate_horizon_byregime_coverage():
+    random.seed(5)
+    r = [random.gauss(0.0003, 0.011) for _ in range(1200)]
+    reg = [0 if i % 2 == 0 else 1 for i in range(len(r))]
+    c = L.calibrate_horizon(r, 5, regimes=reg)
+    assert c is not None and c["byRegime"]                  # #7 per-regime coverage emitted
+
+
+def test_garch11_recovers_planted_params():
+    random.seed(13)
+    a_true, b_true, uv = 0.10, 0.85, 1e-4
+    om = (1 - a_true - b_true) * uv
+    h, sim = uv, []
+    for _ in range(4000):
+        ret = math.sqrt(h) * random.gauss(0, 1)
+        sim.append(ret)
+        h = om + a_true * ret * ret + b_true * h
+    fit = L.garch11_fit(sim)
+    assert fit is not None
+    assert abs(fit["alpha"] - a_true) < 0.06 and abs(fit["beta"] - b_true) < 0.08, fit
+    v1 = L.garch11_nstep_var(fit, sim, 1)
+    v20 = L.garch11_nstep_var(fit, sim, 20)
+    assert 0 < v1 < v20                                     # n-step variance accumulates
+
+
+def test_challenger_scorecard_has_garch_and_hv_arms():
+    # acceptance criterion #9: baseline ladder includes GARCH + empirical-HV alongside RW/EWMA
+    random.seed(17)
+    r = [random.gauss(0.0004, 0.012) for _ in range(700)]
+    ch = L.challenger_scorecard(r, 5, iv_annual=0.25)
+    assert ch is not None
+    for arm in ("model", "rw", "hv", "ewma", "garch"):
+        assert arm in ch["crps"], (arm, list(ch["crps"].keys()))
+    assert all(v == v and v > 0 for v in ch["crps"].values())
         assert h["totVol"] >= 0 and h["mapVol"] >= 0
     assert lo["horizons"]["5d"]["branching"] >= lo["horizons"]["intraday"]["branching"] - 1e-6
 

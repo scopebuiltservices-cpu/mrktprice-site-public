@@ -1,0 +1,20 @@
+/* Exact Py<->JS parity: conformal_engine.js vs tools/conformal_golden.json. Run: node tools/test_conformal_parity.mjs */
+import { createRequire } from 'module';
+import fs from 'node:fs'; import path from 'node:path'; import url from 'node:url';
+const require = createRequire(import.meta.url);
+const here = path.dirname(url.fileURLToPath(import.meta.url));
+const C = require('../conformal_engine.js');
+const g = JSON.parse(fs.readFileSync(path.join(here, 'conformal_golden.json'), 'utf8'));
+let fails=0; const ok=(n,c)=>{console.log((c?'  PASS  ':'  FAIL  ')+n); if(!c)fails++;};
+const close=(a,b)=>Math.abs(a-b)<=1e-9*(1+Math.abs(b));
+const vclose=(A,B)=>A.length===B.length&&A.every((x,i)=>close(x,B[i]));
+ok('API',['cqrPad','cqrCalibrateApply','intervalCoverage','intervalScore','cqrScores','gaussianQuantiles','pinballLoss'].every(k=>typeof C[k]==='function'));
+ok('scores',vclose(C.cqrScores(g.calQlo,g.calQhi,g.calY),g.scores));
+ok('pad',close(C.cqrPad(g.calQlo,g.calQhi,g.calY,g.alpha),g.pad));
+const r=C.cqrCalibrateApply(g.calQlo,g.calQhi,g.calY,g.testQlo,g.testQhi,g.alpha);
+ok('lo',vclose(r.lo,g.lo)); ok('hi',vclose(r.hi,g.hi));
+ok('coverage',close(C.intervalCoverage(g.testY,r.lo,r.hi),g.coverage));
+ok('intervalScore',close(C.intervalScore(g.testY,r.lo,r.hi,g.alpha),g.intervalScore));
+ok('pinball',close(C.pinballLoss(2.0,1.0,0.9),g.pinball));
+ok('gaussianQuantiles',vclose(C.gaussianQuantiles(0,1,0.10),g.gq));
+console.log('\n'+(fails?fails+' FAILED':'ALL CONFORMAL PARITY TESTS PASSED')); process.exit(fails?1:0);

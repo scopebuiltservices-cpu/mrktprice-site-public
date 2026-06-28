@@ -12,6 +12,11 @@ Expect all green (py_compile + every test). No local env? Skip — CI runs the s
 Stage every changed/new file. **Critical pairing:** the new root scripts must be committed *together with* `terminal.html`, or the `<script src>` tags 404 on the live site:
 - New (root): `fib_engine.js`, `fib_panel.js`, `macro_tilt.js`, `harq_engine.js`
 - Edited: `terminal.html`, `bullbear_controls.js`, `tools/market_map/build_market_map.py`
+- **Calibration upgrade — commit TOGETHER (the terminal calls the engine; a half-commit mixes old+new):**
+  `lineage.js` (root), `tools/market_map/lineage.py`, `tools/market_map/test_lineage.py`.
+  These replace the interval calibration with studentized **asymmetric split-conformal** coverage under an
+  **H-embargo** (purged train/test), add **GARCH + empirical-HV** challenger arms, and route the terminal
+  cone scorecard through `MrktLineage.calibrateHorizon` so the band coverage-tested is the asymmetric band drawn.
 - New (tools): `universe_fetch.py`, `macro_keyless.py`, `macro_tilt.py`, `drift_calib.py/2/3`,
   `flow_keyless.py`, `price_cache.py`, `universe_smoke.py`, `harq_regime.py`, plus their `test_*.py`,
   the `tools/*_golden.json` fixtures and `tools/test_*_parity.mjs`.

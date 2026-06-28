@@ -1,21 +1,14 @@
 #!/usr/bin/env python3
 """
 engine_ref.py — pure-stdlib Python reference for the DETERMINISTIC estimators in engine.js
-(EMA, rolling realized vol, OU AR(1) fit, Lo-MacKinlay variance ratio). Mirrors engine.js
-line-for-line so the two languages can be locked to identical decimals via a committed golden
-fixture (engine_golden.json), exactly like stats_ref.py/stats_golden.json does for ADF/KPSS and
-pooled_rigor does for the bootstrap tests.
-
-`gen_fixture()` builds inputs (committed in the fixture so neither language re-generates them) and
-the Python-computed expected outputs. test_engine_ref.py locks Python to the fixture;
-tools/test_engine_parity.mjs locks engine.js to the SAME fixture. (GARCH QMLE is intentionally
-excluded — its iterative optimizer is not bit-reproducible across languages; it keeps its
-planted-structure test in test_engine_estimators.mjs.)
+(EMA, rolling realized vol, OU AR(1) fit, Lo-MacKinlay variance ratio). Mirrors engine.js so the
+two languages can be locked to identical decimals via a committed golden fixture (engine_golden.json),
+like stats_ref.py/stats_golden.json for ADF/KPSS. GARCH QMLE is excluded (iterative optimizer is not
+bit-reproducible across languages; it keeps its planted-structure test).
 """
 import json, math, os
 
 
-# ---- estimators (mirror engine.js exactly) ----
 def ema(c, N):
     a = 2.0 / (N + 1)
     e = c[0]; o = [e]
@@ -94,7 +87,6 @@ def variance_ratio(r, q):
     return {"vr": vr, "z": (vr - 1) / math.sqrt(phi) if phi > 0 else 0}
 
 
-# ---- deterministic input generation (mulberry32 -> Box-Muller); arrays are committed ----
 def _mul32(seed):
     a = seed & 0xFFFFFFFF
     def rnd():
@@ -116,21 +108,14 @@ def _gauss(rnd):
 
 
 def gen_fixture():
-    # EMA / HV inputs: a smooth-ish price series + its log returns
     closes = [round(100 + 8 * math.sin(i * 0.21) + 0.05 * i, 6) for i in range(60)]
     rets = [round(math.log(closes[i] / closes[i - 1]), 8) for i in range(1, len(closes))]
-    # OU input: planted AR(1) phi=0.7 (finite, mean-reverting), deterministic noise
     r = _mul32(12345)
     x = [0.0]
     for _ in range(140):
         x.append(round(0.7 * x[-1] + _gauss(r), 6))
     inputs = {"ema_c": closes, "ema_N": 5, "hv_r": rets, "hv_w": 10, "ou_x": x, "vr_r": rets, "vr_q": 4}
-    expected = {
-        "ema": ema(closes, 5),
-        "hv": hv_roll_series(rets, 10),
-        "ou": ou_fit(x),
-        "vr": variance_ratio(rets, 4),
-    }
+    expected = {"ema": ema(closes, 5), "hv": hv_roll_series(rets, 10), "ou": ou_fit(x), "vr": variance_ratio(rets, 4)}
     return {"inputs": inputs, "expected": expected}
 
 

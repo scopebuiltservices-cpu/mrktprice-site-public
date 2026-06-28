@@ -121,6 +121,11 @@ jobs:
             cp /tmp/mmbuild/xsection.json  "$GITHUB_WORKSPACE/xsection.json" 2>/dev/null || echo "::warning::xsection.json not produced this run"
             cd "$GITHUB_WORKSPACE"
             python tools/market_map/emit_static.py --universe marketmap.json --out . --hist --cap 250 || echo "::warning::history emit partial"
+            # KEYLESS Fama-French residualization (#2): refresh the public Ken French FF5+Momentum daily
+            # cache, then strip hidden factor bets from each name — write per-name factor exposures +
+            # factor-explained return into marketmap.json so the board can net them out (factor-neutral alpha).
+            python tools/market_map/factor_returns.py --out data/ff_factors.csv || echo "::warning::FF factor cache not refreshed (keyless)"
+            python tools/market_map/residualize_board.py --map marketmap.json --hist hist --factors data/ff_factors.csv --horizon 21 || echo "::warning::FF residualization skipped"
             # KEYLESS: refresh cik.json (ticker->CIK) from SEC's free company_tickers.json so the
             # terminal can pull CONFIRMED quarterly report dates client-side for the whole universe.
             python tools/market_map/emit_cik.py --out cik.json --marketmap marketmap.json --cards cards || echo "::warning::cik.json refresh skipped"
@@ -157,7 +162,7 @@ jobs:
         run: |
           git config user.name  "mrktprice-bot"
           git config user.email "bot@mrktprice.com"
-          git add -A marketmap.json xsection.json universe.json events.json hist/ monitoring/latest.json data/alpha_log.jsonl tools/market_map/est_history.jsonl tools/market_map/factor_snapshots.jsonl tools/market_map/factor_ic.jsonl tools/market_map/trig_snap.jsonl tools/market_map/trig_out.jsonl tools/market_map/drift_ref.json tools/market_map/drift_store.jsonl tools/market_map/trial_ledger.jsonl tools/market_map/health_log.jsonl 2>/dev/null || true
+          git add -A marketmap.json xsection.json universe.json events.json hist/ monitoring/latest.json data/alpha_log.jsonl data/ff_factors.csv tools/market_map/est_history.jsonl tools/market_map/factor_snapshots.jsonl tools/market_map/factor_ic.jsonl tools/market_map/trig_snap.jsonl tools/market_map/trig_out.jsonl tools/market_map/drift_ref.json tools/market_map/drift_store.jsonl tools/market_map/trial_ledger.jsonl tools/market_map/health_log.jsonl 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "::notice::no data changes to commit"
           else

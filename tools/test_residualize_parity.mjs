@@ -1,0 +1,20 @@
+/* Exact Py<->JS parity: residualize_engine.js vs tools/residualize_golden.json. Run: node tools/test_residualize_parity.mjs */
+import { createRequire } from 'module'; import fs from 'node:fs'; import path from 'node:path'; import url from 'node:url';
+const require = createRequire(import.meta.url);
+const here = path.dirname(url.fileURLToPath(import.meta.url));
+const R = require('../residualize_engine.js');
+const g = JSON.parse(fs.readFileSync(path.join(here,'residualize_golden.json'),'utf8'));
+let fails=0; const ok=(n,c)=>{console.log((c?'  PASS  ':'  FAIL  ')+n); if(!c)fails++;};
+const close=(a,b)=>Math.abs(a-b)<=1e-9*(1+Math.abs(b));
+ok('API',['factorBetas','factorPremia','residualize','multivarOls'].every(k=>typeof R[k]==='function'));
+const fit=R.factorBetas(g.excess,g.rows);
+ok('alpha',close(fit.alpha,g.fit.alpha));
+ok('betas',R.FACTORS.every(f=>close(fit.betas[f],g.fit.betas[f])));
+ok('residSd',close(fit.residSd,g.fit.residSd));
+ok('r2',close(fit.r2,g.fit.r2));
+const pm=R.factorPremia(g.rows); ok('premia',R.FACTORS.every(f=>close(pm[f],g.premia[f])));
+const pe=R.factorPremia(g.rows,null,60); ok('premiaEwma',R.FACTORS.every(f=>close(pe[f],g.premiaEwma[f])));
+const rs=R.residualize(g.alphaRaw,g.fit.betas,g.premia,g.horizon);
+ok('muResid',close(rs.muResid,g.resid.muResid));
+ok('factorExpected',close(rs.factorExpected,g.resid.factorExpected));
+console.log('\n'+(fails?fails+' FAILED':'ALL RESIDUALIZE PARITY TESTS PASSED')); process.exit(fails?1:0);

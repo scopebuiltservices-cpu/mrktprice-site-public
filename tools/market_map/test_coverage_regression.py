@@ -53,5 +53,27 @@ with tempfile.TemporaryDirectory() as d:
     ok("main(--soft) downgrades to rc 0", cr.main([p, "--soft"]) == 0)
     ok("main hard -> rc 1", cr.main([p]) == 1)
 
+# base-branch baseline comparison (the git-show design)
+with tempfile.TemporaryDirectory() as d:
+    base = os.path.join(d, "base.jsonl"); cur = os.path.join(d, "cur.jsonl")
+    with open(base, "w") as f:
+        f.write(json.dumps(rec("2026-06-01", 480)) + "\n")
+    with open(cur, "w") as f:
+        f.write(json.dumps(rec("2026-06-02", 0)) + "\n")   # connector died vs base branch
+    rc, al, note = cr.check_against_baseline(base, cur)
+    ok("baseline: feed died vs base -> rc 1 + HARD", rc == 1 and any(a[0] == "HARD" for a in al), (rc, al))
+    # healthy current vs base -> no alert
+    cur2 = os.path.join(d, "cur2.jsonl")
+    with open(cur2, "w") as f:
+        f.write(json.dumps(rec("2026-06-02", 478)) + "\n")
+    rc2, al2, _ = cr.check_against_baseline(base, cur2)
+    ok("baseline: healthy current -> rc 0, no alerts", rc2 == 0 and al2 == [], (rc2, al2))
+    # markdown report renders
+    md = cr.markdown(note, al)
+    ok("markdown report contains table header", "| severity | metric |" in md)
+    # CLI --baseline path
+    ok("CLI --baseline returns 1 on regression", cr.main([cur, "--baseline", base]) == 1)
+    ok("CLI --baseline --soft returns 0", cr.main([cur, "--baseline", base, "--soft"]) == 0)
+
 print("\n" + ("ALL COVERAGE-REGRESSION TESTS PASSED" if not F else "%d FAILED: %s" % (len(F), F)))
 raise SystemExit(1 if F else 0)

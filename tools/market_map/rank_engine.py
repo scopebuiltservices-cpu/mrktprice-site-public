@@ -28,7 +28,7 @@ Pieces (each defensible, each unit-tested):
 import json, math, os
 
 __all__ = ["grinold_kahn", "alpha_forecast_se", "conviction_sigma", "lcb_score", "deflated_conviction",
-           "stein_shrink", "ewma_score", "composite_rank_score"]
+           "stein_shrink", "eb_tau2", "eb_posterior", "ewma_score", "composite_rank_score"]
 
 
 def grinold_kahn(ic, sigma, z):
@@ -85,6 +85,37 @@ def stein_shrink(x, se, tau, center=0.0):
         return x
     w = (tau * tau) / (tau * tau + se * se)
     return center + w * (x - center)
+
+
+def eb_tau2(values, ses):
+    """Empirical-Bayes between-name (signal) variance, by method of moments:
+        tau^2 = max(0, Var(values) - mean(se^2))
+    i.e. the cross-sectional dispersion of the estimates MINUS the average measurement variance, so it
+    measures only the dispersion that is real signal. Drives the shrink strength: if the cross-section is
+    mostly noise (Var ~ mean se^2) -> tau^2 -> 0 -> shrink everything to the center; if there is strong
+    signal -> tau^2 large -> barely shrink. Self-tuning (Efron-Morris), no hand-set knob."""
+    a = [x for x in values if x == x]
+    s = [x for x in ses if (x is not None and x == x and x > 0)]
+    if len(a) < 3:
+        return 0.0
+    m = sum(a) / len(a)
+    var = sum((x - m) ** 2 for x in a) / (len(a) - 1)
+    mse = (sum(x * x for x in s) / len(s)) if s else 0.0
+    return max(0.0, var - mse)
+
+
+def eb_posterior(value, se, center, tau2):
+    """Normal-Normal (empirical-Bayes) posterior for one estimate given prior N(center, tau2) and
+    likelihood N(value, se^2):
+        w = tau2 / (tau2 + se^2)                 shrink weight (toward the data; 1-w toward the prior)
+        mu = center + w*(value - center)          posterior mean (shrunk estimate)
+        sd = sqrt(w)*se                           posterior SD  (= sqrt(w*se^2) < se: shrinkage buys certainty)
+    Returns {"mu","sd","w"}. Ranking by mu - k*sd unifies shrinkage and the uncertainty haircut in ONE
+    posterior, so a noisy name is not penalized twice. se/ tau2 unusable -> identity (no shrink)."""
+    if se is None or se <= 0 or tau2 is None or tau2 <= 0:
+        return {"mu": value, "sd": (se if (se is not None and se > 0) else 0.0), "w": 1.0}
+    w = tau2 / (tau2 + se * se)
+    return {"mu": center + w * (value - center), "sd": math.sqrt(w) * se, "w": w}
 
 
 def ewma_score(prev, now, lam=0.5):

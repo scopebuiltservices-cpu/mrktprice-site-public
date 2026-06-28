@@ -624,8 +624,14 @@ def build(names,mkt,ff,macro=None):
         _dbeta=_dc2.calibrate([n.get("_cl") for n in names if n.get("_cl")], H=20, win=20, mwin=21)
     except Exception:
         _dbeta=None
+    # v2 FRONTIER (drift_calib3): regime-conditional betas + Driscoll-Kraay panel SE + CRPS/PIT calibration.
+    try:
+        import drift_calib3 as _dc3
+        _dbeta3=_dc3.calibrate3([n.get("_cl") for n in names if n.get("_cl")], H=20, win=20, mwin=21)
+    except Exception:
+        _dbeta3=None
     return {"asof":dt.date.today().isoformat(),"source":"SAMPLE (synthetic, illustrative) — replaced by the nightly job","calibration":cal,
-            "driftShrink":_driftShrink,"driftShrinkN":_driftShrinkN,"driftBeta":_dbeta,
+            "driftShrink":_driftShrink,"driftShrinkN":_driftShrinkN,"driftBeta":_dbeta,"driftBeta3":_dbeta3,
             "indices":{"DOW":"Dow Jones 30","NDX":"Nasdaq-100","SPX":"S&P 500","RUT":"Russell 2000"},"sectors":SECTORS,"factors":FACTORS,"macrof":["MKT"]+MFAC,
             # factorMoves: latest move of EVERY macro driver (DXY, VIX, nominal RATE + the full commodity panel),
             # in the SAME units the per-name Lasso betas (n['mb']) were fit on. The board dots mb·factorMoves over

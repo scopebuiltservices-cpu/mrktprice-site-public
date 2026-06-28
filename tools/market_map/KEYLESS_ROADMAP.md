@@ -41,13 +41,34 @@ proxy with utilization from SI/float.
 **Engine:** `crowding_penalty(short_interest_pct, ownership_conc, float) -> penalty`; subtract from `mu`.
 **Wire:** new keyless `short_interest.py` (FINRA) + the existing 13F flow. **Effort:** M.
 
-## 5. Conformalized intervals (CQR) — NOT DATA-BLOCKED ✅ (method, buildable now)
+## 5. Conformalized intervals (CQR) — ✅ SHIPPED (conformal_engine.py/.js, verified)
+**Built:** `tools/market_map/conformal_engine.py` + root `conformal_engine.js` (1:1 port, golden-fixture
+parity `tools/test_conformal_parity.mjs`). `cqr_pad` = Romano-Patterson-Candès finite-sample conformal
+adjustment over scores `E_i = max(qlo_i - y_i, y_i - qhi_i)`; `cqr_calibrate_apply` returns
+distribution-free `[qlo - pad, qhi + pad]` with ≥(1-α) marginal coverage. Planted test: lifts a
+deliberately-too-tight band from 58.5% → 89.8% (target 90%) on held-out data, tightens an over-wide band
+(negative pad), beats naive on interval score, and returns +inf honestly when calibration n is too small.
+The JS engine is shipped at repo root (available to the cone UI via a future `<script src>` wire).
+
+### (original note) Conformalized intervals (CQR) — NOT DATA-BLOCKED ✅ (method, buildable now)
 No external data — it's a technique over our own returns. Quantile regression + **split-conformal**
 calibration (we already do split-conformal in `lineage.calibrate_horizon`; CQR generalizes it to
 quantile predictions). **Engine:** `cqr_interval(q_lo, q_hi, calib_residuals, alpha)` reusing the
 existing conformal machinery. **Effort:** M; reclassify as buildable immediately.
 
-## 6. Continuous calibration & drift monitoring — KEYLESS ✅ (self-data)
+## 6. Continuous calibration & drift monitoring — ✅ SHIPPED (monitoring.py + pages.yml step)
+**Built:** `tools/market_map/monitoring.py` (pure stdlib, reuses verified `factor_eval.deflated_sharpe`).
+Reads the board's OWN split logs (`data/alpha_log.jsonl`, `tools/market_map/health_log.jsonl`,
+`factor_ic.jsonl` — resolved by a candidate-path search) and emits `monitoring/latest.json` with:
+rank-IC / IC / hit-rate (overall + recent window), decile-payoff monotonicity, predicted-alpha PSI drift
+(recent vs prior window), per-period top-minus-bottom-decile spread → Deflated Sharpe, and a data-health
+trend (degraded fraction, FMP-degraded streak, drift-significant fraction). Emits `status` ∈ ok/warn/alert
+with per-metric alert reasons; never fails the build (`--strict` opt-in for exit 2). Wired into `pages.yml`
+right after `alpha_calib.py`; output committed and shipped to `/monitoring/latest.json`. Planted tests
+(6/6): skillful→ok, inverted-signal→alert, distribution-shift→alert, degraded-health→alert,
+insufficient-data→quiet (no false alerts), emit→valid schema.
+
+### (original note) Continuous calibration & drift monitoring — KEYLESS ✅ (self-data)
 **Free source:** the board's own `health_log.jsonl`, `alpha_log.jsonl`, `trig_out.jsonl`. No external feed.
 **Engine/job:** a nightly `monitoring.py` that computes decile calibration, 50/68/90/95% interval coverage,
 rank-IC, gross-vs-net spread, predicted-vs-realized active risk, turnover, PBO/DSR (now in
@@ -67,9 +88,9 @@ event / data-quality histories (the board already carries `dq` and `drift`). **E
 Everything else above is free. Until then, proxy borrow cost from FINRA short-interest utilization.
 
 ## Recommended keyless build order
-1. **#5 Conformal CQR** (no data, immediate) — extends the calibration we already trust.
-2. **#6 Monitoring job** (self-data) — closes the loop, catches regressions, ships `monitoring/latest.json`.
-3. **#2 FF residualization** (Ken French CSV) — removes hidden factor bets, the biggest signal-quality gain.
+1. ~~**#5 Conformal CQR**~~ ✅ DONE — conformal_engine.py/.js, golden parity, planted coverage test.
+2. ~~**#6 Monitoring job**~~ ✅ DONE — monitoring.py wired into pages.yml, ships `monitoring/latest.json`.
+3. **#2 FF residualization** (Ken French CSV) — removes hidden factor bets, the biggest signal-quality gain. ← NEXT
 4. **#3 Regime-IC** (self-data) — state-aware skill from logs we already keep.
 5. **#7 Bootstrap / SE decomposition** (self-data) — upgrades the LCB inputs.
 6. **#4 Crowding** (FINRA SI + 13F) — keyless; borrow-fee deferred to a paid feed.

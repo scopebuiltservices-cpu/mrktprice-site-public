@@ -187,7 +187,7 @@ def reality_check(D, B=1000, block=5, seed=12345):
     K = len(D[0]); cols = [[D[t][k] for t in range(T)] for k in range(K)]
     means = [_mean(c) for c in cols]
     V = max(math.sqrt(T) * means[k] for k in range(K))
-    rng = random.Random(seed); ge = 0
+    rng = _mulberry32(seed); ge = 0
     for _ in range(B):
         idx = _block_idx(T, block, rng)
         vb = -1e18
@@ -211,7 +211,7 @@ def spa(D, B=1000, block=5, seed=777):
     Tstat = max(means[k] / sds[k] for k in range(K))
     A = 1.0 / 4.0 * (T ** -0.25)                                    # recentering threshold rate (Hansen)
     thr = [means[k] if means[k] >= -math.sqrt(sds[k] * sds[k] * T) * A * 0 - sds[k] * math.sqrt(2 * math.log(math.log(T))) else 0.0 for k in range(K)]
-    rng = random.Random(seed); ge = 0
+    rng = _mulberry32(seed); ge = 0
     for _ in range(B):
         idx = _block_idx(T, block, rng)
         tb = -1e18

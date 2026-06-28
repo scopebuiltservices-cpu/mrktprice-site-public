@@ -1241,6 +1241,8 @@ def real_universe():
     #      so the terminal can show "FMP Ultimate not pulling as of <ts>". ----
     import time as _time
     import fmp_history as _fmph
+    try: import data_quality as _dq
+    except Exception: _dq=None
     import requests as _rqp
     _PSESS=_rqp.Session(); _PSESS.headers.update({"User-Agent":UA})
     YF_ON=(os.environ.get("MRKT_YF_ENABLED","1").strip().lower() not in ("0","false","off","no"))
@@ -1306,6 +1308,12 @@ def real_universe():
                           "wr":[round(x,5) for x in wr],"_cl":cl,"_hi":hi,"_lo":lo,"_vol":vo,"_fcf":float(fcf) if fcf else None,"_val":valr,"_psrc":_ph["src"]})
             try: names[-1]["insider"]=fetch_insider(sym, max_filings=15)
             except Exception: names[-1]["insider"]=None
+            # DATA-QUALITY sentinel: flag skewed / stale / broken price series (does not drop — labels)
+            if _dq is not None:
+                try:
+                    _h=_dq.series_health(cl, vo); names[-1]["_dq"]=_h["verdict"]
+                    if _h["verdict"]!="clean": names[-1]["_dqr"]=_h["reasons"][:3]
+                except Exception: pass
         except Exception as e:
             sys.stderr.write(f"skip {sym}: {e}\n")
     # ---- factor panel: lightweight closes for cross-asset conditioning (tagged idx=["FACTOR"]) ----
@@ -1595,7 +1603,14 @@ def real_universe():
                     ("instOk","SEC 13F institutional"),("insiderOk","SEC insider"),("shortOk","SEC short/FTD")):
         if _cov[_k]==0:
             _sys.stderr.write("::warning::%s pull returned 0/%d - source down or throttled\n"%(_lbl,len(names)))
+    _dqv={"clean":0,"degraded":0,"reject":0,"unknown":0,"flagged":[]}                 # data-quality census across the universe
+    for _n in names:
+        _v=_n.get("_dq") or "unknown"
+        _dqv[_v]=_dqv.get(_v,0)+1
+        if _v in ("degraded","reject") and len(_dqv["flagged"])<30:
+            _dqv["flagged"].append({"t":_n.get("t"),"v":_v,"why":_n.get("_dqr")})
     globals()["_DATA_HEALTH"]={"asof":dt.date.today().isoformat(),
+        "dataQuality":_dqv,
         "fmpKey":_kf,"fmpKeyValid":bool(_fmp_live),"fmpKeyReason":_fmp_probe.get("reason"),"fmpKeyMessage":(_fmp_probe.get("message") or "")[:160],
         "fmpTried":_fmp_try,"fmpOk":_fmp_ok,"fmpErr":_fmp_err,
         "eodKey":_ke,"eodTried":_eod_try,"eodOk":_eod_ok,"eodErr":_eod_err,

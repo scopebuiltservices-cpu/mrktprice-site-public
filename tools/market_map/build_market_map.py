@@ -1026,6 +1026,9 @@ def real_universe():
                     valr={"pe":_fnum(info.get("trailingPE")),"fpe":_fnum(info.get("forwardPE")),
                           "peg":_fnum(info.get("trailingPegRatio") or info.get("pegRatio")),"evb":_fnum(info.get("enterpriseToEbitda")),
                           "epsg":_fnum(info.get("earningsGrowth")),"revg":_fnum(info.get("revenueGrowth"))}
+                    if (not sec_name) or sec_name in ("","Unknown","N/A"):   # backfill blank sector (keyless universe fallback) from yfinance info
+                        _ys=(info.get("sector") or "").strip(); _ys=SECMAP.get(_ys, _ys)
+                        if _ys: sec_name=_ys
                 except Exception: pass
             names.append({"t":sym,"n":nm,"sec":sec_name,"idx":membership(code),"mcap":round(mcap or 1e9),
                           "wr":[round(x,5) for x in wr],"_cl":cl,"_hi":hi,"_lo":lo,"_vol":vo,"_fcf":float(fcf) if fcf else None,"_val":valr,"_psrc":_ph["src"]})
@@ -1094,6 +1097,18 @@ def real_universe():
     if _t10 and _sh:
         _L=min(len(_t10),len(_sh)); macro["SLOPE"]=[_t10[-_L:][i]-_sh[-_L:][i] for i in range(_L)]
     macro={k:(v if len(v)==len(mkt) else (v[-len(mkt):] if len(v)>len(mkt) else v+[0.0]*(len(mkt)-len(v)))) for k,v in macro.items() if v}
+    # ---- KEYLESS FRED macro (no API key): fills RATE/DXY/VIX/OIL/BREAKEVEN when the yfinance index proxies
+    #      are unavailable (e.g. MRKT_YF_ENABLED=0 or flaky ^TNX/^VIX), so the macro betas (n['mb']) and the
+    #      board's macro tilt don't collapse to 0% coverage on a keyless build. FRED-key/FMP paths still override. ----
+    try:
+        import macro_keyless as _mk
+        _km=_mk.fetch_macro_keyless(session=_PSESS)
+        _alk=lambda v:(v if len(v)==len(mkt) else (v[-len(mkt):] if len(v)>len(mkt) else v+[0.0]*(len(mkt)-len(v))))
+        _kf=0
+        for k,v in (_km or {}).items():
+            if v and not macro.get(k): macro[k]=_alk(v); _kf+=1
+        if _kf: sys.stderr.write("keyless FRED macro: filled %d series (%s)\n"%(_kf,",".join(sorted(_km.keys()))))
+    except Exception as _mke: sys.stderr.write("keyless macro skip: %s\n"%str(_mke)[:120])
     # ---- optional FREE connectors (gated by repo-secret keys; degrade gracefully when unset) ----
     fk=os.environ.get("FRED_API_KEY","").strip()
     if fk:

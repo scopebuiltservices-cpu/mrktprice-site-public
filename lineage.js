@@ -221,6 +221,84 @@
   }
 
 
+  // ---- GARCH(1,1) variance-targeting QMLE + n-step aggregation (1:1 mirror of lineage.py) ----
+  function garch11Fit(returns){
+    var r=returns.filter(function(v){return v===v;}), n=r.length;
+    if(n<40) return null;
+    var uv=_var(r); if(uv<=0) return null;
+    function nll(a,b){
+      if(a<0||b<0||a+b>=0.999) return 1e18;
+      var om=(1-a-b)*uv, h=uv, s=0.0;
+      for(var t=1;t<n;t++){ h=om+a*r[t-1]*r[t-1]+b*h; h=Math.max(h,1e-14); s+=Math.log(h)+r[t]*r[t]/h; }
+      return 0.5*s;
+    }
+    var best=null, A=[0.02,0.05,0.08,0.12,0.16,0.20,0.25,0.30], B=[0.50,0.60,0.70,0.78,0.85,0.90,0.94,0.97];
+    for(var i=0;i<A.length;i++) for(var j=0;j<B.length;j++){ var v=nll(A[i],B[j]); if(best===null||v<best[0]) best=[v,A[i],B[j]]; }
+    var a=best[1], b=best[2], step=0.04;
+    for(var it=0;it<6;it++){
+      var improved=false;
+      var ds=[-step,0,step];
+      for(var x=0;x<3;x++) for(var y=0;y<3;y++){
+        var na=a+ds[x], nb=b+ds[y];
+        if(na<=0||nb<=0||na+nb>=0.999) continue;
+        var vv=nll(na,nb);
+        if(vv<best[0]){ best=[vv,na,nb]; a=na; b=nb; improved=true; }
+      }
+      if(!improved) step*=0.5;
+    }
+    a=best[1]; b=best[2];
+    return {omega:(1-a-b)*uv, alpha:a, beta:b, uncondVar:uv};
+  }
+  function garch11NstepVar(fit, returns, n){
+    var r=returns.filter(function(v){return v===v;});
+    var a=fit.alpha, b=fit.beta, om=fit.omega, uv=fit.uncondVar, h=uv;
+    for(var t=1;t<r.length;t++) h=om+a*r[t-1]*r[t-1]+b*h;
+    var h1=om+a*r[r.length-1]*r[r.length-1]+b*h, ph=a+b, tot=0.0;
+    for(var kk=0;kk<n;kk++) tot+=uv+Math.pow(ph,kk)*(h1-uv);
+    return Math.max(tot,1e-14);
+  }
+  // ---- Challenger scorecard: walk-forward CRPS, model vs RW / empirical-HV / EWMA / GARCH / options-Q ----
+  function challengerScorecard(returns, nSteps, ivAnnual, window, alpha, stepDays){
+    window=window||26; alpha=(alpha==null)?0.10:alpha; stepDays=stepDays||5.0;
+    var r=returns.filter(function(v){return v===v;}), T=r.length, n=Math.max(1,nSteps|0);
+    if(T<window+n+10) return null;
+    var lam=0.94, ew=new Array(T).fill(null);
+    if(T>window){ var v0=_var(r.slice(0,window)); for(var t=window;t<T;t++){ v0=lam*v0+(1-lam)*r[t-1]*r[t-1]; ew[t]=v0; } }
+    var z=1.6448536269514722;
+    var sqStep=ivAnnual?(ivAnnual*Math.sqrt(stepDays/252.0)):null;
+    var g=garch11Fit(r), hpath=null, ga,gb,gom,guv;
+    if(g){ ga=g.alpha; gb=g.beta; gom=g.omega; guv=g.uncondVar; hpath=new Array(T).fill(guv); var hh=guv;
+      for(var tt=1;tt<T;tt++){ hh=gom+ga*r[tt-1]*r[tt-1]+gb*hh; hpath[tt]=hh; } }
+    var crps={model:[],rw:[],hv:[],ewma:[]};
+    if(hpath!==null) crps.garch=[];
+    if(sqStep) crps.q=[];
+    var covs=[];
+    for(var i=window;i<=T-n;i++){
+      var win=r.slice(i-window,i), mu=_mean(win), sdw=Math.sqrt(Math.max(_var(win),1e-12));
+      var y=0; for(var k=i;k<i+n;k++) y+=r[k]; var rt=Math.sqrt(n);
+      crps.model.push(crpsGaussian(y,n*mu,sdw*rt));
+      var full=r.slice(0,i), sdf=full.length>2?Math.sqrt(Math.max(_var(full),1e-12)):sdw;
+      crps.rw.push(crpsGaussian(y,0,sdf*rt));
+      crps.hv.push(crpsGaussian(y,0,sdw*rt));
+      var sde=Math.sqrt(Math.max(ew[i]!=null?ew[i]:_var(win),1e-12));
+      crps.ewma.push(crpsGaussian(y,n*mu,sde*rt));
+      if(hpath!==null){ var tot=0; for(var kk=0;kk<n;kk++) tot+=guv+Math.pow(ga+gb,kk)*(hpath[i]-guv); crps.garch.push(crpsGaussian(y,n*mu,Math.sqrt(Math.max(tot,1e-14)))); }
+      if(sqStep) crps.q.push(crpsGaussian(y,n*mu,sqStep*rt));
+      var lo=n*mu-z*sdw*rt, hi=n*mu+z*sdw*rt; covs.push((lo<=y&&y<=hi)?1:0);
+    }
+    var means={}, winner=null, wbest=Infinity;
+    Object.keys(crps).forEach(function(kk){ var mv=Math.round(_mean(crps[kk])*1e6)/1e6; means[kk]=mv; if(mv<wbest){ wbest=mv; winner=kk; } });
+    var m=covs.length, kc=covs.reduce(function(s,x){return s+x;},0), cov=kc/m, w=wilsonInterval(kc,m);
+    var calibrated=(w[0]<=(1-alpha) && (1-alpha)<=w[1]);
+    var beatsRW=means.model<=means.rw, gate, reason;
+    if(beatsRW&&calibrated){ gate='deployable'; reason='beats random-walk on CRPS and calibrated'; }
+    else if(beatsRW){ gate='research-only'; reason='beats random-walk but miscalibrated'; }
+    else { gate='research-only'; reason='no CRPS edge over a driftless random walk'; }
+    return {crps:means, winner:winner, coverage:Math.round(cov*1000)/1000, wilsonLo:Math.round(w[0]*1000)/1000,
+      wilsonHi:Math.round(w[1]*1000)/1000, calibrated:calibrated, beatsRW:beatsRW, gate:gate, reason:reason, n:m};
+  }
+
+
   // ---- Phase 4: first-passage touch + volume-ahead (sigma-volume) ----
   function firstPassageUp(a, mu, sigma){
     if (a<=0) return 1; if (sigma<=0) return 0;
@@ -270,7 +348,8 @@
     straddleLabels: straddleLabels, eventVariance: eventVariance, houseBlend: houseBlend,
     driverContributions: driverContributions, DRIVER_LABELS: DRIVER_LABELS,
     crpsGaussian: crpsGaussian, intervalScore: intervalScore, wilsonInterval: wilsonInterval,
-    pitKs: pitKs, dkwBand: dkwBand, calibrateHorizon: calibrateHorizon, quantile: quantile, normCdf: normCdf,
+    pitKs: pitKs, dkwBand: dkwBand, calibrateHorizon: calibrateHorizon, quantile: quantile,
+    garch11Fit: garch11Fit, garch11NstepVar: garch11NstepVar, challengerScorecard: challengerScorecard, normCdf: normCdf,
     firstPassageUp: firstPassageUp, firstPassageDown: firstPassageDown,
     volumeAhead: volumeAhead, touchOdds: touchOdds
   };

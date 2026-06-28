@@ -87,6 +87,18 @@ ok("calibrate target .9", cal3.target === 0.9);
 ok("calibrate coverage in CI", cal3.wilsonLo <= 0.90 && 0.90 <= cal3.wilsonHi);
 ok("calibrate crps>0", cal3.crps > 0 && cal3.intervalScore > 0);
 
+// ---- GARCH(1,1) + challenger ladder (Py<->JS symmetry) ----
+const gsim = []; { let h=1e-4, om=(1-0.10-0.85)*1e-4; for (let i=0;i<3000;i++){ const e=Math.sqrt(h)*randn(); gsim.push(e); h=om+0.10*e*e+0.85*h; } }
+const gfit = L.garch11Fit(gsim);
+ok("garch recovers alpha", Math.abs(gfit.alpha-0.10) < 0.06);
+ok("garch recovers beta", Math.abs(gfit.beta-0.85) < 0.09);
+ok("garch nstep increasing", L.garch11NstepVar(gfit,gsim,1) < L.garch11NstepVar(gfit,gsim,20));
+const chr = Array.from({length:700}, () => 0.0004 + 0.012*randn());
+const ch = L.challengerScorecard(chr, 5, 0.25);
+ok("challenger has garch+hv arms", ["model","rw","hv","ewma","garch"].every(k => k in ch.crps));
+ok("challenger crps finite", Object.values(ch.crps).every(v => v > 0));
+ok("challenger gate set", ch.gate === "deployable" || ch.gate === "research-only");
+
 // ---- Phase 4 volume & impact ----
 ok("fp reflection", approx(L.firstPassageUp(0.05,0,0.05), 2*L.normCdf(-1), 1e-9));
 ok("fp monotone", L.firstPassageUp(0.02,0,0.05) > L.firstPassageUp(0.10,0,0.05));

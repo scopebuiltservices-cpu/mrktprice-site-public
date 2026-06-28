@@ -222,10 +222,28 @@ def spa(D, B=1000, block=5, seed=777):
     return {"p": (ge + 1.0) / (B + 1.0), "T": Tstat, "K": K}
 
 
-def _block_idx(T, block, rng):
+def _mulberry32(seed):
+    """Deterministic 32-bit PRNG, BIT-FOR-BIT identical to the JS mulberry32 in pooled_rigor.js, so the
+    bootstrap p-values (Reality Check, SPA) match across Python and JS exactly. All arithmetic is unsigned
+    mod 2^32, which reproduces JS's int32/Math.imul low-32-bit semantics."""
+    a = seed & 0xFFFFFFFF
+    M = 0xFFFFFFFF
+    def nxt():
+        nonlocal a
+        a = (a + 0x6D2B79F5) & M
+        t = (a ^ (a >> 15)) & M
+        t = (t * ((1 | a) & M)) & M
+        t2 = (((t ^ (t >> 7)) & M) * ((61 | t) & M)) & M
+        t = (((t + t2) & M) ^ t) & M
+        return ((t ^ (t >> 14)) & M) / 4294967296.0
+    return nxt
+
+
+def _block_idx(T, block, rnd):
+    """Stationary block-bootstrap indices using a mulberry32 callable (matches JS blockIdx exactly)."""
     idx = []
     while len(idx) < T:
-        s = rng.randrange(T)
+        s = int(rnd() * T)
         for j in range(block):
             idx.append((s + j) % T)
             if len(idx) >= T: break

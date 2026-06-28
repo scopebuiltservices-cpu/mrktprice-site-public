@@ -183,6 +183,7 @@ jobs:
       - name: Integrity gate - inline scripts + JSON not truncated
         run: |
           node tools/check-scripts.mjs
+          node tools/check-external-js.mjs              # syntax-gate every external <script src> module (engine/panels)
           python tools/market_map/check_json.py _site/marketmap.json _site/xsection.json
 
       - name: Upload site

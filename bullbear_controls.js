@@ -38,6 +38,11 @@
     var inp = document.createElement('input'); inp.placeholder = 'search ticker'; inp.value = state.q;
     inp.oninput = function () { state.q = inp.value.toUpperCase(); setls(KEY.q, state.q); apply(board); };
     bar.appendChild(inp);
+    var stat = document.createElement('span'); stat.id = 'bbStatus';
+    stat.style.cssText = 'margin-left:8px;font-size:10px;color:var(--muted,#8a93a0);cursor:pointer';
+    stat.title = 'click to clear the conviction filter / search and show every company';
+    stat.onclick = function () { state.filt = 'all'; state.q = ''; setls(KEY.filt, 'all'); setls(KEY.q, ''); var ip = bar.querySelector('input'); if (ip) ip.value = ''; refreshChips(); apply(board); };
+    bar.appendChild(stat);
     board.parentNode.insertBefore(bar, board);   // sibling BEFORE the board, so board.innerHTML re-renders don't wipe it
   }
 
@@ -68,18 +73,27 @@
 
   function apply(board) {
     applying = true;
+    var totAll = 0, totVis = 0;
     Array.prototype.forEach.call(board.querySelectorAll('.bbcol'), function (col) {
       var box = col.querySelector('.bbrows'); if (!box) return;
       var rows = Array.prototype.slice.call(box.querySelectorAll('.bbrow'));
       rows.sort(cmp(col.dataset.side));
       var vis = 0;
       rows.forEach(function (r) {
+        totAll++;
         var ok = pass(r); r.style.display = ok ? '' : 'none';
-        if (ok) { vis++; var rk = r.querySelector('.bbrk'); if (rk) rk.textContent = vis; }
+        if (ok) { vis++; totVis++; var rk = r.querySelector('.bbrk'); if (rk) rk.textContent = vis; }
         box.appendChild(r);   // reorder in place
       });
       var v = col.querySelector('.bbvis'); if (v) v.textContent = vis;
     });
+    var stat = document.getElementById('bbStatus');
+    if (stat) {
+      var hidden = totAll - totVis;
+      stat.textContent = 'showing ' + totVis + ' of ' + totAll + ' companies'
+        + (hidden > 0 ? ' · ' + hidden + ' hidden by ' + (state.filt !== 'all' ? state.filt.toUpperCase() + ' filter' : 'search') + ' — click to show all' : '');
+      stat.style.color = hidden > 0 ? '#e0a13c' : 'var(--muted,#8a93a0)';
+    }
     setTimeout(function () { applying = false; }, 0);
   }
 

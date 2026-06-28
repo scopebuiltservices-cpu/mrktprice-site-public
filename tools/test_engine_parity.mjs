@@ -19,8 +19,8 @@ const TOL = 1e-9;
 const close = (a, b) => Math.abs(a - b) <= TOL * (1 + Math.abs(b));
 const arrClose = (a, b) => Array.isArray(a) && a.length === b.length && a.every((v, i) => close(v, b[i]));
 
-ok('engine exposes ema/hvRollSeries/ouFit/varianceRatio',
-  ['ema', 'hvRollSeries', 'ouFit', 'varianceRatio'].every(k => typeof E[k] === 'function'));
+ok('engine exposes ema/hvRollSeries/ouFit/_varianceRatio',
+  ['ema', 'hvRollSeries', 'ouFit', '_varianceRatio'].every(k => typeof E[k] === 'function'));
 
 // EMA
 ok('ema parity (engine.js == python decimals)', arrClose(E.ema(I.ema_c, I.ema_N), X.ema), 'ema mismatch');
@@ -33,7 +33,7 @@ const ou = E.ouFit(I.ou_x);
 });
 ok('ouFit.meanRev parity', ou.meanRev === X.ou.meanRev, [ou.meanRev, X.ou.meanRev]);
 // variance ratio
-const vr = E.varianceRatio(I.vr_r, I.vr_q);
+const vr = E._varianceRatio(I.vr_r, I.vr_q);
 ok('varianceRatio.vr parity', close(vr.vr, X.vr.vr), [vr.vr, X.vr.vr]);
 ok('varianceRatio.z parity', close(vr.z, X.vr.z), [vr.z, X.vr.z]);
 

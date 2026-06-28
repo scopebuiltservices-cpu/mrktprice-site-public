@@ -48,6 +48,20 @@ ok("stein toward center (borrow strength)", close(R.stein_shrink(10.0, 1.0, 1.0,
 ok("ewma prev None -> now", R.ewma_score(None, 5.0) == 5.0)
 ok("ewma blends", close(R.ewma_score(2.0, 4.0, 0.5), 3.0))
 
+# empirical-Bayes: tau^2 recovers signal var net of noise; posterior shrinks noisier names more; sd<se
+import random as _rnd
+_rnd.seed(11)
+_vals = []; _ses = []
+for _ in range(4000):
+    _sig = _rnd.gauss(0, math.sqrt(4.0)); _vals.append(_sig + _rnd.gauss(0, 1.5)); _ses.append(1.5)
+ok("eb_tau2 recovers signal var net of noise", abs(R.eb_tau2(_vals, _ses) - 4.0) < 0.5)
+ok("eb_tau2 ~0 when pure noise", R.eb_tau2([_rnd.gauss(0, 1.5) for _ in range(4000)], [1.5] * 4000) < 0.4)
+_pc = R.eb_posterior(10.0, 0.5, 2.0, 4.0); _pn = R.eb_posterior(10.0, 4.0, 2.0, 4.0)
+ok("eb posterior: noisier shrinks toward center more", abs(_pn["mu"] - 2.0) < abs(_pc["mu"] - 2.0))
+ok("eb posterior sd identity sd^2==w*se^2", close(_pc["sd"] ** 2, _pc["w"] * 0.5 * 0.5))
+ok("eb posterior w in (0,1)", 0 < _pc["w"] < 1 and 0 < _pn["w"] < 1)
+ok("eb tiny se -> w~1 (no shrink)", R.eb_posterior(10.0, 1e-6, 2.0, 4.0)["w"] > 0.999)
+
 # golden lock
 GOLD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "rank_golden.json")
 if not os.path.exists(GOLD):
@@ -61,6 +75,11 @@ for row in g["rows"]:
             close(R.alpha_forecast_se(2.0, row["z"], 0.0, 10.0, g["n_tests"]), row["aFse"]) and
             close(R.deflated_conviction(row["z"], 150), row["zAdj"])):
         allok = False
+    _eb = R.eb_posterior(row["tot"], row["se"], g["ebCenter"], g["ebTau2"])
+    if not (close(_eb["mu"], row["ebMu"]) and close(_eb["sd"], row["ebSd"]) and close(_eb["w"], row["ebW"])):
+        allok = False
+if not close(R.eb_tau2([r["tot"] for r in g["rows"]], [r["se"] for r in g["rows"]]), g["ebTau2"]):
+    allok = False
 ok("golden fixture reproduced", allok)
 
 print("\n" + ("ALL RANK-ENGINE TESTS PASSED" if not F else "%d FAILED: %s" % (len(F), F)))

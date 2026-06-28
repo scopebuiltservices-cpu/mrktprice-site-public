@@ -1,0 +1,31 @@
+name: verify
+# Authoritative, server-side verification gate. A local pre-commit hook is bypassable with
+# --no-verify, so THIS job is the real enforcement: make it a REQUIRED status check on the
+# protected branch (Settings -> Branches -> branch protection rule -> Require status checks ->
+# select "verify"). See tools/BRANCH_PROTECTION.md. Runs the exact same one-command gate as local.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:                         # <- stable name; this is the required-status-check target
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Full CI-equivalent verification (py_compile + all tests + script/budget/schema gates)
+        run: bash tools/verify_all.sh

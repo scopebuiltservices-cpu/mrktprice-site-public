@@ -1,0 +1,25 @@
+# Standard pre-commit framework config (https://pre-commit.com). Two-stage local gate:
+#   pre-commit  -> fast staged checks (syntax + JSON + file-size budget) for quick feedback
+#   pre-push    -> full CI-equivalent gate (tools/verify_all.sh) before anything leaves the machine
+#
+# Enable once:   pip install pre-commit && pre-commit install --install-hooks
+# Skip ONE hook intentionally:   SKIP=verify-all git push     (preferred over blanket --no-verify)
+#
+# NOTE: local hooks are bypassable; the authoritative gate is the required "verify" CI status check
+# on the protected branch (see tools/BRANCH_PROTECTION.md). This config is for fast feedback, not policy.
+default_install_hook_types: [pre-commit, pre-push]
+repos:
+  - repo: local
+    hooks:
+      - id: verify-fast
+        name: verify-fast (inline-script + file-size budget, staged-file syntax)
+        entry: bash -c 'node tools/check-scripts.mjs && node tools/check-file-budget.mjs'
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: verify-all
+        name: verify-all (full CI-equivalent gate)
+        entry: bash tools/verify_all.sh
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

@@ -2076,7 +2076,7 @@ function load(sym,s){const c=s.closes,d=s.dates,vol=s.volumes||c.map(()=>0);cons
 function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementById('mid').value,low=+document.getElementById('low').value,high=+document.getElementById('high').value,H=+document.getElementById('hz').value,cf=(+document.getElementById('cf').value)/100,lev=document.getElementById('lev').checked;
  const vs=document.getElementById('volsrc').value;let sig=vs==='regime'?CUR.curRms:(vs==='garch'?CUR.garch.annVol/Math.sqrt(252):0.6*CUR.garch.annVol/Math.sqrt(252)+0.4*CUR.rvDaily);
  const _harqOn=!!(document.getElementById('tHARQ')&&document.getElementById('tHARQ').checked&&CUR.harq&&CUR.harq.volDaily>0);var _harqK=1;
- if(_harqOn){var _cq=(CUR.integrity&&CUR.integrity.conformal&&CUR.integrity.conformal.q>0)?CUR.integrity.conformal.q:null;_harqK=_cq?Math.max(0.6,Math.min(2.5,_cq/1.6449)):1;sig=CUR.harq.volDaily*_harqK;}   // HARQ next-session σ, conformal-calibrated (empirical q vs Gaussian 1.645) so the cone is coverage-checked, not just σ-scaled
+ if(_harqOn){var _cq=(CUR.harq&&CUR.harq.confQ>0)?CUR.harq.confQ:((CUR.integrity&&CUR.integrity.conformal&&CUR.integrity.conformal.q>0)?CUR.integrity.conformal.q:null);_harqK=_cq?Math.max(0.6,Math.min(2.5,_cq/1.6449)):1;sig=CUR.harq.volDaily*_harqK;}   // HARQ next-session σ, calibrated to HARQ's OWN out-of-sample residual 90% quantile (confQ) when available — coverage-checked against the model that drives the cone, not price returns
  CUR.harqDrivingCone=_harqOn;CUR.harqConfK=_harqK;
  const am=document.getElementById('anchorSel').value;let pj;
  var _rr=lr(CUR.c),_dn=[],_up=[];for(var _i=0;_i<_rr.length;_i++){if(_rr[_i]<0)_dn.push(-_rr[_i]);else if(_rr[_i]>0)_up.push(_rr[_i]);}

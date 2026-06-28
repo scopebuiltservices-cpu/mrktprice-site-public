@@ -63,7 +63,8 @@
     return (prev != null) ? ewmaScore(prev, s, lam) : s;
   }
   var API = { grinoldKahn: grinoldKahn, alphaForecastSe: alphaForecastSe, convictionSigma: convictionSigma,
-    lcbScore: lcbScore, deflatedConviction: deflatedConviction, steinShrink: steinShrink, ewmaScore: ewmaScore,
+    lcbScore: lcbScore, deflatedConviction: deflatedConviction, steinShrink: steinShrink,
+    ebTau2: ebTau2, ebPosterior: ebPosterior, ewmaScore: ewmaScore,
     compositeRankScore: compositeRankScore };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.MrktRank = API;

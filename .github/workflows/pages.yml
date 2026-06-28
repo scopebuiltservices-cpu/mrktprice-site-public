@@ -190,7 +190,11 @@ jobs:
           [ -f _site/xsection.json ] && python tools/market_map/validate_xsection.py _site/xsection.json || echo "::notice::xsection.json absent this run"
           # secondary artifact contracts (cik/alpha_calib/events/universe) — absent files are skipped
           ARTS=""; for a in cik.json alpha_calib.json events.json universe.json; do [ -f "_site/$a" ] && ARTS="$ARTS _site/$a"; done
-          [ -n "$ARTS" ] && python tools/market_map/validate_artifacts.py $ARTS || echo "::notice::no secondary artifacts this run"
+          if [ -n "$ARTS" ]; then
+            python -m pip install --quiet jsonschema || true     # enables the declarative JSON Schema gate
+            python tools/market_map/schema_validate.py $ARTS      # Draft 2020-12 shape/type/enum contract
+            python tools/market_map/validate_artifacts.py $ARTS   # cross-field invariants (count==len, dup tickers)
+          else echo "::notice::no secondary artifacts this run"; fi
           # coverage-regression alarm: fail if a data domain dropped to 0% vs the prior run (silent broken feed)
           HL="$(find _site . -name health_log.jsonl 2>/dev/null | head -1)"
           [ -n "$HL" ] && python tools/market_map/coverage_regression.py "$HL" || echo "::notice::health_log.jsonl absent this run"

@@ -153,8 +153,13 @@ def gen_fixture():
         {"tot": 1.2, "z": 3.0, "base_sigma": 6.0, "se": 0.6},   # small edge, very high conviction, very clean
     ]
     n = len(cases)
+    tots = [c["tot"] for c in cases]
+    ses = [c["se"] for c in cases]
+    eb_center = sum(tots) / n              # global prior center (mean expected return)
+    eb_t2 = eb_tau2(tots, ses)             # self-tuned shrink strength
     out = []
     for c in cases:
+        eb = eb_posterior(c["tot"], c["se"], eb_center, eb_t2)
         out.append({
             "tot": c["tot"], "z": c["z"], "base_sigma": c["base_sigma"], "se": c["se"],
             "convSigma": conviction_sigma(c["base_sigma"], c["z"]),
@@ -164,8 +169,10 @@ def gen_fixture():
             "gk": grinold_kahn(0.08, c["base_sigma"], c["z"]),
             "aFse": alpha_forecast_se(2.0, c["z"], 0.0, 10.0, n),     # leverage SE with z as a stand-in alpha
             "steinC": stein_shrink(c["tot"], c["se"], 3.0, center=1.0),
+            "ebMu": eb["mu"], "ebSd": eb["sd"], "ebW": eb["w"],
         })
-    return {"fixture_version": 2, "case": "rank-engine-core", "k": 0.5, "n_tests": n, "rows": out}
+    return {"fixture_version": 3, "case": "rank-engine-core", "k": 0.5, "n_tests": n,
+            "ebCenter": eb_center, "ebTau2": eb_t2, "rows": out}
 
 
 def main():

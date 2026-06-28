@@ -368,10 +368,14 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
     var net=0,i;for(i=0;i<wr.length;i++)net+=(wr[i]||0);
     var sl=latest>0?1:(latest<0?-1:0),sn=net>0?1:(net<0?-1:0);
     if(!sl||!sn)return '';
-    var agree=(sl===sn),c=agree?'var(--up,#3fb27f)':'var(--caution,#e0c14a)';
+    var agree=(sl===sn),up=(sl>0);
+    // colour reflects the ACTUAL direction of the latest move (green up / red down), not just the regime
+    var c=up?'var(--up,#3fb27f)':'var(--down,#ef5f4e)';
+    var label,sub;
+    if(agree){ label=up?'▲ MOMENTUM ↑ up':'▼ MOMENTUM ↓ down'; sub=up?'latest extends the up-trend':'latest extends the down-trend'; }
+    else { label=up?'⤺ MEAN-REVERT ↑ reverting up':'⤻ MEAN-REVERT ↓ reverting down'; sub=up?'snapping up against a down-trend':'snapping down against an up-trend'; }
     return '<div style="margin-top:3px;font-size:8.5px;font-weight:700;letter-spacing:.02em;color:'+c+'">'
-      +(agree?'▲ MOMENTUM':'⤺ MEAN-REVERT')+' <span style="color:var(--faint,#646e7c);font-weight:400">'
-      +(agree?'latest follows trend':'latest counter to trend')+'</span></div>';
+      +label+' <span style="color:var(--faint,#646e7c);font-weight:400">'+sub+'</span></div>';
   }
   function spark(wr,w,h){
     if(!wr||wr.length<3)return '';
@@ -435,8 +439,8 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
       +'<span style="font-size:9px;color:var(--faint,#646e7c)">'+(d.asof||'')+' · research only</span></div>'
       +'<div style="margin-top:5px;font-size:9px;color:var(--faint,#646e7c);line-height:1.55">'
         +'<b style="color:var(--muted,#8a93a0)">How to read the colours:</b> the big <b>number</b> = the latest period (<b style="color:var(--up,#3fb27f)">green up</b> / <b style="color:var(--down,#e0556b)">red down</b>); the <b>sparkline</b> = the window trend (green net-up / red net-down). '
-        +'<b style="color:var(--up,#3fb27f)">Same colour → ▲ MOMENTUM</b> — the latest move continues the trend. '
-        +'<b style="color:var(--caution,#e0c14a)">Opposite colour → ⤺ MEAN-REVERT</b> — the latest move snaps back against the trend (counter-trend). '
+        +'<b>Same colour → MOMENTUM</b> — latest continues the trend: shown <b style="color:var(--up,#3fb27f)">▲ ↑ up</b> or <b style="color:var(--down,#e0556b)">▼ ↓ down</b>. '
+        +'<b>Opposite colour → MEAN-REVERT</b> — latest snaps back against the trend: shown <b style="color:var(--up,#3fb27f)">⤺ ↑ reverting up</b> or <b style="color:var(--down,#e0556b)">⤻ ↓ reverting down</b>. The tag colour = the actual direction of the latest move. '
         +'Note: Treasury <b>yield</b> tiles move inverse to bond price, so for those the number and line can differ by construction, not as a signal. Commodities are sorted biggest-mover first.</div>'
       +section('Interest rates · Treasury curve',rnote,rateHtml)
       +section('Commodities',cnote,comHtml);

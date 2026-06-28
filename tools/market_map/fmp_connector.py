@@ -10,6 +10,16 @@ import os
 STABLE = "https://financialmodelingprep.com/stable"
 V3     = "https://financialmodelingprep.com/api/v3"
 
+def _key():
+    """Read the FMP key, accepting whichever name the Ultimate secret carries (matches fmp_history +
+    the GitHub Actions secret mapping). Without this, a secret named FMP_ULTIMATE_API_KEY would power
+    prices/macro but silently disable the valuation/premium connector."""
+    for k in ("FMP_API_KEY", "FMP_ULTIMATE_API_KEY", "FMP_UTIMATE_API_KEY"):
+        v = os.environ.get(k, "").strip()
+        if v:
+            return v
+    return ""
+
 def _num(x):
     try:
         x=float(x); return x if (x==x and abs(x)<1e7) else None
@@ -65,7 +75,7 @@ def probe_key(sess=None, ticker="AAPL"):
     """ONE up-front validation call. Returns {ok, reason, message, base}.
     Lets the caller skip the whole enrichment loop (and 150+ wasted calls) when the key is dead,
     and report exactly WHY so the fix is unambiguous."""
-    key=os.environ.get("FMP_API_KEY","").strip()
+    key=_key()
     if not key:
         return {"ok":False,"reason":"missing","message":"FMP_API_KEY env var not set","base":None}
     try:
@@ -136,7 +146,7 @@ def _pull(base, ticker, key, sess):
 _DBG={"done": False}   # one-shot raw-response diagnostic (set MRKT_FMP_DEBUG=1)
 
 def fetch(ticker, sess=None):
-    key=os.environ.get("FMP_API_KEY","").strip()
+    key=_key()
     if not key: return None
     import sys as _s
     dbg=bool(os.environ.get("MRKT_FMP_DEBUG","").strip()) and not _DBG["done"]
@@ -179,7 +189,7 @@ def fetch_premium(ticker, sess=None, lim=None):
     """FMP Ultimate premium pulls the free feed can't give: earnings calendar (announce dates +
     actual/est EPS + next pending), DCF intrinsic value, analyst price-target consensus.
     Returns {earn, dcf, ptgt} (any key may be absent). Budget-gated via ratelimit('fmp')."""
-    key=os.environ.get("FMP_API_KEY","").strip()
+    key=_key()
     if not key: return {}
     try:
         import requests, datetime as dt

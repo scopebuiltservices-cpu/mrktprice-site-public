@@ -1004,6 +1004,25 @@ def real_universe():
     import price_source as _psrc
     _PS=_psrc.PriceSource(fmp=_fmph, yf=yf, session=_PSESS)
     PH=_PS.health
+    # CLASSIFIED PRICE-PATH PROBE: one up-front call to the PRIMARY EOD endpoint so a run that pulls
+    # 0 FMP prices reports the REAL reason (invalid_key / plan_or_endpoint / rate_limited) instead of
+    # silently degrading to yfinance. Surfaced in stderr, dataHealth.fmpPriceProbe, and the live banner.
+    try:
+        import sys as _sys
+        _FPP=(_fmph.probe_eod(sess=_PSESS) if (hasattr(_fmph,"probe_eod") and _fmph.have_key())
+              else {"ok":False,"reason":"missing","message":"no FMP key in env"})
+        globals()["_FMP_PRICE_PROBE"]=_FPP
+        if _FPP.get("ok"):
+            _sys.stderr.write("FMP price probe OK — historical-price-eod/full reachable (FMP Ultimate primary)\n")
+        else:
+            _sys.stderr.write("::warning title=FMP price path::probe FAILED [%s] HTTP %s: %s — every name will fall back to yfinance backup. Fix: %s\n"%(
+                _FPP.get("reason"), _FPP.get("status"),(_FPP.get("message") or "")[:120],
+                {"invalid_key":"rotate FMP_API_KEY (key invalid/expired)",
+                 "plan_or_endpoint":"key valid but plan lacks the historical-EOD endpoint — upgrade/contact FMP",
+                 "rate_limited":"FMP rate/bandwidth limit — lower UNIVERSE_LIMIT or retry off-peak",
+                 "missing":"set the FMP_API_KEY (or FMP_ULTIMATE_API_KEY) repo secret"}.get(_FPP.get("reason"),"check key + plan")))
+    except Exception as _pe:
+        globals()["_FMP_PRICE_PROBE"]={"ok":False,"reason":"probe_error","message":str(_pe)[:160],"status":None}
     def _get_hist(sym, min_rows=10):
         return _PS.get(sym, min_rows)
     try:
@@ -1392,6 +1411,7 @@ def real_universe():
         "priceSrc":{"fmp":PH["fmp"],"yfinance":PH["yf"],"miss":PH["miss"]},
         "fmpPricePrimary":True,
         "fmpLastOk":PH["fmpLastOk"],                                              # ISO ts of last successful FMP price pull
+        "fmpPriceProbe":globals().get("_FMP_PRICE_PROBE"),                        # classified WHY for a 0-FMP-price run (key/plan/limit)
         "fmpDegraded":bool(PH["fmpKeyPresent"] and PH["fmp"]==0),                 # key present but 0 FMP prices -> alert
         "yfEnabled":PH["yfEnabled"],"yfImported":PH["yfImported"],
         "fmpPriceShare":round(100.0*PH["fmp"]/max(PH["fmp"]+PH["yf"]+PH["miss"],1),1),
@@ -1419,7 +1439,9 @@ def main():
             _ps=_dhp.get("priceSrc") or {}
             if _dhp.get("fmpDegraded"):
                 _last=_dhp.get("fmpLastOk") or "never this run"
-                snap["source"]="⚠ FMP Ultimate NOT pulling (last OK: %s) — serving yfinance backup · research only"%_last
+                _pp=_dhp.get("fmpPriceProbe") or {}
+                _why=(" [%s%s]"%(_pp.get("reason"),(": "+(_pp.get("message") or "").strip()[:80]) if _pp.get("message") else "")) if (_pp and not _pp.get("ok")) else ""
+                snap["source"]="⚠ FMP Ultimate NOT pulling%s (last OK: %s) — serving yfinance backup · research only"%(_why,_last)
             elif _ps.get("yfinance",0)>0 and _ps.get("fmp",0)>0:
                 snap["source"]=snap["source"].replace("yfinance backup","yfinance backup [%d FMP / %d yfinance]"%(_ps.get("fmp",0),_ps.get("yfinance",0)))
         except Exception: pass

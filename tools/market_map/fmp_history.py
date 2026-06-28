@@ -517,8 +517,51 @@ def macro_from_fmp(sess=None):
     return {"macro": macro, "series": series, "source": SOURCE_LABEL}
 
 
-__all__ = ["eod_history", "treasury_curve", "commodities_list", "commodities_history",
-           "macro_from_fmp", "earnings_calendar", "have_key", "SOURCE_LABEL"]
+def probe_eod(symbol="AAPL", sess=None):
+    """ONE classified call to the PRIMARY price endpoint (/stable/historical-price-eod/full) so a run
+    that pulls 0 FMP prices reports WHY instead of silently degrading to yfinance. Returns
+    {ok, reason, message, status}; reason in:
+       ok | missing | invalid_key | rate_limited | plan_or_endpoint | empty | http_error | network.
+    The price path (eod_ohlcv) is fail-soft and never surfaced the HTTP status/body — this is the
+    authoritative diagnosis of the PRICE path (the /quote probe in fmp_connector can pass on a plan
+    that excludes the historical-EOD endpoint, so they must be probed separately)."""
+    key = _key()
+    if not key:
+        return {"ok": False, "reason": "missing",
+                "message": "no FMP key in env (FMP_API_KEY / FMP_ULTIMATE_API_KEY / FMP_UTIMATE_API_KEY)", "status": None}
+    try:
+        import requests
+    except Exception as e:
+        return {"ok": False, "reason": "no_requests", "message": str(e)[:120], "status": None}
+    try:
+        from fmp_connector import classify          # reuse the body-aware classifier (200-with-error etc.)
+    except Exception:
+        classify = None
+    s = sess or requests.Session()
+    url = "%s/historical-price-eod/full?symbol=%s&apikey=%s" % (STABLE, symbol, key)
+    try:
+        r = s.get(url, timeout=25)
+    except Exception as e:
+        return {"ok": False, "reason": "network", "message": str(e)[:160], "status": None}
+    try:
+        body = r.json()
+    except Exception:
+        body = r.text
+    if classify:
+        reason, msg = classify(r.status_code, body)
+    else:
+        ok = (r.status_code == 200 and bool(body))
+        reason, msg = ("ok", "") if ok else ("http_error", "HTTP %s" % r.status_code)
+    # EOD-specific: a 200 with no price rows is "empty", not "ok".
+    if reason == "ok":
+        rows = body if isinstance(body, list) else (body.get("historical") if isinstance(body, dict) else None)
+        if not rows:
+            reason, msg = "empty", "HTTP 200 but no price rows"
+    return {"ok": reason == "ok", "reason": reason, "message": msg, "status": r.status_code}
+
+
+__all__ = ["eod_history", "eod_ohlcv", "treasury_curve", "commodities_list", "commodities_history",
+           "macro_from_fmp", "earnings_calendar", "probe_eod", "have_key", "SOURCE_LABEL"]
 
 
 if __name__ == "__main__":

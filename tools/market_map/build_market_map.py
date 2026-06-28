@@ -1821,68 +1821,30 @@ def main():
     #      RETAINED reference window (drift_ref.json, refreshed ~monthly) + an immediate in-sample drift.
     #      Flags regime change / a provider changing basis / corrupted pulls. Uses _PRECM (closes captured
     #      before build() popped _cl). Persisted via drift_store.jsonl + drift_ref.json (committed nightly). ----
+    # Extracted to build_integrity.attach_drift (drift_store-backed), unit-tested in test_build_integrity.py.
     try:
-        import os as _o4, drift_store as _drift
-        _st4 = _o4.path.dirname(_o4.path.abspath(__file__))
-        _rmap = {}
-        for _n in (snap.get("names") or []):
-            _t = (_n.get("t") or "").upper(); _cl = _PRECM.get(_t)
-            if not _t or not _cl or len(_cl) < 41:
-                continue
-            _rmap[_t] = [_cl[i] / _cl[i - 1] - 1.0 for i in range(1, len(_cl)) if _cl[i - 1]]
-        if _rmap:
-            _dout = _drift.update(_o4.path.join(_st4, "drift_ref.json"), _o4.path.join(_st4, "drift_store.jsonl"),
-                                  snap.get("asof"), _rmap)
-            for _n in (snap.get("names") or []):
-                _dd = _dout.get((_n.get("t") or "").upper())
-                if _dd:
-                    _n["drift"] = _dd
-            if isinstance(snap.get("dataHealth"), dict):
-                snap["dataHealth"]["driftCensus"] = _drift.census(_dout)
+        import os as _o4, build_integrity as _bi4
+        _bi4.attach_drift(snap, _PRECM, _o4.path.dirname(_o4.path.abspath(__file__)))
     except Exception as _de:
         import sys as _s4; _s4.stderr.write("::warning::drift layer skipped: %s\n" % str(_de)[:140])
     # ---- OUTPUT INTEGRITY: a PUBLIC per-node data-quality verdict (n['dq']) the board can act on, a
     #      bounded-output sanitizer (broken/degenerate equation outputs -> null + count), and a run-over-run
     #      health/credibility trend (health_log.jsonl). Honest degradation at the output boundary. ----
+    # Extracted to build_integrity (sanitize_outputs + provenance + health_log_record), unit-tested in
+    # test_build_integrity.py. Public n['dq'], bounded-output guard, rawDataHash/configHash, health trend.
     try:
-        import os as _o5, json as _j5, data_quality as _dqm
-        _st5=_o5.path.dirname(_o5.path.abspath(__file__))
-        _sani=0
-        _BOUNDS={"beta":(-15.0,15.0),"maxDD":(-1.0,0.0),"dvol":(0.0,6.0),"hv":(0.0,6.0),"rvol":(0.0,500.0),"atr":(0.0,1e7)}
-        for _n in (snap.get("names") or []):
-            _t=(_n.get("t") or "").upper(); _cl=_PRECM.get(_t)
-            if _cl and len(_cl)>=20:
-                try: _n["dq"]=_dqm.series_health(_cl, None)["verdict"]
-                except Exception: pass
-            for _k,(_lo,_hi) in _BOUNDS.items():
-                if _n.get(_k) is not None:
-                    _gv,_gr=_dqm.guard(_n.get(_k),_lo,_hi,_k)
-                    if _gv is None: _n[_k]=None; _sani+=1
-        if isinstance(snap.get("dataHealth"),dict): snap["dataHealth"]["sanitizedFields"]=_sani
-        # PROVENANCE: a REAL raw-data hash (sha256 of the canonical input close panel) + a config hash
-        # (sha256 of the composite weights/params), so a pooled run is reproducible — same data + config
-        # reproduce the same outputs — beyond qa_signoff's source-code fingerprint.
+        import os as _o5, json as _j5, build_integrity as _bi5
+        _st5 = _o5.path.dirname(_o5.path.abspath(__file__))
+        _sani = _bi5.sanitize_outputs(snap, _PRECM)
+        _bi5.provenance(snap, _PRECM)
         try:
-            import hashlib as _hl
-            _raw={_t:[round(_x,4) for _x in (_PRECM.get(_t) or [])] for _t in sorted(_PRECM)}
-            _rawh=_hl.sha256(_j5.dumps(_raw,separators=(",",":"),sort_keys=True).encode("utf-8")).hexdigest()
-            _cfg={"weights":{"sMR":0.35,"sMom":0.30,"sSig":0.25,"sVol":0.10},"thr":0.3,"H":10,"schema":snap.get("schemaVersion")}
-            _cfgh=_hl.sha256(_j5.dumps(_cfg,separators=(",",":"),sort_keys=True).encode("utf-8")).hexdigest()
-            if isinstance(snap.get("dataHealth"),dict):
-                snap["dataHealth"]["rawDataHash"]=_rawh; snap["dataHealth"]["configHash"]=_cfgh
-        except Exception: pass
-        try:
-            _dh5=snap.get("dataHealth") or {}; _dq5=_dh5.get("dataQuality") or {}; _drc5=_dh5.get("driftCensus") or {}
-            _hl={"asof":snap.get("asof"),"source":(snap.get("source") or "")[:70],
-                 "dataQuality":{_kk:_dq5.get(_kk) for _kk in ("clean","degraded","reject")} if _dq5 else None,
-                 "priceSrc":_dh5.get("priceSrc"),"fmpLastOk":_dh5.get("fmpLastOk"),"fmpDegraded":_dh5.get("fmpDegraded"),
-                 "rateSource":(snap.get("realCurve") or {}).get("source"),
-                 "driftCensus":{_kk:_drc5.get(_kk) for _kk in ("stable","moderate","significant","baseline")} if _drc5 else None,
-                 "sanitizedFields":_sani}
-            with open(_o5.path.join(_st5,"health_log.jsonl"),"a",encoding="utf-8") as _f5: _f5.write(_j5.dumps(_hl)+"\n")
-        except Exception: pass
+            _hl = _bi5.health_log_record(snap, _sani)
+            with open(_o5.path.join(_st5, "health_log.jsonl"), "a", encoding="utf-8") as _f5:
+                _f5.write(_j5.dumps(_hl) + "\n")
+        except Exception:
+            pass
     except Exception as _se:
-        import sys as _s5; _s5.stderr.write("::warning::output-integrity layer skipped: %s\n"%str(_se)[:140])
+        import sys as _s5; _s5.stderr.write("::warning::output-integrity layer skipped: %s\n" % str(_se)[:140])
     # ---- EVENT-AWARE LAYER: high-impact US macro calendar (FMP) -> snap['events'] (next event + window +
     #      daysToNext) so the conviction/drift layers can treat signals cautiously right before a major
     #      print and expect a distribution shift right after one. Fail-soft (no key / no data -> skipped). ----

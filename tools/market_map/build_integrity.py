@@ -52,12 +52,13 @@ def _rets_map(snap, precm, min_len=41):
     return rmap
 
 
-def attach_drift(snap, precm, store_dir, ref_lag_days=45):
+def attach_drift(snap, precm, store_dir, ref_lag_days=None):
     rmap = _rets_map(snap, precm)
     if not rmap:
         return {}
+    kw = {} if ref_lag_days is None else {"ref_lag_days": ref_lag_days}
     out = ds.update(os.path.join(store_dir, "drift_ref.json"), os.path.join(store_dir, "drift_store.jsonl"),
-                    snap.get("asof"), rmap, ref_lag_days=ref_lag_days)
+                    snap.get("asof"), rmap, **kw)
     for n in (snap.get("names") or []):
         d = out.get((n.get("t") or "").upper())
         if d:

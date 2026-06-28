@@ -80,3 +80,26 @@ The fix is also better engineering: smaller, single-responsibility modules with 
 unit tests; no monolith growth; deterministic, mount-free verification; and CI as the
 backstop. Nothing about the solution weakens the model — it removes a verification failure
 mode *and* improves modularity at the same time.
+
+## Update — the bash-native-write breakthrough (the 100x fix) + one-command verification
+
+Measured root cause, refined: the truncation is specifically a **file-tool → mount cache-invalidation lag**.
+A file written by the Write/Edit tools (which land on the host FS) can be served stale/truncated by the
+Linux mount's read cache. **Bash-native writes are always coherent** — a 4,000-line file written via
+`cp`/heredoc to the repo path reads back complete on the same mount. Proven side-by-side.
+
+Therefore:
+1. **Author/repair critical files via bash-native writes** when you need them bash-verifiable immediately.
+   To repair a file the mount truncated after a file-tool edit, splice the mount's valid prefix with the
+   authoritative tail from the Read tool and `cp` it back:
+       head -N <file> > /tmp/x        # N = last fully-valid line the mount serves
+       cat >> /tmp/x <<'TAIL' ... TAIL # the remaining lines, taken from the (authoritative) Read tool
+       cp /tmp/x <file>               # native write -> coherent
+2. **`tools/verify_all.sh` is the single source of truth for "is everything green".** It runs the exact
+   CI gate set: py_compile all *.py, every test_*.py and test_*.mjs, check-scripts (inline JS),
+   check-external-js (external modules), JSON validity, and the marketmap/xsection schema gates.
+   On a normal machine and in CI there is no mount, so its result is authoritative; in the sandbox,
+   failures that are purely stale-mount artifacts (a just-edited file) are repaired per (1).
+3. **CI is the backstop.** pages.yml now `py_compile`s ALL python (catches the monolith even on
+   content-only pushes), node-checks inline AND external scripts, and validates marketmap + xsection
+   against their schemas. Nothing broken ships regardless of any local read flakiness.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for universe_fetch.py (pure parse/merge logic — no network). Run: python3 test_universe_fetch.py"""
+"""Tests for universe_fetch.py (pure parse/merge/union logic — no network). Run: python3 test_universe_fetch.py"""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import universe_fetch as U
@@ -9,47 +9,69 @@ def ok(n, c, d=""):
     print(("  PASS  " if c else "  FAIL  ") + n + ("" if c else "  -> " + str(d)))
     if not c: F.append(n)
 
-# --- screener parse: keep Nasdaq common stocks; drop ETFs/funds, non-Nasdaq, and non-alpha tickers ---
+# --- screener parse ---
 rows = [
-    {"symbol": "AAPL", "companyName": "Apple Inc.", "sector": "Technology", "exchangeShortName": "NASDAQ", "marketCap": 3e12},
-    {"symbol": "QQQ", "companyName": "Invesco QQQ", "sector": "", "exchangeShortName": "NASDAQ", "isEtf": True},
-    {"symbol": "JPM", "companyName": "JPMorgan", "sector": "Financial Services", "exchangeShortName": "NYSE"},  # not Nasdaq
-    {"symbol": "ABCDW", "companyName": "Warrant Co WT", "sector": "Tech", "exchangeShortName": "NASDAQ"},        # 5-letter warrant? still alpha<=5 -> kept (acceptable); ensure no crash
-    {"symbol": "BRK.B", "companyName": "Berkshire", "sector": "Financial Services", "exchangeShortName": "NASDAQ"},  # dotted -> dropped
+    {"symbol": "AAPL", "companyName": "Apple Inc.", "sector": "Technology", "exchangeShortName": "NASDAQ"},
+    {"symbol": "QQQ", "companyName": "Invesco QQQ", "exchangeShortName": "NASDAQ", "isEtf": True},
+    {"symbol": "JPM", "companyName": "JPMorgan", "sector": "Financial Services", "exchangeShortName": "NYSE"},
+    {"symbol": "BRK.B", "companyName": "Berkshire", "exchangeShortName": "NASDAQ"},
 ]
-p = U.parse_screener(rows)
-syms = [r[0] for r in p]
+p = U.parse_screener(rows); syms = [r[0] for r in p]
 ok("screener keeps AAPL", "AAPL" in syms)
-ok("screener drops ETF QQQ", "QQQ" not in syms)
-ok("screener drops non-Nasdaq JPM", "JPM" not in syms)
-ok("screener drops dotted BRK.B", "BRK.B" not in syms)
-ok("screener maps sector to canonical", dict((r[0], r[2]) for r in p).get("AAPL") == "Technology")
-ok("screener tags ND code", all(r[3] == "ND" for r in p))
+ok("screener drops ETF/NYSE/dotted", not any(s in syms for s in ("QQQ", "JPM", "BRK.B")))
+ok("screener maps sector", dict((r[0], r[2]) for r in p).get("AAPL") == "Technology")
 
-# --- nasdaqlisted parse: drop test issues + ETFs ---
-txt = "Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares\n" \
-      "AAPL|Apple Inc. - Common Stock|Q|N|N|100|N|N\n" \
-      "ZTEST|Nasdaq Test - Common|Q|Y|N|100|N|N\n" \
-      "ONEQ|Fidelity Nasdaq ETF|G|N|N|100|Y|N\n" \
-      "MSFT|Microsoft Corp - Common|Q|N|N|100|N|N\n" \
-      "File Creation Time: 0101\n"
-q = U.parse_nasdaqlisted(txt); qs = [r[0] for r in q]
-ok("nasdaqlisted keeps AAPL/MSFT", "AAPL" in qs and "MSFT" in qs)
-ok("nasdaqlisted drops test issue", "ZTEST" not in qs)
-ok("nasdaqlisted drops ETF", "ONEQ" not in qs)
-ok("nasdaqlisted ignores footer", "File" not in "".join(qs))
+# --- constituent parse (S&P 500 / Dow / Nasdaq-100) ---
+c = U.parse_constituent([{"symbol": "JPM", "name": "JPMorgan", "sector": "Financial Services"},
+                         {"symbol": "XOM", "name": "Exxon", "sector": "Energy"}], "S")
+ok("constituent parses with tag", c == [("JPM", "JPMorgan", "Financials", "S"), ("XOM", "Exxon", "Energy", "S")])
 
-# --- dow merge: tag existing, append missing ---
-base = [("AAPL", "Apple", "Technology", "ND"), ("FOO", "Foo", "Tech", "ND")]
-m = U._merge_dow(base, ["AAPL", "BA"])
-md = dict((r[0], r[3]) for r in m)
-ok("dow tags existing AAPL as ND D", "D" in md.get("AAPL", "").split())
-ok("dow appends missing BA", "BA" in md and "D" in md["BA"].split())
-ok("non-dow FOO unchanged", md.get("FOO") == "ND")
+# --- IWM (Russell 2000) CSV parse ---
+iwm = ("\n\nFund Holdings as of,\nTicker,Name,Sector,Asset Class,Market Value\n"
+       "ABCD,Some Small Co,Industrials,Equity,1000\n"
+       "WXYZ,Another Co,Health Care,Equity,2000\n")
+ri = U.parse_iwm_csv(iwm); rs = [r[0] for r in ri]
+ok("IWM parses Russell tickers", "ABCD" in rs and "WXYZ" in rs)
+ok("IWM tags R + maps sector", all(r[3] == "R" for r in ri) and dict((r[0], r[2]) for r in ri)["WXYZ"] == "Health Care")
+
+# --- nasdaqlisted fallback parse ---
+txt = ("Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares\n"
+       "AAPL|Apple - Common|Q|N|N|100|N|N\nZTEST|Test|Q|Y|N|100|N|N\nONEQ|ETF|G|N|N|100|Y|N\n")
+q = [r[0] for r in U.parse_nasdaqlisted(txt)]
+ok("nasdaqlisted keeps AAPL, drops test/ETF", "AAPL" in q and "ZTEST" not in q and "ONEQ" not in q)
+
+# --- four-index UNION with membership tags (stub the network fetchers) ---
+def _stub_const(session, key, base, stable_ep, v3_ep, tag):
+    data = {
+        "S": [("AAPL", "Apple", "Technology", "S"), ("JPM", "JPMorgan", "Financials", "S"), ("XOM", "Exxon", "Energy", "S")],
+        "D": [("AAPL", "Apple", "Technology", "D"), ("JPM", "JPMorgan", "Financials", "D"), ("CAT", "Caterpillar", "Industrials", "D")],
+        "ND": [("AAPL", "Apple", "Technology", "ND")],
+    }
+    return data.get(tag, [])
+_orig = (U.fetch_constituent, U.fetch_screener_rows, U.fetch_iwm_holdings, U.fetch_nasdaqtrader)
+U.fetch_constituent = _stub_const
+U.fetch_screener_rows = lambda *a, **k: [{"symbol": "AAPL", "companyName": "Apple", "sector": "Technology", "exchangeShortName": "NASDAQ"},
+                                         {"symbol": "TSLA", "companyName": "Tesla", "sector": "Consumer Cyclical", "exchangeShortName": "NASDAQ"}]
+U.fetch_iwm_holdings = lambda *a, **k: [("SMLL", "Small Co", "Industrials", "R"), ("TINY", "Tiny Co", "Energy", "R")]
+U.fetch_nasdaqtrader = lambda *a, **k: []
+try:
+    u = U.fetch_universe("all", key="X", indexes=["sp500", "nasdaq", "dow", "russell2000"])
+    tags = dict((r[0], set(r[3].split())) for r in u)
+    ok("union includes NYSE S&P member JPM", "JPM" in tags and tags["JPM"] == {"S", "D"})
+    ok("AAPL accumulates S+ND+D", tags.get("AAPL") == {"S", "ND", "D"})
+    ok("Nasdaq-only TSLA tagged ND", tags.get("TSLA") == {"ND"})
+    ok("Russell SMLL/TINY tagged R", tags.get("SMLL") == {"R"} and tags.get("TINY") == {"R"})
+    ok("Exxon (S&P/NYSE) present", "XOM" in tags)
+    ok("all four indices represented", all(any(t in s for s in tags.values()) for t in ("S", "ND", "D", "R")))
+    # limit keeps S&P + Dow, trims Russell tail
+    u2 = U.fetch_universe("all", key="X", indexes=["sp500", "nasdaq", "dow", "russell2000"], limit=4)
+    t2 = dict((r[0], set(r[3].split())) for r in u2)
+    ok("limit keeps all S&P+Dow members", all(s in t2 for s in ("JPM", "XOM", "CAT")))
+finally:
+    U.fetch_constituent, U.fetch_screener_rows, U.fetch_iwm_holdings, U.fetch_nasdaqtrader = _orig
 
 # --- mode gating ---
-ok("mode seed -> None", U.fetch_universe("seed", key=None, session=None) is None)
-ok("mode unknown -> None", U.fetch_universe("sp500", key=None, session=None) is None)
+ok("mode seed -> None", U.fetch_universe("seed", key=None) is None)
 
 print("\n" + ("ALL UNIVERSE-FETCH TESTS PASSED" if not F else "%d FAILED: %s" % (len(F), F)))
 raise SystemExit(1 if F else 0)

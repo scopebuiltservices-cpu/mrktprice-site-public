@@ -27,5 +27,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Install schema validators (enables the declarative JSON Schema gate)
+        run: python -m pip install --quiet jsonschema check-jsonschema
       - name: Full CI-equivalent verification (py_compile + all tests + script/budget/schema gates)
         run: bash tools/verify_all.sh
+      - name: Coverage regression vs base branch (PR only; git baseline, no artifact plumbing)
+        if: github.event_name == 'pull_request'
+        run: |
+          HL="$(find . -name health_log.jsonl | head -1)"
+          if [ -n "$HL" ]; then
+            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}" || true
+            git show "origin/${{ github.base_ref }}:$HL" > /tmp/base_health.jsonl 2>/dev/null || : > /tmp/base_health.jsonl
+            python tools/market_map/coverage_regression.py "$HL" --baseline /tmp/base_health.jsonl --md >> "$GITHUB_STEP_SUMMARY"
+            python tools/market_map/coverage_regression.py "$HL" --baseline /tmp/base_health.jsonl
+          else echo "::notice::no health_log.jsonl to compare"; fi

@@ -609,6 +609,11 @@ def build(names,mkt,ff,macro=None):
     cal=calibrate_touch(_calib)                    # idea 1: reliability backtest of the touch model
     return {"asof":dt.date.today().isoformat(),"source":"SAMPLE (synthetic, illustrative) — replaced by the nightly job","calibration":cal,
             "indices":{"DOW":"Dow Jones 30","NDX":"Nasdaq-100","SPX":"S&P 500","RUT":"Russell 2000"},"sectors":SECTORS,"factors":FACTORS,"macrof":["MKT"]+MFAC,
+            # factorMoves: latest move of EVERY macro driver (DXY, VIX, nominal RATE + the full commodity panel),
+            # in the SAME units the per-name Lasso betas (n['mb']) were fit on. The board dots mb·factorMoves over
+            # the COMPLETE complex (macro_tilt.js) so every commodity enters the rank, not just OIL. Real-rate curve
+            # moves ride in snap['realCurve'] (dL/dS/dC) and pair with n['rate'] duration betas.
+            "factorMoves":{k:(round(macro[k][-1],6) if (macro.get(k) and len(macro[k])) else 0.0) for k in MFAC},
             "names":names,"sectorCorr":{"order":osec,"m":M},"factorCov":_fcov}
 
 # ---------- real fetch (nightly Action only; needs network) ------------------------------------

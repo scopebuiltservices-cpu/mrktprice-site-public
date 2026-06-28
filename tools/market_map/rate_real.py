@@ -7,7 +7,7 @@ and drive per-name exposure off the daily CHANGES dL,dS,dC. Per-name duration be
 OLS  r_i = a + bMKT*rmkt + bL*dL + bS*dS + bC*dC + e  with t-stats, then a curve-aware classification.
 fetch is FRED-gated and self-skips to None without a key. Research only.
 """
-import os
+import os, math
 
 
 def lsc(y5, y10, y30):
@@ -82,13 +82,25 @@ def classify(d, tmin=2.0):
     return "rate-agnostic"
 
 
-def fetch_real_curve_history(days=160, sess=None):
-    """FRED real CMT history (DFII5/DFII10/DFII30). Returns {dates,y5,y10,y30} aligned, or None.
-    Self-skips without FRED_API_KEY. The 2y-real point is intentionally absent (not published)."""
+def _valid_curve(hist):
+    """Reject an implausible/short curve so a bad pull can't poison the rate layer. Treasury/FRED real
+    constant-maturity yields are reported in PERCENT; a sane band is [-4, 9] %. Need >=30 aligned points."""
+    if not hist or len(hist.get("dates", [])) < 30:
+        return False
+    for k in ("y5", "y10", "y30"):
+        for v in hist.get(k, []):
+            if v is None or not math.isfinite(v) or v < -4.0 or v > 9.0:
+                return False
+    return True
+
+
+def _fred_api(days, sess):
+    """FRED real CMT history via the keyed JSON API (DFII5/DFII10/DFII30)."""
     key = os.environ.get("FRED_API_KEY", "").strip()
-    if not key: return None
+    if not key:
+        return None
     try:
-        import requests, datetime, io, csv
+        import requests, datetime
     except Exception:
         return None
     end = datetime.date.today(); start = end - datetime.timedelta(days=days + 40)
@@ -97,19 +109,127 @@ def fetch_real_curve_history(days=160, sess=None):
         p = {"series_id": sid, "api_key": key, "file_type": "json",
              "observation_start": start.isoformat(), "observation_end": end.isoformat()}
         try:
-            r = (sess or requests).get(url, params=p, timeout=30); j = r.json()
-            out = {}
+            r = (sess or requests).get(url, params=p, timeout=30); j = r.json(); out = {}
             for o in (j.get("observations") or []):
-                v = o.get("value")
-                try: out[o["date"]] = float(v)
+                try: out[o["date"]] = float(o.get("value"))
                 except Exception: pass
             return out
         except Exception:
             return {}
     a, b, c = series("DFII5"), series("DFII10"), series("DFII30")
     common = sorted(set(a) & set(b) & set(c))
-    if len(common) < 30: return None
-    return {"dates": common, "y5": [a[d] for d in common], "y10": [b[d] for d in common], "y30": [c[d] for d in common]}
+    if len(common) < 30:
+        return None
+    return {"dates": common, "y5": [a[d] for d in common], "y10": [b[d] for d in common],
+            "y30": [c[d] for d in common], "source": "FRED API (DFII5/10/30)"}
+
+
+def _parse_fred_csv(text):
+    """fredgraph.csv -> {date:{DFII5,DFII10,DFII30}} keeping only fully-populated rows ('.' = missing)."""
+    import csv, io
+    out = {}; rdr = csv.reader(io.StringIO(text)); hdr = next(rdr, None)
+    if not hdr:
+        return out
+    idx = {h.strip().upper(): i for i, h in enumerate(hdr)}; di = idx.get("DATE", 0)
+    for row in rdr:
+        if not row or len(row) <= di:
+            continue
+        d = row[di].strip(); rec = {}
+        for sid in ("DFII5", "DFII10", "DFII30"):
+            i = idx.get(sid)
+            if i is not None and i < len(row):
+                try: rec[sid] = float(row[i])
+                except Exception: pass
+        if d and len(rec) == 3:
+            out[d] = rec
+    return out
+
+
+def fetch_real_curve_csv(days=160, sess=None):
+    """KEYLESS official St. Louis Fed CSV (fredgraph.csv) — works with no API key."""
+    try:
+        import requests, datetime
+    except Exception:
+        return None
+    end = datetime.date.today(); start = end - datetime.timedelta(days=days + 40)
+    url = ("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFII5,DFII10,DFII30"
+           "&cosd=%s&coed=%s" % (start.isoformat(), end.isoformat()))
+    try:
+        r = (sess or requests).get(url, timeout=30)
+        if r.status_code != 200:
+            return None
+        rows = _parse_fred_csv(r.text)
+    except Exception:
+        return None
+    common = sorted(rows)
+    if len(common) < 30:
+        return None
+    return {"dates": common, "y5": [rows[d]["DFII5"] for d in common], "y10": [rows[d]["DFII10"] for d in common],
+            "y30": [rows[d]["DFII30"] for d in common], "source": "FRED CSV keyless (DFII5/10/30)"}
+
+
+def _parse_treasury_real(text):
+    """US Treasury daily REAL par yield CSV -> {date:{5,10,30}} (columns like '5 YR','10 YR','30 YR')."""
+    import csv, io
+    out = {}; rdr = csv.reader(io.StringIO(text)); hdr = next(rdr, None)
+    if not hdr:
+        return out
+    cols = {h.strip().upper(): i for i, h in enumerate(hdr)}; di = cols.get("DATE", 0)
+    def col(*names):
+        for nm in names:
+            if nm in cols: return cols[nm]
+        return None
+    i5 = col("5 YR", "5YR"); i10 = col("10 YR", "10YR"); i30 = col("30 YR", "30YR")
+    if None in (i5, i10, i30):
+        return out
+    for row in rdr:
+        if not row or len(row) <= max(i5, i10, i30):
+            continue
+        try:
+            out[row[di].strip()] = {5: float(row[i5]), 10: float(row[i10]), 30: float(row[i30])}
+        except Exception:
+            pass
+    return out
+
+
+def fetch_real_curve_treasury(days=160, sess=None):
+    """Authoritative US Treasury daily REAL par yield curve (5/10/30) — the PDF's cited primary source."""
+    try:
+        import requests, datetime
+    except Exception:
+        return None
+    yr = datetime.date.today().year
+    base = ("https://home.treasury.gov/resource-center/data-chart-center/interest-rates/"
+            "daily-treasury-rates.csv/%d/all?type=daily_treasury_real_yield_curve&field_tdr_date_value=%d")
+    rows = {}
+    for y in (yr, yr - 1):
+        try:
+            r = (sess or requests).get(base % (y, y), timeout=30)
+            if r.status_code == 200:
+                rows.update(_parse_treasury_real(r.text))
+        except Exception:
+            pass
+    common = sorted(rows)
+    if len(common) < 30:
+        return None
+    common = common[-(days + 40):]
+    return {"dates": common, "y5": [rows[d][5] for d in common], "y10": [rows[d][10] for d in common],
+            "y30": [rows[d][30] for d in common], "source": "US Treasury real par curve (5/10/30)"}
+
+
+def fetch_real_curve_history(days=160, sess=None):
+    """CREDIBLE multi-source real curve with graceful failover:
+        FRED API (keyed) -> FRED CSV (keyless) -> US Treasury (authoritative).
+    Each candidate is validated (finite, plausible yield band, >=30 aligned points) before acceptance, and
+    the winner carries hist['source']. Returns None only if every official source fails — never a bad curve."""
+    for fn in (_fred_api, fetch_real_curve_csv, fetch_real_curve_treasury):
+        try:
+            h = fn(days, sess)
+        except Exception:
+            h = None
+        if h and _valid_curve(h):
+            return h
+    return None
 
 
 def curve_state(hist):

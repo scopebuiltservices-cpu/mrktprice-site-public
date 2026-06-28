@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mrktprice.com/xsection.schema.json",
+  "title": "MrktPrice cross-section payload (xsection.json)",
+  "description": "Contract for the nightly full-universe metric matrix consumed by the terminal's cross-sectional panel. Mirrors the marketmap.schema.json discipline so the producer can be validated and the consumer can version-gate.",
+  "type": "object",
+  "required": ["asof", "tickers"],
+  "additionalProperties": true,
+  "properties": {
+    "asof": { "type": "string", "description": "ISO build date (YYYY-MM-DD)." },
+    "schemaVersion": { "type": "string", "default": "1.0" },
+    "source": { "type": "string" },
+    "tickers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Universe order; row/column index for the matrices below."
+    },
+    "corr": {
+      "type": "array",
+      "description": "Symmetric pairwise return-correlation matrix, len(tickers) x len(tickers), entries in [-1,1].",
+      "items": { "type": "array", "items": { "type": ["number", "null"], "minimum": -1, "maximum": 1 } }
+    },
+    "leadlag": {
+      "type": "array",
+      "description": "Optional lead-lag matrix (cross-correlation at the best lag) aligned to tickers.",
+      "items": { "type": "array", "items": { "type": ["number", "null"] } }
+    },
+    "rs": {
+      "type": "object",
+      "description": "Relative-strength rank per ticker (percentile 0..100).",
+      "additionalProperties": { "type": ["number", "null"], "minimum": 0, "maximum": 100 }
+    },
+    "beta": {
+      "type": "object",
+      "description": "Rolling market beta per ticker.",
+      "additionalProperties": { "type": ["number", "null"], "minimum": -15, "maximum": 15 }
+    },
+    "rateRegime": {
+      "type": "object",
+      "description": "Optional rate-regime context used when computing the matrices.",
+      "additionalProperties": true
+    }
+  }
+}

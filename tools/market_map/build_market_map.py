@@ -1847,6 +1847,36 @@ def main():
                 snap["dataHealth"]["driftCensus"] = _drift.census(_dout)
     except Exception as _de:
         import sys as _s4; _s4.stderr.write("::warning::drift layer skipped: %s\n" % str(_de)[:140])
+    # ---- OUTPUT INTEGRITY: a PUBLIC per-node data-quality verdict (n['dq']) the board can act on, a
+    #      bounded-output sanitizer (broken/degenerate equation outputs -> null + count), and a run-over-run
+    #      health/credibility trend (health_log.jsonl). Honest degradation at the output boundary. ----
+    try:
+        import os as _o5, json as _j5, data_quality as _dqm
+        _st5=_o5.path.dirname(_o5.path.abspath(__file__))
+        _sani=0
+        _BOUNDS={"beta":(-15.0,15.0),"maxDD":(-1.0,0.0),"dvol":(0.0,6.0),"hv":(0.0,6.0),"rvol":(0.0,500.0),"atr":(0.0,1e7)}
+        for _n in (snap.get("names") or []):
+            _t=(_n.get("t") or "").upper(); _cl=_PRECM.get(_t)
+            if _cl and len(_cl)>=20:
+                try: _n["dq"]=_dqm.series_health(_cl, None)["verdict"]
+                except Exception: pass
+            for _k,(_lo,_hi) in _BOUNDS.items():
+                if _n.get(_k) is not None:
+                    _gv,_gr=_dqm.guard(_n.get(_k),_lo,_hi,_k)
+                    if _gv is None: _n[_k]=None; _sani+=1
+        if isinstance(snap.get("dataHealth"),dict): snap["dataHealth"]["sanitizedFields"]=_sani
+        try:
+            _dh5=snap.get("dataHealth") or {}; _dq5=_dh5.get("dataQuality") or {}; _drc5=_dh5.get("driftCensus") or {}
+            _hl={"asof":snap.get("asof"),"source":(snap.get("source") or "")[:70],
+                 "dataQuality":{_kk:_dq5.get(_kk) for _kk in ("clean","degraded","reject")} if _dq5 else None,
+                 "priceSrc":_dh5.get("priceSrc"),"fmpLastOk":_dh5.get("fmpLastOk"),"fmpDegraded":_dh5.get("fmpDegraded"),
+                 "rateSource":(snap.get("realCurve") or {}).get("source"),
+                 "driftCensus":{_kk:_drc5.get(_kk) for _kk in ("stable","moderate","significant","baseline")} if _drc5 else None,
+                 "sanitizedFields":_sani}
+            with open(_o5.path.join(_st5,"health_log.jsonl"),"a",encoding="utf-8") as _f5: _f5.write(_j5.dumps(_hl)+"\n")
+        except Exception: pass
+    except Exception as _se:
+        import sys as _s5; _s5.stderr.write("::warning::output-integrity layer skipped: %s\n"%str(_se)[:140])
     snap.setdefault("schemaVersion","1.0")                                 # producer-stamped contract version (consumer version-gates)
     snap=_finite(snap)
     json.dump(snap,open(a.out,"w"),separators=(",",":"),allow_nan=False)   # allow_nan=False = hard guard: never emit invalid JSON

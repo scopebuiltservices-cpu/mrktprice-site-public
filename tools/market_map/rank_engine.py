@@ -28,7 +28,9 @@ Pieces (each defensible, each unit-tested):
 import json, math, os
 
 __all__ = ["grinold_kahn", "alpha_forecast_se", "conviction_sigma", "lcb_score", "deflated_conviction",
-           "stein_shrink", "eb_tau2", "eb_posterior", "ewma_score", "composite_rank_score"]
+           "stein_shrink", "eb_tau2", "eb_posterior", "ewma_score", "composite_rank_score",
+           "effective_breadth", "enb_entropy", "trading_cost", "net_alpha", "cvar_es", "tail_adjust",
+           "decay_alpha", "transition_gate", "ledoit_wolf", "deflated_sharpe"]
 
 
 def grinold_kahn(ic, sigma, z):
@@ -143,6 +145,153 @@ def composite_rank_score(tot, z, base_sigma, k=0.5, n_tests=None, prev=None, lam
     return ewma_score(prev, s, lam) if (prev is not None) else s
 
 
+# ============================================================================
+# Extensions from the "Omitted Strategies" review — each a verified, self-contained primitive.
+# ============================================================================
+
+def effective_breadth(n, avg_corr):
+    """#11 dependence-aware multiplicity: effective number of INDEPENDENT bets under equicorrelation
+    rho: N_eff = n / (1 + (n-1)*rho). Correlated names overstate n, so the multiplicity bar should use
+    sqrt(2 ln N_eff), not sqrt(2 ln n). rho clamped [0,1); rho=0 -> n, rho->1 -> 1."""
+    if n is None or n < 1:
+        return 1.0
+    rho = 0.0 if (avg_corr is None or avg_corr != avg_corr) else max(0.0, min(0.999, avg_corr))
+    return max(1.0, n / (1.0 + (n - 1) * rho))
+
+
+def enb_entropy(spectrum):
+    """Meucci Effective Number of Bets via entropy of a normalized non-negative spectrum (PCA
+    eigenvalues / weights): ENB = exp(-sum p ln p), p = s/sum(s). Range [1, len]."""
+    s = [max(0.0, x) for x in spectrum if x == x]
+    tot = sum(s)
+    if tot <= 0 or not s:
+        return 1.0
+    p = [x / tot for x in s if x > 0]
+    h = -sum(pi * math.log(pi) for pi in p)
+    return math.exp(h)
+
+
+def trading_cost(vol_pct=None, fee_bps=2.0, half_spread_bps=None, participation=0.05, impact_coef=0.1):
+    """#4 round-trip trading cost in PERCENT: 2*(fee + half-spread) + sqrt-impact. half-spread proxies
+    from daily vol when not supplied (~5% of daily vol); impact = impact_coef*vol*sqrt(participation)
+    (square-root market-impact law). Accepts real bps spread / vol when available."""
+    fee = fee_bps / 100.0
+    hs = (half_spread_bps / 100.0) if half_spread_bps is not None else 0.05 * (vol_pct if (vol_pct and vol_pct == vol_pct) else 2.0)
+    v = vol_pct if (vol_pct and vol_pct == vol_pct) else 2.0
+    impact = impact_coef * v * math.sqrt(max(participation, 0.0))
+    return 2.0 * (fee + hs) + impact
+
+
+def net_alpha(mu, cost):
+    """#4 net-of-cost edge: move the edge toward 0 by the (positive) cost, on either side."""
+    if cost is None or cost < 0:
+        cost = 0.0
+    return (mu - cost) if mu >= 0 else (mu + cost)
+
+
+def cvar_es(returns, alpha=0.05):
+    """#14 historical Expected Shortfall (CVaR): mean of the worst alpha-tail of returns, returned as a
+    POSITIVE loss magnitude. None when too few points (<20)."""
+    r = sorted(x for x in returns if x == x)
+    if len(r) < 20:
+        return None
+    k = max(1, int(math.floor(alpha * len(r))))
+    tail = r[:k]
+    return abs(sum(tail) / len(tail))
+
+
+def tail_adjust(mu, es, lam=0.1):
+    """#14 haircut the edge for tail risk: move toward 0 by lam*ES (ES positive)."""
+    if es is None or es < 0:
+        return mu
+    return (mu - lam * es) if mu >= 0 else (mu + lam * es)
+
+
+def decay_alpha(mu, horizon, half_life):
+    """#16 exponential alpha decay over a holding horizon: mu * 0.5^(horizon/half_life)."""
+    if not half_life or half_life <= 0 or horizon is None or horizon < 0:
+        return mu
+    return mu * (0.5 ** (horizon / half_life))
+
+
+def transition_gate(prev, now, band):
+    """#5 turnover hysteresis: keep the prior ranking value unless the new one moves more than `band`
+    (cuts churn/turnover/tax friction). prev None -> now."""
+    if prev is None or prev != prev:
+        return now
+    if band is None or band < 0:
+        band = 0.0
+    return now if abs(now - prev) > band else prev
+
+
+def _lw_cov(Xc):
+    T = len(Xc); p = len(Xc[0]); S = [[0.0] * p for _ in range(p)]
+    for t in range(T):
+        x = Xc[t]
+        for i in range(p):
+            xi = x[i]; row = S[i]
+            for j in range(p):
+                row[j] += xi * x[j]
+    for i in range(p):
+        for j in range(p):
+            S[i][j] /= T
+    return S
+
+
+def ledoit_wolf(X):
+    """#6 Ledoit-Wolf (2004) linear shrinkage of the sample covariance to a scaled-identity target
+    F = m*I (m = average variance): Sigma* = delta*F + (1-delta)*S, delta = b^2/d^2 with d^2 the
+    dispersion of S from F and b^2 the estimation error (capped at d^2). Returns (delta, Sigma*).
+    X: T rows of p returns (demeaned internally). Stdlib-only, O(T*p^2)."""
+    T = len(X); p = len(X[0])
+    mean = [sum(X[t][j] for t in range(T)) / T for j in range(p)]
+    Xc = [[X[t][j] - mean[j] for j in range(p)] for t in range(T)]
+    S = _lw_cov(Xc)
+    m = sum(S[i][i] for i in range(p)) / p
+    d2 = sum((S[i][j] - (m if i == j else 0.0)) ** 2 for i in range(p) for j in range(p)) / p
+    bb = 0.0
+    for t in range(T):
+        x = Xc[t]
+        bb += sum((x[i] * x[j] - S[i][j]) ** 2 for i in range(p) for j in range(p))
+    bb = bb / (T * T) / p
+    b2 = min(bb, d2)
+    delta = max(0.0, min(1.0, (b2 / d2) if d2 > 0 else 0.0))
+    Sig = [[delta * (m if i == j else 0.0) + (1 - delta) * S[i][j] for j in range(p)] for i in range(p)]
+    return delta, Sig
+
+
+def _ncdf(x):
+    return 0.5 * math.erfc(-x / math.sqrt(2.0))
+
+
+def _nppf(pp):
+    """Acklam inverse-normal approximation (for the deflated-Sharpe selection threshold)."""
+    a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00]
+    b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01]
+    c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00]
+    d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00]
+    pl = 0.02425
+    if pp < pl:
+        q = math.sqrt(-2 * math.log(pp)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1)
+    if pp <= 1 - pl:
+        q = pp - 0.5; r = q * q; return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1)
+    q = math.sqrt(-2 * math.log(1 - pp)); return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1)
+
+
+def deflated_sharpe(sr, T, skew=0.0, kurt=3.0, n_trials=1):
+    """#2 Deflated Sharpe Ratio (Bailey & Lopez de Prado): probability the TRUE SR>0 after deflating
+    for selection over n_trials AND non-normal returns. var_sr=(1 - skew*sr + (kurt-1)/4*sr^2)/(T-1);
+    SR* = E[max] of n_trials null Sharpes. Use as a promotion gate (e.g. require DSR>=0.95)."""
+    if T < 3:
+        return None
+    var_sr = (1.0 - skew * sr + (kurt - 1.0) / 4.0 * sr * sr) / (T - 1)
+    sr_star = 0.0
+    if n_trials and n_trials >= 2:
+        g = 0.5772156649015329
+        sr_star = math.sqrt(max(var_sr, 0.0)) * ((1 - g) * _nppf(1 - 1.0 / n_trials) + g * _nppf(1 - 1.0 / (n_trials * math.e)))
+    return _ncdf((sr - sr_star) / math.sqrt(max(var_sr, 1e-12)))
+
+
 # ---- committed golden fixture (both languages lock to it) ----
 def gen_fixture():
     cases = [
@@ -170,9 +319,14 @@ def gen_fixture():
             "aFse": alpha_forecast_se(2.0, c["z"], 0.0, 10.0, n),     # leverage SE with z as a stand-in alpha
             "steinC": stein_shrink(c["tot"], c["se"], 3.0, center=1.0),
             "ebMu": eb["mu"], "ebSd": eb["sd"], "ebW": eb["w"],
+            "netAlpha": net_alpha(c["tot"], 1.0), "decayMu": decay_alpha(c["tot"], 5, 21),
+            "tailAdj": tail_adjust(c["tot"], 0.8, 0.1),
         })
-    return {"fixture_version": 3, "case": "rank-engine-core", "k": 0.5, "n_tests": n,
-            "ebCenter": eb_center, "ebTau2": eb_t2, "rows": out}
+    return {"fixture_version": 4, "case": "rank-engine-core", "k": 0.5, "n_tests": n,
+            "ebCenter": eb_center, "ebTau2": eb_t2,
+            "effBreadth": effective_breadth(n, 0.3), "enb": enb_entropy([4.0, 2.0, 1.0, 1.0, 0.5]),
+            "tradingCost": trading_cost(3.0), "dsr": deflated_sharpe(0.5, 250, 0.0, 3.0, n),
+            "rows": out}
 
 
 def main():

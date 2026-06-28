@@ -62,6 +62,32 @@ ok("eb posterior sd identity sd^2==w*se^2", close(_pc["sd"] ** 2, _pc["w"] * 0.5
 ok("eb posterior w in (0,1)", 0 < _pc["w"] < 1 and 0 < _pn["w"] < 1)
 ok("eb tiny se -> w~1 (no shrink)", R.eb_posterior(10.0, 1e-6, 2.0, 4.0)["w"] > 0.999)
 
+# "Omitted Strategies" extensions
+ok("effective_breadth rho=0 -> n", close(R.effective_breadth(150, 0.0), 150))
+ok("effective_breadth rho>0 -> <n,>1", 1 < R.effective_breadth(150, 0.3) < 150)
+ok("effective_breadth lowers the multiplicity bar", math.sqrt(2 * math.log(R.effective_breadth(150, 0.4))) < math.sqrt(2 * math.log(150)))
+ok("enb_entropy equal weights = k", close(R.enb_entropy([1, 1, 1, 1]), 4))
+ok("enb_entropy concentrated -> ~1", R.enb_entropy([100, 1, 1, 1]) < 1.6)
+ok("trading_cost positive", R.trading_cost(3.0) > 0)
+ok("net_alpha shrinks toward 0 both sides", R.net_alpha(6.0, 1.0) == 5.0 and R.net_alpha(-6.0, 1.0) == -5.0)
+import random as _r2
+_r2.seed(2)
+_rr = [_r2.gauss(0, 0.02) for _ in range(400)] + [-0.15, -0.12]
+_es = R.cvar_es(_rr, 0.05)
+ok("cvar_es positive loss", _es is not None and _es > 0)
+ok("tail_adjust haircuts the edge", R.tail_adjust(5.0, _es, 0.5) < 5.0)
+ok("decay_alpha half-life halves", close(R.decay_alpha(8.0, 10, 10), 4.0))
+ok("transition_gate hysteresis", R.transition_gate(5.0, 5.05, 0.1) == 5.0 and R.transition_gate(5.0, 5.5, 0.1) == 5.5)
+_r2.seed(7)
+_X = []
+for _ in range(18):
+    _fz = _r2.gauss(0, 1)
+    _X.append([0.55 * _fz + 0.83 * _r2.gauss(0, 1) for _ in range(12)])
+_d, _Sig = R.ledoit_wolf(_X)
+ok("ledoit_wolf delta in (0,1)", 0 < _d < 1)
+ok("deflated_sharpe deflates for trials (DSR<PSR)", R.deflated_sharpe(0.5, 250, 0, 3, 50) < R.deflated_sharpe(0.5, 250, 0, 3, 1))
+ok("deflated_sharpe decreasing in trials", R.deflated_sharpe(0.5, 250, 0, 3, 500) < R.deflated_sharpe(0.5, 250, 0, 3, 5))
+
 # golden lock
 GOLD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "rank_golden.json")
 if not os.path.exists(GOLD):
@@ -78,7 +104,13 @@ for row in g["rows"]:
     _eb = R.eb_posterior(row["tot"], row["se"], g["ebCenter"], g["ebTau2"])
     if not (close(_eb["mu"], row["ebMu"]) and close(_eb["sd"], row["ebSd"]) and close(_eb["w"], row["ebW"])):
         allok = False
+    if not (close(R.net_alpha(row["tot"], 1.0), row["netAlpha"]) and close(R.decay_alpha(row["tot"], 5, 21), row["decayMu"])
+            and close(R.tail_adjust(row["tot"], 0.8, 0.1), row["tailAdj"])):
+        allok = False
 if not close(R.eb_tau2([r["tot"] for r in g["rows"]], [r["se"] for r in g["rows"]]), g["ebTau2"]):
+    allok = False
+if not (close(R.effective_breadth(g["n_tests"], 0.3), g["effBreadth"]) and close(R.enb_entropy([4.0, 2.0, 1.0, 1.0, 0.5]), g["enb"])
+        and close(R.trading_cost(3.0), g["tradingCost"]) and close(R.deflated_sharpe(0.5, 250, 0.0, 3.0, g["n_tests"]), g["dsr"])):
     allok = False
 ok("golden fixture reproduced", allok)
 

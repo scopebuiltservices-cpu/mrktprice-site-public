@@ -162,37 +162,58 @@
   function dkwBand(n, alpha){ alpha=alpha||0.05; return n>0 ? Math.sqrt(Math.log(2/alpha)/(2*n)) : null; }
   function _mean(a){ return a.length? a.reduce(function(s,x){return s+x;},0)/a.length : 0; }
   function _var(a){ if(a.length<2) return 0; var m=_mean(a); return a.reduce(function(s,x){return s+(x-m)*(x-m);},0)/(a.length-1); }
+  function quantile(xs, q){
+    var s=xs.slice().sort(function(a,b){return a-b;}), n=s.length;
+    if(!n) return 0; if(n===1) return s[0];
+    var pos=q*(n-1), lo=Math.floor(pos), hi=Math.ceil(pos);
+    if(lo===hi) return s[lo];
+    return s[lo]+(s[hi]-s[lo])*(pos-lo);
+  }
+  // Studentized ASYMMETRIC split-conformal calibration with an H-EMBARGO between calibration and
+  // test folds. 1:1 mirror of tools/market_map/lineage.py calibrate_horizon (acceptance criteria #1-#10).
   function calibrateHorizon(returns, nSteps, regimes, window, alpha){
     window = window||26; alpha = (alpha==null)?0.10:alpha;
     var r = returns.filter(function(v){return v===v;}), T=r.length, n=Math.max(1, nSteps|0);
     var z=1.6448536269514722;
-    if (T < window+n+5) return null;
-    var covs=[],crps=[],isc=[],pits=[],nonconf=[],regCov={};
+    if (T < window+3*n+20) return null;
+    var r3=function(x){return Math.round(x*1000)/1000;}, r4=function(x){return Math.round(x*1e4)/1e4;}, r6=function(x){return Math.round(x*1e6)/1e6;};
+    var samples=[];
     for (var i=window;i<=T-n;i++){
       var win=r.slice(i-window,i), mu=_mean(win), v=_var(win);
       var muN=n*mu, sigN=Math.sqrt(Math.max(n*v,1e-12)), y=0;
       for (var t2=i;t2<i+n;t2++) y+=r[t2];
-      var lo=muN-z*sigN, hi=muN+z*sigN, c=(lo<=y&&y<=hi)?1:0;
-      covs.push(c); crps.push(crpsGaussian(y,muN,sigN)); isc.push(intervalScore(y,lo,hi,alpha));
-      pits.push(normCdf((y-muN)/sigN)); nonconf.push(Math.max(lo-y,y-hi,0));
-      if (regimes && i<regimes.length){ (regCov[regimes[i]]=regCov[regimes[i]]||[]).push(c); }
+      var rg=(regimes && i<regimes.length)?regimes[i]:null;
+      samples.push([i,muN,sigN,y,rg]);
     }
-    var m=covs.length; if(!m) return null;
-    var k=covs.reduce(function(s,x){return s+x;},0), w=wilsonInterval(k,m), pad=conformalPad(nonconf,alpha), kp=0;
-    for (i=window;i<=T-n;i++){
-      var win2=r.slice(i-window,i), mu2=_mean(win2), v2=_var(win2);
-      var muN2=n*mu2, sigN2=Math.sqrt(Math.max(n*v2,1e-12)), y2=0;
-      for (t2=i;t2<i+n;t2++) y2+=r[t2];
-      if (muN2-z*sigN2-pad<=y2 && y2<=muN2+z*sigN2+pad) kp++;
-    }
-    var byReg={}; Object.keys(regCov).forEach(function(rg){ var cs=regCov[rg]; if(cs.length>=15) byReg[rg]={n:cs.length, coverage:Math.round(_mean(cs)*1000)/1000}; });
-    var ks=pitKs(pits);
-    return { n:m, nSteps:n, coverage:Math.round(k/m*1000)/1000, wilsonLo:Math.round(w[0]*1000)/1000,
-      wilsonHi:Math.round(w[1]*1000)/1000, target:Math.round((1-alpha)*1000)/1000,
-      crps:crps.length?_mean(crps):0, intervalScore:_mean(isc),
-      pitKS:ks.D!=null?Math.round(ks.D*1000)/1000:null, pitUniformP:ks.p!=null?Math.round(ks.p*1000)/1000:null,
-      conformalPad:pad, coveragePadded:Math.round(kp/m*1000)/1000, dkw:dkwBand(m), byRegime:byReg,
-      calibrated: Math.abs(k/m-(1-alpha))<=0.05 };
+    var M=samples.length; if(M<30) return null;
+    var cut=Math.floor(M*0.6);
+    var cal=samples.slice(0,Math.max(1,cut-n)), test=samples.slice(cut+n);
+    if(cal.length<15 || test.length<15) return null;
+    var embargoGap=test[0][0]-cal[cal.length-1][0];
+    var eCal=cal.map(function(s){return (s[3]-s[1])/s[2];});
+    var qLo=quantile(eCal,alpha/2), qHi=quantile(eCal,1-alpha/2);
+    var qSym=quantile(eCal.map(function(x){return Math.abs(x);}),1-alpha);
+    var covA=0,covS=0,covG=0,widths=[],crps=[],isc=[],pits=[],regCov={};
+    test.forEach(function(s){
+      var muN=s[1],sigN=s[2],y=s[3],rg=s[4];
+      var loA=muN+qLo*sigN, hiA=muN+qHi*sigN, cA=(loA<=y&&y<=hiA)?1:0; covA+=cA;
+      var loS=muN-qSym*sigN, hiS=muN+qSym*sigN; covS+=(loS<=y&&y<=hiS)?1:0;
+      var loG=muN-z*sigN, hiG=muN+z*sigN; covG+=(loG<=y&&y<=hiG)?1:0;
+      widths.push(hiA-loA); crps.push(crpsGaussian(y,muN,sigN));
+      isc.push(intervalScore(y,loA,hiA,alpha)); pits.push(normCdf((y-muN)/sigN));
+      if(rg!=null){ (regCov[rg]=regCov[rg]||[]).push(cA); }
+    });
+    var mt=test.length, k=covA, w=wilsonInterval(k,mt);
+    var byReg={}; Object.keys(regCov).forEach(function(rg){ var cs=regCov[rg]; if(cs.length>=15) byReg[rg]={n:cs.length, coverage:r3(_mean(cs))}; });
+    var ks=pitKs(pits), dk=dkwBand(mt);
+    return { n:mt, nSteps:n, nCal:cal.length, embargo:n, embargoGap:embargoGap,
+      coverage:r3(k/mt), wilsonLo:r3(w[0]), wilsonHi:r3(w[1]),
+      coverageGaussian:r3(covG/mt), coverageSym:r3(covS/mt),
+      qLo:r4(qLo), qHi:r4(qHi), target:r3(1-alpha),
+      crps:r6(_mean(crps)), intervalScore:r6(_mean(isc)), widthMean:r6(_mean(widths)),
+      pitKS:ks.D!=null?r3(ks.D):null, pitUniformP:ks.p!=null?r3(ks.p):null,
+      dkw:dk!=null?r4(dk):null, byRegime:byReg,
+      calibrated: (w[0]<=(1-alpha) && (1-alpha)<=w[1]) };
   }
 
 

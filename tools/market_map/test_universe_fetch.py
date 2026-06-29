@@ -70,6 +70,31 @@ try:
 finally:
     U.fetch_constituent, U.fetch_screener_rows, U.fetch_iwm_holdings, U.fetch_nasdaqtrader = _orig
 
+# --- COLLAPSE GUARD: a Dow-only union (index sources down) substitutes the committed seed ---
+_seed_rows = [("AAA", "Alpha", "Technology", "S"), ("BBB", "Beta", "Energy", "S"),
+              ("CCC", "Gamma", "Financials", "S"), ("DDD", "Delta", "Health Care", "S"),
+              ("EEE", "Eps", "Industrials", "S"), ("FFF", "Phi", "Utilities", "S")]
+_orig2 = (U.fetch_constituent, U.fetch_screener_rows, U.fetch_iwm_holdings, U.fetch_nasdaqtrader, U.load_seed)
+U.fetch_constituent = lambda s, k, b, se, v3, tag: ([("AAPL", "Apple", "Unknown", "D")] if tag == "D" else [])
+U.fetch_screener_rows = lambda *a, **k: []
+U.fetch_iwm_holdings = lambda *a, **k: []
+U.fetch_nasdaqtrader = lambda *a, **k: []
+U.load_seed = lambda path=None: list(_seed_rows)
+try:
+    # floor default 60; the live union is 1 (Dow-only) -> seed substituted
+    u3 = U.fetch_universe("all", key="X", indexes=["sp500", "nasdaq", "dow", "russell2000"])
+    s3 = set(r[0] for r in u3)
+    ok("collapse -> seed substituted (size)", len(u3) >= len(_seed_rows))
+    ok("collapse -> seed names present", {"AAA", "FFF"} <= s3)
+    ok("collapse -> real Dow name preserved", "AAPL" in s3)
+    # a HEALTHY union (above floor) must NOT be replaced by the seed
+    U.fetch_screener_rows = lambda *a, **k: [{"symbol": "T%03d" % i, "companyName": "C%d" % i,
+                              "sector": "Technology", "exchangeShortName": "NASDAQ"} for i in range(80)]
+    u4 = U.fetch_universe("all", key="X", indexes=["nasdaq"])
+    ok("healthy union NOT seed-replaced", len(u4) >= 80 and "AAA" not in set(r[0] for r in u4))
+finally:
+    U.fetch_constituent, U.fetch_screener_rows, U.fetch_iwm_holdings, U.fetch_nasdaqtrader, U.load_seed = _orig2
+
 # --- mode gating ---
 ok("mode seed -> None", U.fetch_universe("seed", key=None) is None)
 

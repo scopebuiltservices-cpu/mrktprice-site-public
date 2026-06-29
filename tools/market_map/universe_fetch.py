@@ -23,7 +23,14 @@ Env:
   UNIVERSE_LIMIT    optional int cap (0/unset = the full union; S&P + Dow members are always kept)
   DOW30             optional comma-separated Dow override
 """
-import os, sys
+import os, sys, json
+
+# Minimum equity count below which the live index fetch is treated as COLLAPSED (e.g. only the Dow-30
+# hardcoded fallback survived a network/FMP outage). When tripped, fetch_universe substitutes the committed
+# full-universe seed so the build never silently shrinks to ~30 names (which empties the sector grid).
+MIN_UNIVERSE_DEFAULT = 60
+_SEED_PATHS = ("data/universe_seed.json", "../../data/universe_seed.json",
+               os.path.join(os.environ.get("GITHUB_WORKSPACE", ""), "data", "universe_seed.json"))
 
 DOW30_DEFAULT = ["AAPL", "AMGN", "AMZN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS",
                  "GS", "HD", "HON", "IBM", "JNJ", "JPM", "KO", "MCD", "MMM", "MRK",
@@ -48,6 +55,27 @@ _SECTOR_MAP = {
 
 def _norm_sector(s):
     return _SECTOR_MAP.get((s or "").strip(), (s or "").strip() or "Unknown")
+
+
+def load_seed(path=None):
+    """Load the committed full-universe seed -> [(ticker, name, sector, code)], or [] if absent/unreadable.
+    The seed decouples the fallback universe from inline code so it can be refreshed without a code edit."""
+    paths = ([path] if path else []) + list(_SEED_PATHS)
+    for p in paths:
+        if not (p and os.path.exists(p)):
+            continue
+        try:
+            d = json.load(open(p))
+            rows = d.get("universe") if isinstance(d, dict) else d
+            out = []
+            for r in (rows or []):
+                if isinstance(r, (list, tuple)) and len(r) >= 4 and _ok_symbol(r[0]):
+                    out.append((str(r[0]).strip().upper(), str(r[1]), _norm_sector(r[2]), str(r[3])))
+            if out:
+                return out
+        except Exception as e:
+            sys.stderr.write("universe_fetch: seed load error %s\n" % str(e)[:120])
+    return []
 
 
 def _ok_symbol(sym):
@@ -270,6 +298,29 @@ def fetch_universe(mode=None, key=None, session=None, base="https://financialmod
         keep = [r for r in out if ("S" in r[3].split() or "D" in r[3].split())]   # always keep S&P + Dow
         rest = [r for r in out if not ("S" in r[3].split() or "D" in r[3].split())]
         out = keep + rest[:max(0, limit - len(keep))]
+
+    # COLLAPSE GUARD: if the live union is implausibly small (index sources failed and only the hardcoded
+    # Dow-30 fallback survived), substitute the committed full-universe seed so the build never ships a
+    # 30-name universe with no sectors (the failure that emptied the Sector-Rotation grid). The seed's GICS
+    # sectors win over any 'Unknown' we scraped; any real names we did get are preserved.
+    try:
+        floor = int(os.environ.get("UNIVERSE_MIN", MIN_UNIVERSE_DEFAULT) or MIN_UNIVERSE_DEFAULT)
+    except Exception:
+        floor = MIN_UNIVERSE_DEFAULT
+    if len(out) < floor:
+        seed = load_seed()
+        if len(seed) > len(out):
+            merged = {r[0]: list(r) for r in seed}
+            for r in out:
+                if r[0] in merged:
+                    if merged[r[0]][2] in ("", "Unknown") and r[2] not in ("", "Unknown"):
+                        merged[r[0]][2] = r[2]
+                else:
+                    merged[r[0]] = list(r)
+            out = [tuple(v) for v in merged.values()]
+            sys.stderr.write("universe_fetch: live union only %d (<%d) -> committed seed substituted (%d names)\n"
+                             % (sum(1 for _ in order), floor, len(out)))
+
     by = {"S": 0, "ND": 0, "D": 0, "R": 0}
     for r in out:
         for t in r[3].split():

@@ -2437,7 +2437,7 @@ function buildBullBearBoard(){
   S.forEach(function(s){
     var gp=_ebOn?_pickGrp(s):null;
     if(gp&&s.alphaSE!=null){var p=_RK.ebPosterior(s.exp,s.alphaSE,gp.g.center,gp.g.tau2);
-      s.expAdj=p.mu;s.postSd=p.sd;s.ebW=p.w;s.adjTot=p.mu+s.drag;s.ebLvl=gp.lvl;}
+      s.expAdj=p.mu;s.postSd=p.sd;s.ebW=p.w;s.adjTot=p.mu+s.drag-(s.crDrag||0);s.ebLvl=gp.lvl;}   // #407: EB path subtracts crowding drag (fallback path uses s.tot which already includes it)
     else{s.expAdj=s.exp;s.postSd=s.alphaSE;s.ebW=1;s.adjTot=s.tot;s.ebLvl=null;}
     // net-of-cost: daily vol % from annualized vol; trading_cost = fee+spread(~vol)+sqrt-impact
     if(_RK&&_RK.tradingCost&&s.vol!=null){var _dv=(s.vol*100)/Math.sqrt(252);s.tcost=_RK.tradingCost(_dv);s.netTot=_RK.netAlpha(s.adjTot,s.tcost);}

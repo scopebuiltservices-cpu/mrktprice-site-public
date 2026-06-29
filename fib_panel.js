@@ -72,10 +72,23 @@
       var pUp = F.prob_above(priceNow, q.muLog, q.sigmaH, priceNow);
       tiles += tile(lab, projClose, delta, dPct, pUp, q.lo, q.hi, q.zEdge, q.capped);
     });
+    // SERVER cross-check: the no-lookahead OU/EMA-blend 21d projection (proj_board.py -> n.pj) — the SAME
+    // forecast the projClose-vs-priceNow learning is scored on. Shown as a reference beside the client tiles.
+    var _srv = '';
+    try {
+      var _m = window.MMAP && window.MMAP.names, _pj = null;
+      if (_m) { for (var _i = 0; _i < _m.length; _i++) { if ((_m[_i].t || '').toUpperCase() === sym && _m[_i].pj) { _pj = _m[_i].pj; break; } } }
+      if (_pj) {
+        var _c = _pj.projPct >= 0 ? 'var(--up,#2ecc8f)' : 'var(--down,#ef5f4e)';
+        _srv = '<div style="font-size:9px;color:' + MU + ';margin:5px 0 0"><b style="color:#9ab4e0">server ' + (_pj.h || 21) + 'd (no-lookahead, OU/EMA blend)</b> · proj $' + (_pj.projClose != null ? _pj.projClose : '?')
+          + ' <span style="color:' + _c + '">' + (_pj.projPct >= 0 ? '+' : '') + _pj.projPct + '%</span> · P(up) ' + (_pj.probUp != null ? Math.round(_pj.probUp * 100) + '%' : '?')
+          + ' · σ' + (_pj.sigmaHPct != null ? _pj.sigmaHPct + '%' : '?') + ' — the forecast the daily learning is scored against</div>';
+      }
+    } catch (e) {}
     p = mount();
     p.innerHTML = '<div style="font-size:10px;color:' + MU + ';margin:4px 0"><b style="color:var(--gold)">MULTI-HORIZON PROJECTION</b> · ' + sym
       + ' · projected close vs price now · VR-corrected σ, half-life-decayed drift · research only</div>'
-      + '<div style="display:flex;gap:5px;flex-wrap:wrap">' + tiles + '</div>';
+      + '<div style="display:flex;gap:5px;flex-wrap:wrap">' + tiles + '</div>' + _srv;
     lastKey = key;
   }
 

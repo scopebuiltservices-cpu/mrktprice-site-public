@@ -1,20 +1,21 @@
-"""Planted tests for fundamentals_board.py (n.fund merge + target upside)."""
+"""Planted tests for fundamentals_board.py (n.fund merge of fundamentals + estimates + actions)."""
 import fundamentals_board as FBd
 
-def test_fund_for_with_upside():
+def test_merge_all_sources():
     rec = {"pe": 31.2, "roe": 1.45, "targetAvg": 330.0, "rating": "A", "ratingScore": 4}
-    f = FBd.fund_for(rec, 300.0)
-    assert abs(f["pe"] - 31.2) < 1e-9 and f["rating"] == "A"
-    assert abs(f["targetUpsidePct"] - 10.0) < 1e-9     # 330/300 - 1 = +10%
+    est = {"epsAvg": 7.2, "revAvg": 4.3e11, "surprisePct": 8.5}
+    act = {"div12m": 0.98, "nextExDate": "2026-08-10", "lastSplit": {"date": "2020-08-31", "ratio": "4:1"}}
+    f = FBd.fund_for(rec, est, act, 300.0)
+    assert abs(f["targetUpsidePct"] - 10.0) < 1e-9 and f["epsFwd"] == 7.2 and f["surprisePct"] == 8.5
+    assert abs(f["div12m"] - 0.98) < 1e-9 and f["lastSplit"]["ratio"] == "4:1", f
 
-def test_fund_for_no_close_no_upside():
-    f = FBd.fund_for({"pe": 10.0, "targetAvg": 50.0}, None)
-    assert "targetUpsidePct" not in f and abs(f["pe"] - 10.0) < 1e-9
+def test_partial_sources():
+    f = FBd.fund_for(None, {"epsAvg": 5.0}, None, None)
+    assert f == {"epsFwd": 5.0}, f
 
 def test_empty_none():
-    assert FBd.fund_for(None, 100.0) is None
-    assert FBd.fund_for({}, 100.0) is None
+    assert FBd.fund_for(None, None, None, 100.0) is None
 
 if __name__ == "__main__":
-    test_fund_for_with_upside(); test_fund_for_no_close_no_upside(); test_empty_none()
+    test_merge_all_sources(); test_partial_sources(); test_empty_none()
     print("test_fundamentals_board: 3/3 PASS")

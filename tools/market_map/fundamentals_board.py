@@ -1,14 +1,27 @@
 #!/usr/bin/env python3
-"""fundamentals_board.py — POST-BUILD enrichment: merge FMP bulk fundamentals + analyst data into n.fund.
+"""fundamentals_board.py — POST-BUILD enrichment: merge FMP fundamentals + analyst data into n.fund.
 
-External-enrichment pattern (event_board.py): reads data/fundamentals.json (from fmp_bulk.py — ratios,
-key-metrics, price-target-summary, rating, all via bulk CSV) and writes a compact per-name block:
-    n["fund"] = {pe, pb, roe, netMargin, debtEq, fcfYield, divYield, targetAvg, targetUpsidePct, rating, ratingScore}
-targetUpsidePct is computed vs the name's last committed close (hist) when available. Absent file -> no-op.
-Idempotent; verified. Research only, not advice."""
+External-enrichment pattern (event_board.py). Merges, when present:
+  - data/fundamentals.json (fmp_bulk: ratios/key-metrics/price-target-summary/rating)
+  - data/estimates.json    (fmp_estimates: forward consensus EPS/revenue + last earnings surprise %)
+  - data/actions.json      (fmp_actions: trailing-12m dividend, next ex-date, last split)
+into a compact per-name block:
+    n["fund"] = {pe,pb,roe,netMargin,debtEq,fcfYield,divYield,targetAvg,targetUpsidePct,rating,ratingScore,
+                 epsFwd,revFwd,surprisePct,div12m,nextExDate,lastSplit}
+targetUpsidePct uses the last committed close (hist). Absent files -> no-op. Idempotent; verified. Research only."""
 import argparse, json, os, sys
 
 KEEP = ("pe", "pb", "roe", "netMargin", "debtEq", "fcfYield", "divYield", "targetAvg", "rating", "ratingScore")
+
+
+def _load(path):
+    if path and os.path.exists(path):
+        try:
+            d = json.load(open(path))
+            return {k: v for k, v in d.items() if not k.startswith("_")}
+        except Exception:
+            return {}
+    return {}
 
 
 def _last_close(hist_dir, tk):
@@ -26,27 +39,41 @@ def _last_close(hist_dir, tk):
     return None
 
 
-def fund_for(rec, close):
-    if not rec:
-        return None
-    out = {k: rec.get(k) for k in KEEP if rec.get(k) is not None}
-    if not out:
-        return None
-    ta = rec.get("targetAvg")
-    if ta and close and close > 0:
-        out["targetUpsidePct"] = round((ta / close - 1.0) * 100.0, 2)
-    return out
+def fund_for(rec, est, act, close):
+    out = {}
+    if rec:
+        out.update({k: rec.get(k) for k in KEEP if rec.get(k) is not None})
+        ta = rec.get("targetAvg")
+        if ta and close and close > 0:
+            out["targetUpsidePct"] = round((ta / close - 1.0) * 100.0, 2)
+    if est:
+        if est.get("epsAvg") is not None:
+            out["epsFwd"] = est["epsAvg"]
+        if est.get("revAvg") is not None:
+            out["revFwd"] = est["revAvg"]
+        if est.get("surprisePct") is not None:
+            out["surprisePct"] = est["surprisePct"]
+    if act:
+        if act.get("div12m") is not None:
+            out["div12m"] = act["div12m"]
+        if act.get("nextExDate"):
+            out["nextExDate"] = act["nextExDate"]
+        if act.get("lastSplit"):
+            out["lastSplit"] = act["lastSplit"]
+    return out or None
 
 
-def enrich(mm, fund_map, hist_dir):
+def enrich(mm, fund_map, est_map, act_map, hist_dir):
     names = mm.get("names") or []
     done = 0
     for n in names:
         tk = (n.get("t") or n.get("sym") or "").upper()
-        rec = fund_map.get(tk) if tk else None
-        if not rec:
+        if not tk:
             continue
-        f = fund_for(rec, _last_close(hist_dir, tk))
+        rec = fund_map.get(tk); est = est_map.get(tk); act = act_map.get(tk)
+        if not (rec or est or act):
+            continue
+        f = fund_for(rec, est, act, _last_close(hist_dir, tk))
         if f:
             n["fund"] = f
             done += 1
@@ -57,24 +84,25 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--map", default="marketmap.json")
     ap.add_argument("--fund", default="data/fundamentals.json")
+    ap.add_argument("--est", default="data/estimates.json")
+    ap.add_argument("--actions", default="data/actions.json")
     ap.add_argument("--hist", default="hist")
     a = ap.parse_args()
-    if not os.path.exists(a.fund):
-        sys.stderr.write("fundamentals_board: no %s — skipped (run fmp_bulk.py first)\n" % a.fund)
+    fm, em, am = _load(a.fund), _load(a.est), _load(a.actions)
+    if not (fm or em or am):
+        sys.stderr.write("fundamentals_board: no fundamentals/estimates/actions files — skipped\n")
         return 0
     try:
-        fm = json.load(open(a.fund))
-        fm = {k: v for k, v in fm.items() if not k.startswith("_")}
         mm = json.load(open(a.map))
     except Exception as e:
-        sys.stderr.write("fundamentals_board: read error (%s)\n" % str(e)[:80])
+        sys.stderr.write("fundamentals_board: cannot read %s (%s)\n" % (a.map, str(e)[:80]))
         return 1
-    done = enrich(mm, fm, a.hist)
+    done = enrich(mm, fm, em, am, a.hist)
     tmp = a.map + ".tmp"
     with open(tmp, "w") as f:
         json.dump(mm, f, separators=(",", ":"))
     os.replace(tmp, a.map)
-    sys.stderr.write("fundamentals_board: enriched %d names with FMP fundamentals -> %s\n" % (done, a.map))
+    sys.stderr.write("fundamentals_board: enriched %d names (fund+est+actions) -> %s\n" % (done, a.map))
     return 0
 
 

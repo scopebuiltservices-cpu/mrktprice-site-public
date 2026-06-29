@@ -138,6 +138,11 @@ jobs:
             # BULK INFRA (the big win): one CSV call each for ratios-ttm / key-metrics-ttm / price-target-summary
             # / rating across the WHOLE universe (4 calls vs ~600) -> data/fundamentals.json (FMP Ultimate).
             FMP_API_KEY="$FMP_API_KEY" python tools/market_map/fmp_bulk.py --marketmap marketmap.json --out data/fundamentals.json || echo "::warning::FMP bulk fundamentals skipped"
+            # FORWARD ESTIMATES + EARNINGS SURPRISE (#1, per-symbol — no bulk endpoint): next-FY consensus
+            # revenue/EPS + most-recent actual-vs-estimate surprise %. -> data/estimates.json
+            FMP_API_KEY="$FMP_API_KEY" python tools/market_map/fmp_estimates.py --marketmap marketmap.json --out data/estimates.json || echo "::warning::FMP estimates skipped"
+            # CORPORATE ACTIONS: trailing-12m dividend (total-return income) + next ex-date + last split. -> data/actions.json
+            FMP_API_KEY="$FMP_API_KEY" python tools/market_map/fmp_actions.py --marketmap marketmap.json --out data/actions.json || echo "::warning::FMP actions skipped"
             # CROWDING (#7): fold SEC fails-to-deliver + committed volume history into a per-name days-to-cover,
             # FTD short-interest % (real float denom when present), and crowding penalty -> n.cr for the board chip.
             python tools/market_map/crowding_board.py --map marketmap.json --hist hist --float data/float.json || echo "::warning::crowding enrichment skipped"

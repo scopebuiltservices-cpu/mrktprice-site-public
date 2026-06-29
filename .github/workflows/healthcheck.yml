@@ -30,11 +30,13 @@ jobs:
       - name: Market Map is fresh and NOT synthetic
         run: |
           python3 - <<'PY'
-          import json, datetime, sys
+          import json, datetime, sys, os
+          sys.path.insert(0, "tools/market_map")
           d = json.load(open("marketmap.json"))
           src = str(d.get("source",""))
           asof = str(d.get("asof",""))
-          print("source:", src[:60], "| asof:", asof, "| names:", len(d.get("names",[])))
+          names = d.get("names", [])
+          print("source:", src[:60], "| asof:", asof, "| names:", len(names))
           problems = []
           if "SAMPLE" in src or "synthetic" in src.lower():
               problems.append("marketmap.json is SYNTHETIC/SAMPLE (real nightly snapshot is not publishing)")
@@ -44,6 +46,14 @@ jobs:
                   problems.append("marketmap.json is stale: asof %s (%d days old)" % (asof, age))
           except Exception:
               problems.append("marketmap.json asof unparseable: %r" % asof)
+          # GRID HEALTH: the 2026-06-28 failure was data that was fresh + non-sample but had NO sectors,
+          # so the Sector-Rotation grid drew nothing. Assert the grid can actually render.
+          try:
+              import sector_integrity as SI
+              for v in SI.sector_violations(d):
+                  problems.append("live grid broken: " + v)
+          except Exception as e:
+              print("(sector_integrity check skipped:", str(e)[:80], ")")
           if problems:
               print("::error::" + " | ".join(problems)); sys.exit(1)
           print("Market Map healthy.")

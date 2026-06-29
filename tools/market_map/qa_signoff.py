@@ -37,6 +37,9 @@ Usage:
 """
 import argparse, datetime as _dt, hashlib, json, math, os, sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import sector_integrity as SI
+
 SAMPLE_MARKERS = ("SAMPLE", "synthetic", "demo", "placeholder", "FALLBACK")
 
 
@@ -201,6 +204,11 @@ def qa_checks(payload, *, min_names, max_age_days, min_core_cov,
     add("quantile-noncross", crossed == 0, True,
         "crossed=%d of %d quantile-bearing nodes" % (crossed, checked_q))
     add("scores-finite", nonfinite == 0, True, "non-finite score nodes=%d" % nonfinite)
+
+    # sector-rotation integrity (the 2026-06-28 silent-regression class) — independent third gate
+    sec_viol = SI.sector_violations(payload)
+    add("sector-integrity", not sec_viol, True,
+        "; ".join(sec_viol) if sec_viol else "sectored=%d, sectorCorr present" % SI.sectored_equities(names if isinstance(names, list) else []))
 
     hard_ok = all(c["ok"] for c in checks if c["hard"])
     return checks, hard_ok

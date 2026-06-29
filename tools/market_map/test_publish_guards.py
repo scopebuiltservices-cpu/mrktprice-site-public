@@ -3,6 +3,7 @@
 import os, sys, datetime as dt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import publish_guards as PG
+import sector_integrity as SI
 
 F = []
 def ok(n, c, d=""):
@@ -10,7 +11,7 @@ def ok(n, c, d=""):
     if not c: F.append(n)
 
 TODAY = dt.date.today().isoformat()
-SECS = list(PG.GICS)
+SECS = list(SI.GICS)
 
 def healthy(n_names=90, sectored=40, with_corr=True):
     names = []

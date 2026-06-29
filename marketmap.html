@@ -116,7 +116,8 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
         if(hh>16&&cw>44){g.fillStyle='#0a0d12';g.font='bold 10px sans-serif';g.fillText(n.t,cx+4,yy+12);}pts.push({x:cx+1,y:yy,w:cw-3,h:hh-1,n:n,rect:1});yy+=hh;});cx+=cw;});
     legend(false);$('count').textContent=ns.length+' names · tile colour = '+(metric==='flow'?'money flow':metric==='dcfgap'?'discount to DCF (green=cheap)':metric==='tgtup'?'upside to analyst target':metric.replace('ret','')+' return');}
   function col(v){var t=Math.max(-1,Math.min(1,v/8));return t>=0?'rgba(22,199,154,'+(0.25+0.6*t)+')':'rgba(239,106,106,'+(0.25+0.6*-t)+')';}
-  function corr(){var o=D.sectorCorr.order,M=D.sectorCorr.m,n=o.length,d=size(Math.max(380,Math.min(560,cv.clientWidth*0.6))),W=d[0],H=d[1];g.clearRect(0,0,W,H);g.fillStyle='#0d121b';g.fillRect(0,0,W,H);
+  function corr(){var sc=D.sectorCorr||{},o=sc.order||[],M=sc.m||[],n=o.length,d=size(Math.max(380,Math.min(560,cv.clientWidth*0.6))),W=d[0],H=d[1];g.clearRect(0,0,W,H);g.fillStyle='#0d121b';g.fillRect(0,0,W,H);
+    if(!n){g.fillStyle='#8a93a0';g.font='13px sans-serif';g.textAlign='center';g.fillText('Sector correlation unavailable — awaiting a fresh build',W/2,H/2);g.textAlign='left';legend(false,true);$('count').textContent='Sector correlation unavailable';return;}
     var pad=96,cell=Math.min((W-pad-10)/n,(H-pad-10)/n);
     for(var i=0;i<n;i++)for(var j=0;j<n;j++){var v=M[i][j];g.fillStyle=cc(v);g.fillRect(pad+j*cell,pad+i*cell,cell-1,cell-1);if(cell>26){g.fillStyle='rgba(0,0,0,.6)';g.font='9px sans-serif';g.fillText(v.toFixed(2),pad+j*cell+3,pad+i*cell+cell/2+3);}}
     g.fillStyle='#c0c7d0';g.font='9px sans-serif';for(var k=0;k<n;k++){g.fillText(o[k].slice(0,11),3,pad+k*cell+cell/2+3);g.save();g.translate(pad+k*cell+cell/2,pad-4);g.rotate(-Math.PI/3);g.fillText(o[k].slice(0,11),0,0);g.restore();}
@@ -124,6 +125,7 @@ select{background:#0d121b;border:1px solid var(--line);color:#e7ecf2;border-radi
   function cc(v){var t=(v+1)/2;return 'rgb('+Math.round(40+(1-t)*200)+','+Math.round(40+t*150)+','+Math.round(70+t*100)+')';}
   function grid(){var ns=filtered(),secs=D.sectors.filter(function(s){return ns.some(function(n){return n.sec===s;});}),cols=[['ema','EMA21 σ'],['mom','Momentum'],['val','Value'],['size','Size'],['fcf','FCF yld'],['flow','Money flow'],['disloc','Dislocation'],['mfi','MFI'],['contra','Contradiction']];
     var d=size(Math.max(40+secs.length*30,300)),W=d[0],H=d[1];g.clearRect(0,0,W,H);g.fillStyle='#0d121b';g.fillRect(0,0,W,H);
+    if(!secs.length){g.fillStyle='#8a93a0';g.font='13px sans-serif';g.textAlign='center';g.fillText('Sector data unavailable — awaiting a fresh build',W/2,H/2);g.textAlign='left';legend(false,true);$('count').textContent='Sector data unavailable (no GICS-sectored names in this snapshot)';return;}
     var pL=118,pT=30,cw=Math.min(120,(W-pL-8)/cols.length),rh=Math.min(30,(H-pT-6)/secs.length);g.fillStyle='#c0c7d0';g.font='10px sans-serif';
     cols.forEach(function(c,j){g.fillText(c[1],pL+j*cw+6,pT-10);});
     secs.forEach(function(s,i){g.fillStyle=SECCOL[s]||'#9aa';g.font='10px sans-serif';g.fillText(s.slice(0,15),6,pT+i*rh+rh/2+3);

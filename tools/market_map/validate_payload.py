@@ -22,6 +22,8 @@ Exit 0 = contract holds; 1 = violated.
 """
 from __future__ import annotations
 import argparse, json, math, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import sector_integrity as SI
 
 SUPPORTED_MAJORS = {"1"}
 
@@ -94,7 +96,7 @@ def _band_violations(name):
     return bad
 
 
-def validate_payload(payload, schema, min_names=30):
+def validate_payload(payload, schema, min_names=30, prev=None):
     """Pure: returns (ok, errors, warnings)."""
     errors, warnings = [], []
 
@@ -142,6 +144,15 @@ def validate_payload(payload, schema, min_names=30):
     if rg is not None and rg not in ("deployable", "research-only", "blocked", "amber", "green", "red"):
         warnings.append("V5: unfamiliar governance.releaseGate %r" % rg)
 
+    # V7 sector-rotation integrity (the 2026-06-28 silent-regression class)
+    for _v in SI.sector_violations(payload):
+        errors.append("V7: " + _v)
+    # V8 universe regression vs the previously published build (optional baseline)
+    if prev is not None:
+        _rv = SI.regression_violation(names, (prev.get('names') or []))
+        if _rv:
+            errors.append("V8: " + _rv)
+
     # V6 finite
     nf = _nonfinite(payload)
     if nf:
@@ -156,6 +167,7 @@ def main(argv=None):
     ap.add_argument("--schema", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "marketmap.schema.json"))
     ap.add_argument("--min-names", type=int, default=30)
     ap.add_argument("--strict", action="store_true", help="treat warnings as failures too")
+    ap.add_argument("--prev", default=None, help="previously published payload, for the regression check")
     a = ap.parse_args(argv)
     try:
         payload = json.load(open(a.payload))
@@ -163,7 +175,11 @@ def main(argv=None):
     except Exception as e:
         print("::error title=validate_payload::cannot read input: %s" % e); return 1
 
-    ok, errors, warnings = validate_payload(payload, schema, a.min_names)
+    prev = None
+    if a.prev:
+        try: prev = json.load(open(a.prev))
+        except Exception: prev = None
+    ok, errors, warnings = validate_payload(payload, schema, a.min_names, prev=prev)
     for w in warnings:
         print("::warning title=contract::%s" % w)
     for e in errors:

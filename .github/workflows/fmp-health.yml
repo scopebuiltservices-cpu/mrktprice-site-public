@@ -1,0 +1,49 @@
+name: FMP Ultimate health probe (6-hourly)
+
+# Standalone, fast probe of every FMP Ultimate endpoint the pipeline uses, so the live status is known
+# WITHOUT running a full nightly market-map build. Emits fmp_health.json (committed + shipped to the site,
+# read by the terminal's FMP-status tile). Never blocks anything; surfaces a clear annotation on degrade.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"      # every 6 hours
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fmp-health
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Install deps
+        run: pip install --quiet requests
+      - name: Probe FMP Ultimate endpoints
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          FMP_ULTIMATE_API_KEY: ${{ secrets.FMP_ULTIMATE_API_KEY }}
+        run: |
+          python tools/market_map/fmp_healthcheck.py --out fmp_health.json
+          echo "----- fmp_health.json -----"; cat fmp_health.json; echo
+          OVERALL=$(python -c "import json;print(json.load(open('fmp_health.json'))['overall'])")
+          if [ "$OVERALL" != "ok" ]; then
+            echo "::warning title=FMP health=$OVERALL::One or more FMP Ultimate endpoints are not OK — see fmp_health.json above (overall=$OVERALL)."
+          fi
+      - name: Commit fmp_health.json if changed
+        run: |
+          git config user.name  "mrktprice-bot"
+          git config user.email "bot@mrktprice.com"
+          git add -A fmp_health.json
+          if git diff --cached --quiet; then
+            echo "::notice::fmp_health.json unchanged"
+          else
+            git commit -m "FMP health probe ($(date -u +%FT%TZ))"
+            git push
+          fi

@@ -126,6 +126,13 @@ jobs:
             # factor-explained return into marketmap.json so the board can net them out (factor-neutral alpha).
             python tools/market_map/factor_returns.py --out data/ff_factors.csv || echo "::warning::FF factor cache not refreshed (keyless)"
             python tools/market_map/residualize_board.py --map marketmap.json --hist hist --factors data/ff_factors.csv --horizon 21 || echo "::warning::FF residualization skipped"
+            # KEYLESS SEC event ingestion (8-K / 13D / 13G / Form 3-4-5) from EDGAR submissions, then fold
+            # the event-study tilt into each name (event_engine math) so it shows on the timeline, in the
+            # considerations, in the reports, and in the board number. cik.json already emitted above.
+            python tools/market_map/sec_forms.py --cik cik.json --marketmap marketmap.json --out sec_events.json || echo "::warning::SEC event ingestion skipped"
+            python tools/market_map/event_board.py --map marketmap.json --sec sec_events.json || echo "::warning::SEC event tilt skipped"
+            # FMP Ultimate multi-endpoint health probe -> fmp_health.json (also runs standalone every 6h)
+            FMP_API_KEY="$FMP_API_KEY" python tools/market_map/fmp_healthcheck.py --out fmp_health.json || echo "::warning::FMP healthcheck skipped"
             # KEYLESS: refresh cik.json (ticker->CIK) from SEC's free company_tickers.json so the
             # terminal can pull CONFIRMED quarterly report dates client-side for the whole universe.
             python tools/market_map/emit_cik.py --out cik.json --marketmap marketmap.json --cards cards || echo "::warning::cik.json refresh skipped"
@@ -162,7 +169,7 @@ jobs:
         run: |
           git config user.name  "mrktprice-bot"
           git config user.email "bot@mrktprice.com"
-          git add -A marketmap.json xsection.json universe.json events.json hist/ monitoring/latest.json data/alpha_log.jsonl data/ff_factors.csv tools/market_map/est_history.jsonl tools/market_map/factor_snapshots.jsonl tools/market_map/factor_ic.jsonl tools/market_map/trig_snap.jsonl tools/market_map/trig_out.jsonl tools/market_map/drift_ref.json tools/market_map/drift_store.jsonl tools/market_map/trial_ledger.jsonl tools/market_map/health_log.jsonl 2>/dev/null || true
+          git add -A marketmap.json xsection.json universe.json events.json sec_events.json fmp_health.json hist/ monitoring/latest.json data/alpha_log.jsonl data/ff_factors.csv tools/market_map/est_history.jsonl tools/market_map/factor_snapshots.jsonl tools/market_map/factor_ic.jsonl tools/market_map/trig_snap.jsonl tools/market_map/trig_out.jsonl tools/market_map/drift_ref.json tools/market_map/drift_store.jsonl tools/market_map/trial_ledger.jsonl tools/market_map/health_log.jsonl 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "::notice::no data changes to commit"
           else
@@ -177,7 +184,7 @@ jobs:
         run: |
           python build_reports.py || echo "::warning::reports index rebuild skipped"
           mkdir -p _site/reports
-          for f in *.html *.js robots.txt sitemap.xml marketmap.json xsection.json universe.json events.json marketmap.schema.json xsection.schema.json; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
+          for f in *.html *.js robots.txt sitemap.xml marketmap.json xsection.json universe.json events.json sec_events.json fmp_health.json marketmap.schema.json xsection.schema.json; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
           [ -f monitoring/latest.json ] && { mkdir -p _site/monitoring && cp monitoring/latest.json _site/monitoring/latest.json; } || true
           mkdir -p _site/.build && cp .build/qa-signoff.json _site/.build/ 2>/dev/null || true   # ship the signed QA manifest for audit
           cp -r reports/*.html _site/reports/ 2>/dev/null || true

@@ -22,8 +22,13 @@ jobs:
       - name: Build institutional.json from free SEC 13F data sets
         run: |
           python -m pip install --quiet requests
-          python tools/market_map/build_institutional.py --universe marketmap.json --out institutional.json \
-            || { echo "::warning::13F refresh failed - keeping previous institutional.json"; exit 0; }
+          # Surface the real reason on failure instead of swallowing it (the silent `exit 0` hid a broken
+          # URL convention for months). The period_windows URLs now follow the SEC's Mar-2024 month-range
+          # filename change; a red run here is intentional so any future break is visible immediately.
+          if ! python tools/market_map/build_institutional.py --universe marketmap.json --out institutional.json; then
+            echo "::error title=13F refresh failed::Could not download two SEC 13F periods. Check tools/market_map/build_institutional.py period_windows() against https://www.sec.gov/data-research/sec-markets-data/form-13f-data-sets"
+            exit 1
+          fi
       - name: Commit if changed
         run: |
           if [ -n "$(git status --porcelain institutional.json)" ]; then

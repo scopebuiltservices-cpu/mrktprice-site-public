@@ -83,18 +83,29 @@ def institutional_flow(curr, prev):
         out[tk] = d
     return out
 
-# ---------- quarter helpers ----------
-def latest_quarters(today=None):
-    """Two most recent quarters whose 13F datasets should be published (filing deadline +~45d, dataset +~2wk)."""
+# ---------- period helpers ----------
+# SEC switched 13F data-set filenames in MARCH 2024: from quarterly "YYYYqN_form13f.zip" (pre-2024) to
+# ROLLING 3-month month-range files (e.g. "01mar2026-31may2026_form13f.zip"), published after the end of
+# Feb/May/Aug/Nov. The old qN URLs 404 for current data — that was the silent-failure root cause.
+def _feb_end(y): return 29 if (y % 4 == 0 and (y % 100 != 0 or y % 400 == 0)) else 28
+def period_windows(today=None):
+    """Published SEC 13F periods, NEWEST-FIRST, as (period_end_date, filename_label). Only periods whose
+    end is >=20 days past (i.e. already published) are returned."""
     today = today or dt.date.today()
-    qends = []
-    for y in (today.year, today.year - 1, today.year - 2):
-        for m, d in ((3, 31), (6, 30), (9, 30), (12, 31)):
-            qends.append(dt.date(y, m, d))
-    avail = [qe for qe in sorted(qends) if (today - qe).days >= 55]
-    avail.sort(reverse=True)
-    def lab(qe): return f"{qe.year}q{(qe.month - 1) // 3 + 1}"
-    return lab(avail[0]), lab(avail[1])
+    out = []
+    for y in (today.year + 1, today.year, today.year - 1, today.year - 2):
+        fe = _feb_end(y)
+        out.append((dt.date(y, 2, fe),  "01dec%d-%02dfeb%d" % (y - 1, fe, y)))
+        out.append((dt.date(y, 5, 31),  "01mar%d-31may%d" % (y, y)))
+        out.append((dt.date(y, 8, 31),  "01jun%d-31aug%d" % (y, y)))
+        out.append((dt.date(y, 11, 30), "01sep%d-30nov%d" % (y, y)))
+    avail = [(e, lab) for (e, lab) in out if (today - e).days >= 20]
+    avail.sort(key=lambda x: x[0], reverse=True)
+    return avail
+def latest_quarters(today=None):
+    """Back-compat shim: the two newest published period labels."""
+    p = period_windows(today)
+    return p[0][1], p[1][1]
 
 def load_infotable_from_zip(content):
     zf = zipfile.ZipFile(io.BytesIO(content))
@@ -157,10 +168,26 @@ def main():
         with open(a.local_curr) as f: ac = aggregate_infotable(f)
         with open(a.local_prev) as f: ap_ = aggregate_infotable(f)
         cq, pq = "local-curr", "local-prev"
-    else:
-        cq, pq = (a.curr, a.prev) if (a.curr and a.prev) else latest_quarters()
-        sys.stderr.write(f"13F quarters: curr={cq} prev={pq}\n")
+    elif a.curr and a.prev:
+        cq, pq = a.curr, a.prev
+        sys.stderr.write(f"13F periods (explicit): curr={cq} prev={pq}\n")
         ac = download_quarter(cq); ap_ = download_quarter(pq)
+    else:
+        # AUTO: try published periods newest-first; keep the two that actually download. Resilient to
+        # publication timing AND the Mar-2024 filename change (the old qN URLs 404 -> silent empty file).
+        got = []
+        for _e, lab in period_windows():
+            try:
+                agg = download_quarter(lab); got.append((lab, agg))
+                sys.stderr.write(f"13F period ok: {lab}\n")
+                if len(got) == 2:
+                    break
+            except Exception as ex:
+                sys.stderr.write(f"13F period miss: {lab} ({str(ex)[:90]})\n")
+        if len(got) < 2:
+            sys.stderr.write("13F: could not download two published periods — institutional.json NOT updated\n")
+            return 2
+        (cq, ac), (pq, ap_) = got[0], got[1]
 
     uni = universe_from_marketmap(a.universe)
     cmap = {} if (a.local_curr and a.local_prev) else build_cusip_map([t for t, _ in uni])
@@ -170,6 +197,7 @@ def main():
                      "source": "SEC Form 13F data sets (free)"}
     with open(a.out, "w") as f: json.dump(flow, f, allow_nan=False)
     sys.stderr.write(f"wrote {a.out}: {flow['_meta']['matched']}/{len(uni)} names matched\n")
+    return 0
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

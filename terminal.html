@@ -891,7 +891,25 @@ function project(P0,V,H,sig,cf,asym,bands){asym=asym||{dn:1,up:1};const lam=solv
   p80.push({t,low:ph*Math.exp(-z80d*sdn*rt),high:ph*Math.exp(z80u*sup*rt)});p95.push({t,low:ph*Math.exp(-z95d*sdn*rt),high:ph*Math.exp(z95u*sup*rt)});}return{lam,sdn,sup,path,p80,p95,bands:bands||null};}
 function setPill(id,st,tx){const e=document.getElementById(id);if(!e)return;e.className='pill '+st;e.textContent=tx||st;}
 function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
-function _dodgeLabels(items,minGap){items.sort((a,b)=>a.y-b.y);for(let i=1;i<items.length;i++){if(items[i].y-items[i-1].y<minGap)items[i].y=items[i-1].y+minGap;}return items;}
+function _dodgeLabels(items,minGap,lo,hi){
+  // Two-pass, bounds-aware right-edge label de-collision. The old single forward pass cascaded a dense
+  // cluster downward into the clamp (the unreadable stack). This keeps each label near its target, spreads
+  // overlaps both ways, and fits the whole set inside [lo,hi] when given.
+  if(!items.length)return items;
+  items.sort((a,b)=>a.y-b.y);
+  for(let i=1;i<items.length;i++){if(items[i].y-items[i-1].y<minGap)items[i].y=items[i-1].y+minGap;}
+  if(lo!=null&&hi!=null){
+    const span=items[items.length-1].y-items[0].y, room=hi-lo;
+    if(span>room){ // too many labels for the panel: distribute evenly across the full height
+      for(let i=0;i<items.length;i++)items[i].y=lo+(room*i)/(items.length-1);
+    }else{
+      const over=items[items.length-1].y-hi; if(over>0)for(let i=0;i<items.length;i++)items[i].y-=over;
+      if(items[0].y<lo){const sh=lo-items[0].y;for(let i=0;i<items.length;i++)items[i].y+=sh;}
+      for(let i=1;i<items.length;i++){if(items[i].y-items[i-1].y<minGap)items[i].y=items[i-1].y+minGap;}
+    }
+    for(let i=0;i<items.length;i++)items[i].y=Math.max(lo,Math.min(hi,items[i].y));
+  }
+  return items;}
 function _addBizDays(iso,nd){var dt=new Date(String(iso).slice(0,10)+'T00:00:00Z');var a=0;while(a<nd){dt.setUTCDate(dt.getUTCDate()+1);var w=dt.getUTCDay();if(w!==0&&w!==6)a++;}return dt;}
 function _mdd(dt){return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][dt.getUTCMonth()]+' '+dt.getUTCDate();}
 
@@ -3472,8 +3490,13 @@ function renderRegimeTile(){
       var cv=document.getElementById('cv2'); var card=cv&&cv.closest?cv.closest('.chartcard'):null;
       if(card&&card.parentNode) card.parentNode.insertBefore(el, card.nextSibling); else document.body.appendChild(el);
     }
-    var COLS=(typeof _VOLCOLS!=='undefined')?_VOLCOLS:null, bar='';
-    if(rb.rtIdx!=null&&COLS){ for(var ci=0;ci<21;ci++){ bar+='<span style="display:inline-block;width:11px;height:11px;'+(ci===rb.rtIdx?'outline:2px solid #fff;position:relative;z-index:1;':'')+'background:'+COLS[ci]+'"></span>'; } }
+    var bar='';
+    if(rb.rtIdx!=null){ var _pos=Math.max(0,Math.min(100,rb.rtIdx/20*100)).toFixed(1);
+      // smooth red→neutral→green gradient bar (replaces 21 discrete squares) with a crisp position marker
+      bar='<div style="position:relative;display:inline-block;width:220px;height:11px;border-radius:6px;vertical-align:middle;'
+        +'background:linear-gradient(90deg,#b5302a 0%,#d85f54 20%,#9aa0a8 50%,#56bd86 80%,#1f9e54 100%);'
+        +'box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)">'
+        +'<div style="position:absolute;left:'+_pos+'%;top:-2px;width:3px;height:15px;background:#fff;border-radius:2px;transform:translateX(-50%);box-shadow:0 0 5px rgba(0,0,0,.9)"></div></div>'; }
     el.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;font-size:12px">'
       +'<b style="color:'+(rb.clsC||'#ffa59b')+'">REGIME #'+rb.K+' · '+(rb.clsT||'current')+'</b>'
       +'<span style="color:var(--muted,#8a93a0)">vol '+rb.ann.toFixed(0)+'% ('+rb.dly.toFixed(1)+'%/d)'+(rb.pct!=null?' · '+(rb.pct*100).toFixed(0)+'th own · '+rb.age+'b'+(rb.fresh?' •':''):'')+'</span>'
@@ -3543,7 +3566,7 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
  g.strokeStyle=css('--accent');g.lineWidth=2;g.beginPath();g.moveTo(X(jx),Yp(CUR.last));pj.path.forEach((p,k)=>g.lineTo(X(jx+1+k),Yp(p.price)));g.stroke();
  // --- PROJECTION X1000: date axis | conformal | multi-method fan | separated bands | probability box ---
  const _Pn=pj.path[nP-1]?pj.path[nP-1].price:CUR.last;
- const _L=[]; const _push=(y,txt,col,bold)=>_L.push({y:Math.max(yP0+8,Math.min(yP0+Hp-2,y)),txt,col,bold:!!bold});
+ const _L=[]; const _push=(y,txt,col,bold)=>_L.push({y:Math.max(yP0+8,Math.min(yP0+Hp-2,y)),y0:Math.max(yP0+8,Math.min(yP0+Hp-2,y)),txt,col,bold:!!bold});
  // 50% (median) band, derived from per-step sigma
  const _p50=[];for(let k=0;k<nP;k++){const pp=pj.path[k].price,su=Math.log(pj.p95[k].high/pp)/Z[95],sd=Math.log(pp/pj.p95[k].low)/Z[95];_p50.push({high:pp*Math.exp(Z[50]*su),low:pp*Math.exp(-Z[50]*sd)});}
  g.beginPath();g.moveTo(X(jx),Yp(CUR.last));_p50.forEach((b,k)=>g.lineTo(X(jx+1+k),Ypc(b.high)));for(let k=nP-1;k>=0;k--)g.lineTo(X(jx+1+k),Ypc(_p50[k].low));g.closePath();g.fillStyle='rgba(124,196,164,.12)';g.fill();
@@ -3586,7 +3609,11 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
  // scenarios (kept)
  if(document.getElementById('tScen').checked){[[1,'#3fb76b'],[-1,'#e05a4e']].forEach(([sgn,col])=>{g.strokeStyle=col;g.setLineDash([2,3]);g.lineWidth=1;g.beginPath();g.moveTo(X(jx),Yp(CUR.last));pj.path.forEach((p,k)=>{const sc=p.price*(1+sgn*0.015*Math.sqrt(k+1)/Math.sqrt(nP));g.lineTo(X(jx+1+k),Ypc(sc));});g.stroke();g.setLineDash([]);});}
  // dodge + render all right-edge labels
- _dodgeLabels(_L,10);const _lx=xConeEnd-46;_L.forEach(function(it){const yy=Math.max(yP0+8,Math.min(yP0+Hp-2,it.y));g.fillStyle=it.col;g.font=(it.bold?'bold 10px':'9px')+' sans-serif';g.fillText(it.txt,_lx,yy);});
+ _dodgeLabels(_L,11,yP0+8,yP0+Hp-2);const _lx=xConeEnd-46;
+ _L.forEach(function(it){const yy=Math.max(yP0+8,Math.min(yP0+Hp-2,it.y));
+   // faint leader tick from the label back toward its true price level, so de-collided labels stay legible
+   if(it.y0!=null&&Math.abs(it.y0-yy)>3){g.strokeStyle=it.col;g.globalAlpha=0.28;g.lineWidth=1;g.beginPath();g.moveTo(_lx-3,yy-3);g.lineTo(_lx-9,it.y0);g.stroke();g.globalAlpha=1;}
+   g.fillStyle=it.col;g.font=(it.bold?'bold 10px':'9px')+' sans-serif';g.fillText(it.txt,_lx,yy);});
  // PROBABILITY BOX (terminal odds, asymmetric-lognormal from the fan)
  (function(){const endP=_Pn,eHi=pj.p95[nP-1]?pj.p95[nP-1].high:endP,eLo=pj.p95[nP-1]?pj.p95[nP-1].low:endP;const muL=Math.log(endP/CUR.last);const sUp=Math.max(Math.log(eHi/endP)/Z[95],1e-6),sDn=Math.max(Math.log(endP/eLo)/Z[95],1e-6);
   const pGE=K=>{const z=Math.log(K/CUR.last)-muL,sg=(K>=endP)?sUp:sDn;return 1-normCDF(z/sg);};

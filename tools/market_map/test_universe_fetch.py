@@ -37,6 +37,7 @@ txt = ("Symbol|Security Name|Market Category|Test Issue|Financial Status|Round L
 q = [r[0] for r in U.parse_nasdaqlisted(txt)]
 ok("nasdaqlisted keeps AAPL, drops test/ETF", "AAPL" in q and "ZTEST" not in q and "ONEQ" not in q)
 
+# --- four-index UNION with membership tags (small stubs -> set floor low so the collapse guard stays dormant) ---
 def _stub_const(session, key, base, stable_ep, v3_ep, tag):
     data = {
         "S": [("AAPL", "Apple", "Technology", "S"), ("JPM", "JPMorgan", "Financials", "S"), ("XOM", "Exxon", "Energy", "S")],
@@ -50,6 +51,7 @@ U.fetch_screener_rows = lambda *a, **k: [{"symbol": "AAPL", "companyName": "Appl
                                          {"symbol": "TSLA", "companyName": "Tesla", "sector": "Consumer Cyclical", "exchangeShortName": "NASDAQ"}]
 U.fetch_iwm_holdings = lambda *a, **k: [("SMLL", "Small Co", "Industrials", "R"), ("TINY", "Tiny Co", "Energy", "R")]
 U.fetch_nasdaqtrader = lambda *a, **k: []
+os.environ["UNIVERSE_MIN"] = "3"   # dormant guard for these intentionally-tiny stub unions
 try:
     u = U.fetch_universe("all", key="X", indexes=["sp500", "nasdaq", "dow", "russell2000"])
     tags = dict((r[0], set(r[3].split())) for r in u)
@@ -64,8 +66,9 @@ try:
     ok("limit keeps all S&P+Dow members", all(s in t2 for s in ("JPM", "XOM", "CAT")))
 finally:
     U.fetch_constituent, U.fetch_screener_rows, U.fetch_iwm_holdings, U.fetch_nasdaqtrader = _orig
+    os.environ.pop("UNIVERSE_MIN", None)
 
-# --- COLLAPSE GUARD: a Dow-only union (index sources down) substitutes the committed seed ---
+# --- COLLAPSE GUARD: a Dow-only union (index sources down) substitutes the committed seed (floor=60 default) ---
 _seed_rows = [("AAA", "Alpha", "Technology", "S"), ("BBB", "Beta", "Energy", "S"),
               ("CCC", "Gamma", "Financials", "S"), ("DDD", "Delta", "Health Care", "S"),
               ("EEE", "Eps", "Industrials", "S"), ("FFF", "Phi", "Utilities", "S")]
@@ -81,14 +84,16 @@ try:
     ok("collapse -> seed substituted (size)", len(u3) >= len(_seed_rows))
     ok("collapse -> seed names present", {"AAA", "FFF"} <= s3)
     ok("collapse -> real Dow name preserved", "AAPL" in s3)
-    U.fetch_screener_rows = lambda *a, **k: [{"symbol": "T%03d" % i, "companyName": "C%d" % i,
-                              "sector": "Technology", "exchangeShortName": "NASDAQ"} for i in range(80)]
+    # a HEALTHY union (>= floor) must NOT be replaced by the seed (use valid alpha tickers)
+    big = [{"symbol": "TS" + chr(65 + i // 26) + chr(65 + i % 26), "companyName": "C%d" % i,
+            "sector": "Technology", "exchangeShortName": "NASDAQ"} for i in range(80)]
+    U.fetch_screener_rows = lambda *a, **k: big
     u4 = U.fetch_universe("all", key="X", indexes=["nasdaq"])
-    ok("healthy union NOT seed-replaced", len(u4) >= 80 and "AAA" not in set(r[0] for r in u4))
+    ok("healthy union NOT seed-replaced", u4 is not None and len(u4) >= 80 and "AAA" not in set(r[0] for r in u4))
 finally:
     U.fetch_constituent, U.fetch_screener_rows, U.fetch_iwm_holdings, U.fetch_nasdaqtrader, U.load_seed = _orig2
 
-# --- seed loader reads the committed file shape ---
+# --- committed seed file loads in the expected shape ---
 _sd = U.load_seed("../../data/universe_seed.json")
 ok("committed seed loads (>=80 equities)", len(_sd) >= 80)
 ok("seed rows are 4-tuples w/ GICS sector", all(len(r) == 4 for r in _sd[:5]) and _sd[0][2] != "Unknown")

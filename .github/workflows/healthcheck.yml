@@ -48,3 +48,13 @@ jobs:
               print("::error::" + " | ".join(problems)); sys.exit(1)
           print("Market Map healthy.")
           PY
+
+      - name: Deployed Market Map is not lagging the repo
+        run: |
+          # Compares the asof of the committed repo marketmap.json (what SHOULD be live) against the
+          # asof of the actually-deployed file. Catches the "pushed but did not deploy" lag that hid
+          # the 2026-06-28 regression (data wasn't old, but the live file predated newer commits).
+          curl -s --max-time 40 -o /tmp/live_mm.json "https://www.mrktprice.com/marketmap.json?ts=$(date +%s)" \
+            || { echo "::warning::could not fetch live marketmap.json — skipping deploy-staleness check"; exit 0; }
+          python3 tools/market_map/deploy_staleness.py --repo marketmap.json --live-file /tmp/live_mm.json \
+            --max-lag-days 1 --strict

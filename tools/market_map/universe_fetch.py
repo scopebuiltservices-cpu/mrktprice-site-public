@@ -21,6 +21,7 @@ Env:
   UNIVERSE_MODE     'seed' (legacy SEED) | 'all'/'nasdaq_full'/'indices' (this module; default 'all')
   UNIVERSE_INDEXES  comma list of {sp500,nasdaq,dow,russell2000} to include (default: all four)
   UNIVERSE_LIMIT    optional int cap (0/unset = the full union; S&P + Dow members are always kept)
+  UNIVERSE_MIN      collapse floor (default 60): below this equity count the committed seed is substituted
   DOW30             optional comma-separated Dow override
 """
 import os, sys, json
@@ -310,6 +311,7 @@ def fetch_universe(mode=None, key=None, session=None, base="https://financialmod
     if len(out) < floor:
         seed = load_seed()
         if len(seed) > len(out):
+            live_n = len(out)
             merged = {r[0]: list(r) for r in seed}
             for r in out:
                 if r[0] in merged:
@@ -319,7 +321,7 @@ def fetch_universe(mode=None, key=None, session=None, base="https://financialmod
                     merged[r[0]] = list(r)
             out = [tuple(v) for v in merged.values()]
             sys.stderr.write("universe_fetch: live union only %d (<%d) -> committed seed substituted (%d names)\n"
-                             % (sum(1 for _ in order), floor, len(out)))
+                             % (live_n, floor, len(out)))
 
     by = {"S": 0, "ND": 0, "D": 0, "R": 0}
     for r in out:
@@ -347,4 +349,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# verified: S&P500 + full Nasdaq + Dow30 + Russell2000 union with S/ND/D/R membership tags.
+# verified: S&P500 + full Nasdaq + Dow30 + Russell2000 union with S/ND/D/R membership tags + collapse-seed guard.

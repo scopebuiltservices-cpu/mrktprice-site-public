@@ -104,7 +104,10 @@ jobs:
           mkdir -p /tmp/mmbuild
           cd tools/market_map
           if python build_market_map.py --real --out /tmp/mmbuild/marketmap.json; then
-            python publish_guards.py /tmp/mmbuild/marketmap.json
+            # CORE GATE: blocks publish on SAMPLE/thin/stale data AND on the silent-regression class
+            # (universe collapse vs the last published file, all-"Unknown" sectors, empty sectorCorr).
+            python publish_guards.py /tmp/mmbuild/marketmap.json --prev "$GITHUB_WORKSPACE/marketmap.json" \
+              || { echo "::error::publish guards FAILED - refusing to publish"; exit 1; }
             # CONTRACT GATE: validate the payload against marketmap.schema.json + invariants (version,
             # coverage, quantile non-crossing, finite). A violation BLOCKS publish - never ship a payload
             # the consumer would have to render as no-call.

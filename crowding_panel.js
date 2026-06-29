@@ -14,6 +14,20 @@
 
   function crowdFor(n){
     var sh=n.short, inst=n.inst, gex=n.gex;
+    // PREFER the server-computed crowding block (crowding_board.py): real days-to-cover (FTD/ADV),
+    // FTD short-interest %, and crowding_engine penalty. Falls back to the client proxy below.
+    var cr=n.cr;
+    if(cr){
+      var dtcN=(cr.dtc!=null)?clamp01(cr.dtc/8.0):0;                 // ~8d to cover = max
+      var penN=(cr.pen!=null)?clamp01(cr.pen/0.10):0;                // ~10% penalty = max
+      var sScore=clamp01(0.55*dtcN + 0.45*penN + (cr.squeeze?0.25:0));
+      var sWhy=[];
+      if(cr.dtc!=null) sWhy.push('DTC '+cr.dtc.toFixed(1)+'d');
+      if(cr.siPct!=null) sWhy.push('SI '+cr.siPct.toFixed(1)+'%');
+      if(cr.borrowFee!=null && cr.borrowFee>1) sWhy.push('borrow ~'+cr.borrowFee.toFixed(1)+'%');
+      if(gex&&/negative/.test(gex.regime||'')) sWhy.push('neg-gamma');
+      return {score:sScore, why:sWhy, server:true};
+    }
     if(!sh && !inst) return null;                                   // nothing to say
     // short-interest level (FINRA fails proxy): elevated dominates the read
     var lvl=sh?({elevated:1.0,moderate:0.5,low:0.15}[sh.level]!=null?{elevated:1.0,moderate:0.5,low:0.15}[sh.level]:0.3):0.3;
@@ -44,8 +58,10 @@
       sp.style.cssText='font-size:8px;font-weight:700;letter-spacing:.02em;color:'+col+';border:1px solid '+col
         +'66;border-radius:3px;padding:0 4px;margin-left:6px;white-space:nowrap';
       sp.title='crowding/squeeze read '+(c.score*100).toFixed(0)+'/100 · '+(c.why.join(' · ')||'short-side pressure')
-        +' · high short level + rising fails + negative gamma + institutional distribution = squeeze-prone. '
-        +'Client view of crowding_engine (#7); full days-to-cover/HHI/borrow-fee runs server-side. Research only.';
+        +(c.server
+           ? ' · SERVER crowding_engine (#7): days-to-cover = SEC fails-to-deliver / avg daily volume, FTD short-interest %, borrow-fee proxy. FTD is a conservative floor on true short interest.'
+           : ' · client proxy: short level/trend + negative gamma + 13F distribution. Full days-to-cover/borrow runs server-side.')
+        +' Research only, not advice.';
       sp.textContent=lab;
       hd.appendChild(sp);
     });

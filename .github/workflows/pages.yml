@@ -131,6 +131,9 @@ jobs:
             # considerations, in the reports, and in the board number. cik.json already emitted above.
             python tools/market_map/sec_forms.py --cik cik.json --marketmap marketmap.json --out sec_events.json || echo "::warning::SEC event ingestion skipped"
             python tools/market_map/event_board.py --map marketmap.json --sec sec_events.json || echo "::warning::SEC event tilt skipped"
+            # CROWDING (#7): fold SEC fails-to-deliver + committed volume history into a per-name days-to-cover,
+            # FTD short-interest proxy, and crowding penalty (verified crowding_engine) -> n.cr for the board chip.
+            python tools/market_map/crowding_board.py --map marketmap.json --hist hist || echo "::warning::crowding enrichment skipped"
             # FMP Ultimate multi-endpoint health probe -> fmp_health.json (also runs standalone every 6h)
             FMP_API_KEY="$FMP_API_KEY" python tools/market_map/fmp_healthcheck.py --out fmp_health.json || echo "::warning::FMP healthcheck skipped"
             # SERVER-SIDE universe-wide projClose learning: no-lookahead walk-forward over all hist ->

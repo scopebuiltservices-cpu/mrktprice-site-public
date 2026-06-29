@@ -187,7 +187,7 @@ jobs:
         run: |
           python build_reports.py || echo "::warning::reports index rebuild skipped"
           mkdir -p _site/reports
-          for f in *.html *.js robots.txt sitemap.xml marketmap.json xsection.json universe.json events.json sec_events.json fmp_health.json marketmap.schema.json xsection.schema.json; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
+          for f in *.html *.js robots.txt sitemap.xml marketmap.json xsection.json universe.json events.json sec_events.json fmp_health.json projlearn.json marketmap.schema.json xsection.schema.json; do [ -f "$f" ] && cp "$f" "_site/$f" || true; done
           [ -f monitoring/latest.json ] && { mkdir -p _site/monitoring && cp monitoring/latest.json _site/monitoring/latest.json; } || true
           mkdir -p _site/.build && cp .build/qa-signoff.json _site/.build/ 2>/dev/null || true   # ship the signed QA manifest for audit
           cp -r reports/*.html _site/reports/ 2>/dev/null || true

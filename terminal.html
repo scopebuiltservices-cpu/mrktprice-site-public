@@ -2453,8 +2453,11 @@ function buildBullBearBoard(){
   // ranked within each by the CONFIDENCE-ADJUSTED score (falls back to tot if the rank engine is absent), so
   // the server-side order already matches the score sort even before bullbear_controls re-applies it.
   var _bk=function(s){return (s.score!=null&&s.score===s.score)?s.score:s.tot;};
+  // EXHAUSTIVE partition: a name whose tot is NaN/undefined satisfies neither >=0 nor <0 and would silently
+  // vanish from BOTH columns (the "not the full list" bug). Sanitize tot, then bear catches everything not bull.
+  S.forEach(function(s){if(!(typeof s.tot==='number'&&s.tot===s.tot))s.tot=(typeof s.exp==='number'&&s.exp===s.exp?s.exp:0)+(typeof s.drag==='number'&&s.drag===s.drag?s.drag:0);});
   var bull=S.filter(function(s){return s.tot>=0;}).sort(function(a,b){return _bk(b)-_bk(a);}),
-      bear=S.filter(function(s){return s.tot<0;}).sort(function(a,b){return _bk(a)-_bk(b);});
+      bear=S.filter(function(s){return !(s.tot>=0);}).sort(function(a,b){return _bk(a)-_bk(b);});
   var MOVE={RATE:DIR.RATE,OIL:DIR.OIL,DXY:DIR.DXY,VIX:DIR.VIX},MLAB={RATE:'10Y',OIL:'Oil',DXY:'USD',VIX:'Risk'};
   function tiles(s){var out='';['RATE','OIL','DXY','VIX'].forEach(function(k){var b=s.mb[k];if(b==null)return;var mv=MOVE[k],tw=b*mv,c=tw>0?'#2ecc8f':(tw<0?'#ef5f4e':'#8a93a3');
       out+='<span class="bt" style="border-color:'+c+'55"><b>'+MLAB[k]+'</b> β'+b.toFixed(2)+' <span style="color:'+c+'">'+(mv>=0?'+':'')+mv.toFixed(1)+'%'+(tw>0?' ▲':tw<0?' ▼':'')+'</span></span>';});
@@ -4372,15 +4375,26 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
 (function(){
  function tile(lab,val,col,sub){return '<div style="flex:1;min-width:96px;background:var(--panel2,#111721);border:1px solid var(--line);border-radius:6px;padding:5px 8px"><div style="font-size:8px;letter-spacing:.4px;color:var(--muted);text-transform:uppercase">'+lab+'</div><div style="font-size:14px;font-weight:800;color:'+(col||'var(--ink)')+'">'+val+'</div>'+(sub?'<div style="font-size:8px;color:var(--muted)">'+sub+'</div>':'')+'</div>';}
  function compute(){
-   if(typeof CUR!=='object'||!CUR||!CUR.pj||!CUR.pj.path||!CUR.pj.path.length||!(CUR.last>0))return null;
-   var C0=CUR.last, T=CUR.pj.path[0].price;            /* anchor (prev/last close) + next-day (t+1) model target */
+   if(typeof CUR!=='object'||!CUR||!(CUR.last>0))return null;
+   var C0=CUR.last, T=null, lo2=null, hi2=null;
+   // RECONCILE: derive next-day from the SAME OU/EMA half-life-decayed engine the MULTI-HORIZON ladder uses
+   // (MrktFib 24H), so the headline target agrees with the tiles below instead of the momentum-drift cone.
+   try{
+     if(window.MrktFib&&CUR.c&&CUR.c.length>=30){
+       var F=window.MrktFib,cl=CUR.c,rt=F.logret(cl);
+       var edge=rt.length>=5?rt.slice(-5).reduce(function(a,b){return a+b;},0)/5:0, hl=F.fit_halflife(cl);
+       var pr=F.project(C0,edge,cl,F.horizons('fib'),{hl:hl}), sub=F.user_subset(pr);
+       if(sub&&sub['24H']&&sub['24H'].projPrice>0){T=sub['24H'].projPrice;lo2=sub['24H'].lo;hi2=sub['24H'].hi;}
+     }
+   }catch(e){}
+   if(!(T>0)){ if(!(CUR.pj&&CUR.pj.path&&CUR.pj.path.length))return null; T=CUR.pj.path[0].price; }  /* fallback: cone */
    if(!(T>0))return null;
    var projPct=T/C0-1, sym=(CUR.sym||'').toUpperCase(), live=null;
    try{var key='mrkt.intra.'+sym+'.'+(new Date().toISOString().slice(0,10)), b=JSON.parse(localStorage.getItem(key)||'[]');
        if(b.length){var r=b[b.length-1]; if(r&&r.price>0)live=r.price;}}catch(e){}
    var sessionLive=(live!=null), P=sessionLive?live:C0, livePct=P/C0-1, remVal=T-P, remPct=remVal/C0;
-   var progress=(projPct!==0)?livePct/projPct:null, lo=null,hi=null;
-   try{var b95=CUR.pj.p95&&CUR.pj.p95[0]; if(b95){lo=b95.low;hi=b95.high;}}catch(e){}
+   var progress=(projPct!==0)?livePct/projPct:null, lo=(lo2!=null?lo2:null),hi=(hi2!=null?hi2:null);
+   if(lo==null||hi==null){try{var b95=CUR.pj&&CUR.pj.p95&&CUR.pj.p95[0]; if(b95){lo=b95.low;hi=b95.high;}}catch(e){}}
    return {sym:sym,C0:C0,T:T,projPct:projPct,P:P,livePct:livePct,remVal:remVal,remPct:remPct,progress:progress,sessionLive:sessionLive,lo:lo,hi:hi};
  }
  function render(){

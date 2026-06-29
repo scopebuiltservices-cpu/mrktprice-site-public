@@ -15,9 +15,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import event_engine as EV
 
 UA = {"User-Agent": "MrktPrice marketmap/1.0 (research; contact scopebuiltservices@gmail.com)"}
-TRACKED = {"8-K", "SC 13D", "SC 13D/A", "SC 13G", "SC 13G/A", "3", "4", "5"}
+TRACKED = {"8-K", "SC 13D", "SC 13D/A", "SC 13G", "SC 13G/A", "3", "4", "5",
+           "144", "S-1", "S-1/A", "424B4", "424B5", "DEF 14A", "PRE 14A", "S-3", "S-3/A"}
 # per-form base severity for non-8-K forms (8-K uses item-code severity)
-FORM_SEV = {"SC 13D": 0.85, "SC 13D/A": 0.6, "SC 13G": 0.4, "SC 13G/A": 0.3, "3": 0.35, "4": 0.45, "5": 0.3}
+FORM_SEV = {"SC 13D": 0.85, "SC 13D/A": 0.6, "SC 13G": 0.4, "SC 13G/A": 0.3, "3": 0.35, "4": 0.45, "5": 0.3,
+            "144": 0.45,                         # proposed insider sale (supply overhang signal)
+            "S-1": 0.7, "S-1/A": 0.4,            # IPO/registration (new supply)
+            "424B4": 0.65, "424B5": 0.6,         # prospectus / shelf takedown (offering -> dilution)
+            "S-3": 0.5, "S-3/A": 0.3,            # shelf registration (potential future supply)
+            "DEF 14A": 0.3, "PRE 14A": 0.3}      # proxy (governance / M&A votes)
 
 
 def _items_list(s):

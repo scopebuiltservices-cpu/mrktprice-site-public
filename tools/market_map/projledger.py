@@ -34,24 +34,30 @@ def _logrets(closes):
 
 
 def walk_forward(closes, horizons=HORIZONS, lb=21, shrink=0.5, step=3, cap=2.0):
-    """No-lookahead walk-forward. Returns {H: [(predLR, realLR), ...]}. Forecast at bar t uses returns
-    strictly before t; realized uses close[t+H]. step subsamples to keep overlap modest."""
+    """No-lookahead walk-forward. Returns {H: [(predLR, realLR), ...]}. Forecast at bar t uses ONLY
+    closes[:t+1] (data through t); realized uses close[t+H]. The forecast is the cone-style OU/EMA-blend
+    drift (proj_server) so the universe-wide recalibration learns the SAME forecast family the terminal
+    shows. Falls back to the shrunk-momentum proxy if proj_server is unavailable."""
+    try:
+        import proj_server as _PS
+        _blend = _PS.blend_drift
+    except Exception:
+        _blend = None
     out = {h: [] for h in horizons}
-    r = _logrets(closes)                      # r[i] is the return INTO close[i+1]; r[0..t-2] are < t
+    r = _logrets(closes)
     n = len(closes)
     maxh = max(horizons)
     t = lb + 1
     while t < n - maxh:
-        # returns strictly before t: r indices [t-1-lb .. t-2]  (return into close[t-lb..t-1])
         win = r[max(0, t - 1 - lb):t - 1]
         if len(win) >= max(5, lb // 2):
-            mu = shrink * (sum(win) / len(win))
             sd = math.sqrt(sum(x * x for x in win) / len(win)) or 1e-6
+            mu = shrink * (sum(win) / len(win))      # proxy fallback
+            hist = closes[:t + 1]                    # data known at decision time t (no lookahead)
             for h in horizons:
                 if t + h < n and closes[t] > 0 and closes[t + h] > 0:
-                    pred = mu * h
-                    lim = cap * sd * math.sqrt(h)
-                    pred = max(-lim, min(lim, pred))
+                    pred = _blend(hist, h) if _blend else max(-cap * sd * math.sqrt(h),
+                                                              min(cap * sd * math.sqrt(h), mu * h))
                     real = math.log(closes[t + h] / closes[t])
                     out[h].append((pred, real))
         t += step

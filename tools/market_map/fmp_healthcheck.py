@@ -22,7 +22,7 @@ ENDPOINTS = [
     ("quote",        "quote?symbol=AAPL",                              True),
     ("eod",          "historical-price-eod/full?symbol=AAPL",          True),
     ("income",       "income-statement?symbol=AAPL&period=quarter&limit=1", True),
-    ("estimates",    "analyst-estimates?symbol=AAPL&limit=1",          False),
+    ("estimates",    "analyst-estimates?symbol=AAPL&period=annual&limit=1",  False),  # period REQUIRED (bare -> HTTP 400)
     ("earnings",     "earnings?symbol=AAPL&limit=1",                   False),
     ("treasury",     "treasury-rates",                                 False),
     ("commodities",  "commodities-list",                               False),

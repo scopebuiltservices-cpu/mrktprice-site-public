@@ -18,3 +18,9 @@ def test_no_short_returns_none():
 if __name__ == "__main__":
     test_crowded_smallcap_flags(); test_liquid_megacap_quiet(); test_no_short_returns_none()
     print("test_crowding_board: 3/3 PASS")
+
+def test_real_float_denominator_preferred():
+    rows = [["2026-06-%02d" % (d + 1), 12.0, 800000] for d in range(25)]
+    # same fails, but a small REAL float (30M) -> higher SI% than the mcap/price proxy (50M shares), src=+float
+    cr = CB.crowding_for({"fails": 4_000_000, "level": "elevated", "trend": "rising"}, rows, 600_000_000, float_shares=30_000_000)
+    assert abs(cr["siPct"] - (4_000_000/30_000_000*100)) < 1e-6 and cr["src"].endswith("+float"), cr

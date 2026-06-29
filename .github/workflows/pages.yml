@@ -135,6 +135,9 @@ jobs:
             # crowding short-interest % — engages the penalty on low-float, squeeze-prone names. FMP has NO
             # short interest, so the FTD numerator stays. Absent -> crowding_board falls back to mcap/price.
             FMP_API_KEY="$FMP_API_KEY" python tools/market_map/fmp_float.py --marketmap marketmap.json --out data/float.json || echo "::warning::FMP float fetch skipped"
+            # BULK INFRA (the big win): one CSV call each for ratios-ttm / key-metrics-ttm / price-target-summary
+            # / rating across the WHOLE universe (4 calls vs ~600) -> data/fundamentals.json (FMP Ultimate).
+            FMP_API_KEY="$FMP_API_KEY" python tools/market_map/fmp_bulk.py --marketmap marketmap.json --out data/fundamentals.json || echo "::warning::FMP bulk fundamentals skipped"
             # CROWDING (#7): fold SEC fails-to-deliver + committed volume history into a per-name days-to-cover,
             # FTD short-interest % (real float denom when present), and crowding penalty -> n.cr for the board chip.
             python tools/market_map/crowding_board.py --map marketmap.json --hist hist --float data/float.json || echo "::warning::crowding enrichment skipped"
@@ -144,6 +147,8 @@ jobs:
             # PROJECTION (#4/#8): per-name no-lookahead forward projection (proj_server OU/EMA blend) ->
             # projClose, % vs now, and calibrated P(up) over the horizon (proj_engine) -> n.pj for the board.
             python tools/market_map/proj_board.py --map marketmap.json --hist hist || echo "::warning::projection enrichment skipped"
+            # FUNDAMENTALS (#1+bulk): merge FMP bulk ratios/metrics/targets/rating + analyst target upside -> n.fund
+            python tools/market_map/fundamentals_board.py --map marketmap.json --fund data/fundamentals.json --hist hist || echo "::warning::fundamentals enrichment skipped"
             # FMP Ultimate multi-endpoint health probe -> fmp_health.json (also runs standalone every 6h)
             FMP_API_KEY="$FMP_API_KEY" python tools/market_map/fmp_healthcheck.py --out fmp_health.json || echo "::warning::FMP healthcheck skipped"
             # SERVER-SIDE universe-wide projClose learning: no-lookahead walk-forward over all hist ->

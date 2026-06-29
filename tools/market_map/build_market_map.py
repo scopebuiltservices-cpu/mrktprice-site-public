@@ -1023,6 +1023,15 @@ def real_universe():
                  "missing":"set the FMP_API_KEY (or FMP_ULTIMATE_API_KEY) repo secret"}.get(_FPP.get("reason"),"check key + plan")))
     except Exception as _pe:
         globals()["_FMP_PRICE_PROBE"]={"ok":False,"reason":"probe_error","message":str(_pe)[:160],"status":None}
+    # ROBUST multi-endpoint probe (all FMP Ultimate endpoints) -> a single plain-English ACTION the site
+    # shows directly (banner + terminal FMP tile), so the reason+fix is visible without opening GitHub.
+    try:
+        import fmp_healthcheck as _fhc
+        globals()["_FMP_HEALTH"]=_fhc.probe()
+        if _FMP_HEALTH and _FMP_HEALTH.get("overall")!="ok":
+            _sys.stderr.write("::warning title=FMP health::%s\n"%_FMP_HEALTH.get("action",""))
+    except Exception as _he:
+        globals()["_FMP_HEALTH"]=None
     def _get_hist(sym, min_rows=10):
         return _PS.get(sym, min_rows)
     try:
@@ -1412,6 +1421,8 @@ def real_universe():
         "fmpPricePrimary":True,
         "fmpLastOk":PH["fmpLastOk"],                                              # ISO ts of last successful FMP price pull
         "fmpPriceProbe":globals().get("_FMP_PRICE_PROBE"),                        # classified WHY for a 0-FMP-price run (key/plan/limit)
+        "fmpHealth":globals().get("_FMP_HEALTH"),                                 # multi-endpoint probe {overall,action,endpoints}
+        "fmpAction":(globals().get("_FMP_HEALTH") or {}).get("action"),          # plain-English next step shown on the site
         "fmpDegraded":bool(PH["fmpKeyPresent"] and PH["fmp"]==0),                 # key present but 0 FMP prices -> alert
         "yfEnabled":PH["yfEnabled"],"yfImported":PH["yfImported"],
         "fmpPriceShare":round(100.0*PH["fmp"]/max(PH["fmp"]+PH["yf"]+PH["miss"],1),1),
@@ -1441,7 +1452,9 @@ def main():
                 _last=_dhp.get("fmpLastOk") or "never this run"
                 _pp=_dhp.get("fmpPriceProbe") or {}
                 _why=(" [%s%s]"%(_pp.get("reason"),(": "+(_pp.get("message") or "").strip()[:80]) if _pp.get("message") else "")) if (_pp and not _pp.get("ok")) else ""
-                snap["source"]="⚠ FMP Ultimate NOT pulling%s (last OK: %s) — serving yfinance backup · research only"%(_why,_last)
+                _act=(globals().get("_FMP_HEALTH") or {}).get("action")
+                snap["source"]="⚠ FMP Ultimate NOT pulling%s (last OK: %s) — serving yfinance backup%s · research only"%(
+                    _why,_last,(" · FIX: "+_act) if _act else "")
             elif _ps.get("yfinance",0)>0 and _ps.get("fmp",0)>0:
                 snap["source"]=snap["source"].replace("yfinance backup","yfinance backup [%d FMP / %d yfinance]"%(_ps.get("fmp",0),_ps.get("yfinance",0)))
         except Exception: pass

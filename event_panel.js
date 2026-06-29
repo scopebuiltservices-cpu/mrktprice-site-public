@@ -55,8 +55,10 @@
         board.insertBefore(host, board.firstChild); }
       var c = col[_fmp.overall] || '#69727f';
       var det = (_fmp.endpoints || []).map(function (e) { return (e.ok ? '✓' : '✗') + ' ' + e.name + (e.ok ? '' : ' (' + e.reason + ')'); }).join('  ');
+      var act = (_fmp.action && _fmp.overall !== 'ok')
+        ? '<div style="margin-top:2px;color:#d8b24a;font-size:8px">▸ ' + _fmp.action.replace(/</g, '&lt;') + '</div>' : '';
       host.innerHTML = 'FMP Ultimate: <b style="color:' + c + '">' + (_fmp.overall || '?').toUpperCase() + '</b>'
-        + (_fmp.okCount != null ? ' ' + _fmp.okCount + '/' + _fmp.total : '') + ' <span style="color:#69727f" title="' + det + '">· hover for endpoints</span>';
+        + (_fmp.okCount != null ? ' ' + _fmp.okCount + '/' + _fmp.total : '') + ' <span style="color:#69727f" title="' + det + '">· hover for endpoints</span>' + act;
     }
     if (_fmpTried) { paint(); return; }
     _fmpTried = true;

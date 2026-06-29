@@ -3622,7 +3622,17 @@ function draw(){const cv=document.getElementById('cv2');const {W,H:Ht,g}=fitCanv
   if(pHi!=null)rows.push(['P(≥'+A.high.toFixed(1)+')',(pHi*100).toFixed(0)+'%']);
   if(pLo!=null)rows.push(['P(≤'+A.low.toFixed(1)+')',(pLo*100).toFixed(0)+'%']);
   rows.push(['median',endP.toFixed(1)]);
-  var _topish=false;for(var _ii=h0;_ii<Math.min(h0+18,c.length);_ii++){if(Yp(c[_ii])<yP0+Hp*0.42){_topish=true;break;}}const bw=110,bh=12*rows.length+8,bx=padL+4,by=_topish?(yP0+Hp-bh-4):(yP0+4);g.fillStyle='rgba(10,13,18,.80)';g.fillRect(bx,by,bw,bh);g.strokeStyle='rgba(120,140,170,.28)';g.lineWidth=1;g.strokeRect(bx,by,bw,bh);
+  const bw=112,bh=12*rows.length+8,bx=padL+4;
+  // AUTO-PLACE: put the box in whichever half (top/bottom) of the box's own left column the price line
+  // leaves emptiest, so it never sits on the data. Sample across the box's actual x-span, not a fixed 18.
+  var _perBar=(W-padL-padR)/Math.max(show,1),_span=Math.max(18,Math.round((bw+10)/Math.max(_perBar,0.5)));
+  var _topHits=0,_botHits=0;for(var _ii=h0;_ii<Math.min(h0+_span,c.length);_ii++){(Yp(c[_ii])<yP0+Hp*0.5)?_topHits++:_botHits++;}
+  const by=(_topHits<=_botHits)?(yP0+4):(yP0+Hp-bh-4);
+  // translucent rounded card + soft shadow for legibility over the chart
+  g.save();g.shadowColor='rgba(0,0,0,.55)';g.shadowBlur=8;g.shadowOffsetY=1;g.fillStyle='rgba(10,13,18,.88)';
+  if(g.roundRect){g.beginPath();g.roundRect(bx,by,bw,bh,7);g.fill();}else g.fillRect(bx,by,bw,bh);g.restore();
+  g.strokeStyle='rgba(120,140,170,.30)';g.lineWidth=1;
+  if(g.roundRect){g.beginPath();g.roundRect(bx,by,bw,bh,7);g.stroke();}else g.strokeRect(bx,by,bw,bh);
   rows.forEach(function(r,ri){const yy=by+13+ri*12;g.fillStyle=r[2]?'rgba(150,170,200,.92)':'#9aa7b4';g.font=(r[2]?'bold 9px':'9px')+' sans-serif';g.fillText(r[0],bx+5,yy);if(r[1]){g.fillStyle=(r[0]==='P(up)')?(pUp>=0.5?'#2ecc8f':'#ef5f4e'):'#cfd8e3';g.textAlign='right';g.fillText(r[1],bx+bw-5,yy);g.textAlign='left';}});})();
  if(CUR.ou&&CUR.ou.meanRev){const my=Yp(CUR.ou.muPrice);g.strokeStyle='rgba(91,157,255,.55)';g.setLineDash([6,3]);g.lineWidth=1;g.beginPath();g.moveTo(padL,my);g.lineTo(W-padR,my);g.stroke();g.setLineDash([]);g.fillStyle='rgba(91,157,255,.85)';g.font='9px sans-serif';g.fillText('OU mu '+CUR.ou.muPrice.toFixed(1),padL+62,my-3);}
  g.fillStyle=css('--accent');g.beginPath();g.arc(X(jx),Yp(CUR.last),3.5,0,7);g.fill();g.fillStyle=css('--ink');g.font='bold 11px sans-serif';g.fillText(CUR.last.toFixed(2),X(jx)-34,Yp(CUR.last)-7);

@@ -33,7 +33,9 @@ def test_eod_blocked_is_degraded():
     eod = next(r for r in rep["endpoints"] if r["name"] == "eod")
     assert eod["reason"] in ("plan_or_endpoint", "http_error") and not eod["ok"], eod
     assert rep["overall"] == "degraded", rep["overall"]
-    print("  PASS  EOD plan-blocked (critical) -> overall=degraded, reason=%s" % eod["reason"])
+    assert eod.get("fix"), "missing per-endpoint fix"
+    assert "KEY VALID" in rep["action"] and "plan" in rep["action"].lower(), rep["action"]
+    print("  PASS  EOD plan-blocked -> degraded; self-diagnosis action: " + rep["action"][:60] + "...")
 
 def test_invalid_key_is_down():
     rep = H.probe(get=_get_invalid_key, key="BADKEY")

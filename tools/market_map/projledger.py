@@ -92,7 +92,8 @@ def build(hist_dir, names, horizons=HORIZONS):
         by[str(h)] = PL.learn(pr, rl)
         total += len(pr)
     return {"asof": dt.date.today().isoformat(), "horizons": horizons, "byHorizon": by,
-            "names": used, "samples": total, "schema": "projlearn/1"}
+            "names": used, "samples": total, "schema": "projlearn/1",
+            "survivorshipBias": "universe = CURRENT constituents; delisted names absent -> pooled skill is an UPWARD-biased estimate"}
 
 
 def _names(marketmap):
@@ -117,12 +118,4 @@ def main():
     tmp = a.out + ".tmp"
     with open(tmp, "w") as f:
         json.dump(rep, f, separators=(",", ":"))
-    os.replace(tmp, a.out)
-    sys.stderr.write("projledger: %d names, %d matured samples -> %s (beta@21=%s skill@21=%s)\n" % (
-        rep["names"], rep["samples"], a.out, rep["byHorizon"].get("21", {}).get("beta"),
-        rep["byHorizon"].get("21", {}).get("skill")))
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    os.replace(tmp, a.

@@ -76,7 +76,8 @@ def merge(ratios_rows, metrics_rows, target_rows, rating_rows):
         if not t:
             continue
         d = out.setdefault(t, {})
-        d["pe"]       = _num(_pick(r, "priceToEarningsRatioTTM", "peRatioTTM", "priceEarningsRatioTTM"))
+        _pe = _num(_pick(r, "priceToEarningsRatioTTM", "peRatioTTM", "priceEarningsRatioTTM"))
+        d["pe"]       = _pe if (_pe is not None and 0 < _pe <= 200) else None   # winsor: drop loss-maker / pathological P/E
         d["pb"]       = _num(_pick(r, "priceToBookRatioTTM", "pbRatioTTM", "priceToBookTTM"))
         d["netMargin"]= _num(_pick(r, "netProfitMarginTTM", "netIncomeMarginTTM"))
         d["debtEq"]   = _num(_pick(r, "debtToEquityRatioTTM", "debtEquityRatioTTM", "debtToEquityTTM"))
@@ -156,7 +157,10 @@ def main():
     uni = _universe(a.marketmap)
     if uni:                                            # keep only our universe (bulk returns the whole market)
         res = {k: v for k, v in res.items() if k in uni}
-    res["_meta"] = {"names": len(res), "source": "FMP bulk: " + ",".join(BULK.values())}
+    import datetime as _dt
+    res["_meta"] = {"names": len(res), "source": "FMP bulk: " + ",".join(BULK.values()),
+                    "asof": _dt.date.today().isoformat(), "pit": False,
+                    "note": "current-vintage TTM/consensus; NOT point-in-time. Do not feed into the no-lookahead ledger/IC without PIT gating."}
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     tmp = a.out + ".tmp"
     with open(tmp, "w") as f:

@@ -24,7 +24,7 @@ ok("good list -> ok", C.classify(200, [{"date": "2026-01-01", "close": 100.0}])[
 ok("empty 200 -> empty", C.classify(200, [])[0] == "empty")
 
 # key reader accepts whichever name the Ultimate secret carries (connector + history must agree)
-for k in ("FMP_API_KEY", "FMP_ULTIMATE_API_KEY", "FMP_UTIMATE_API_KEY"):
+for k in ("FMP_ULTIMATE_API_KEY", "FMP_API_KEY", "FMP_UTIMATE_API_KEY"):
     os.environ.pop(k, None)
 ok("connector _key empty when unset", C._key() == "")
 ok("history _key empty when unset", H._key() == "")

@@ -1054,7 +1054,7 @@ def real_universe():
     try:
         import universe_fetch as _uf
         _umode=os.environ.get("UNIVERSE_MODE","all")   # S&P 500 + full Nasdaq + Dow 30 + Russell 2000 union
-        _UNIV=_uf.fetch_universe(mode=_umode, key=(os.environ.get("FMP_API_KEY") or os.environ.get("FMP_ULTIMATE_API_KEY") or os.environ.get("FMP_UTIMATE_API_KEY")), session=_PSESS) or SEED
+        _UNIV=_uf.fetch_universe(mode=_umode, key=(os.environ.get("FMP_ULTIMATE_API_KEY") or os.environ.get("FMP_API_KEY") or os.environ.get("FMP_UTIMATE_API_KEY")), session=_PSESS) or SEED
     except Exception as _ue:
         sys.stderr.write("universe_fetch failed (%s); using SEED\n"%_ue); _UNIV=SEED
     sys.stderr.write("EQUITY UNIVERSE: %d names (source=%s)\n"%(len(_UNIV), "fetch" if _UNIV is not SEED else "SEED"))
@@ -1361,7 +1361,7 @@ def real_universe():
             except Exception as e:
                 if len(_errs)<8: _errs.append("ALPACA %s: %s"%(n["t"], str(e)[:80]))
             _gcap+=1
-    _kf=bool(_os.environ.get("FMP_API_KEY","").strip()); _ke=bool(_os.environ.get("EODHD_API_KEY","").strip())
+    _kf=bool((_os.environ.get("FMP_ULTIMATE_API_KEY") or _os.environ.get("FMP_API_KEY") or "").strip()); _ke=bool(_os.environ.get("EODHD_API_KEY","").strip())
     _ka=bool(_os.environ.get("ALPACA_API_KEY_ID","").strip() and _os.environ.get("ALPACA_API_SECRET_KEY","").strip())
     _sys.stderr.write("ENRICH: FMP key=%s tried=%d ok=%d err=%d | EODHD key=%s tried=%d gex=%d err=%d | ALPACA key=%s bs=%d\n"%(_kf,_fmp_try,_fmp_ok,_fmp_err,_ke,_eod_try,_eod_ok,_eod_err,_ka,_alp_ok))
     _sys.stderr.write("FMP PREMIUM: earnings=%d dcf=%d priceTarget=%d estConsensus=%d (Ultimate)\n"%(_earn_ok,_dcf_ok,_ptgt_ok,_est_ok))

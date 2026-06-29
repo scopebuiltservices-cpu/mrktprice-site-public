@@ -14,7 +14,7 @@ def _key():
     """Read the FMP key, accepting whichever name the Ultimate secret carries (matches fmp_history +
     the GitHub Actions secret mapping). Without this, a secret named FMP_ULTIMATE_API_KEY would power
     prices/macro but silently disable the valuation/premium connector."""
-    for k in ("FMP_API_KEY", "FMP_ULTIMATE_API_KEY", "FMP_UTIMATE_API_KEY"):
+    for k in ("FMP_ULTIMATE_API_KEY", "FMP_API_KEY", "FMP_UTIMATE_API_KEY"):
         v = os.environ.get(k, "").strip()
         if v:
             return v

@@ -25,7 +25,7 @@ def main():
     comm = ms.get("commodities") or {}
     tenors = len([v for v in tre.values() if v is not None])
     ncomm = len(comm)
-    has_key = bool(os.environ.get("FMP_API_KEY", "").strip())
+    has_key = bool((os.environ.get("FMP_ULTIMATE_API_KEY") or os.environ.get("FMP_API_KEY") or "").strip())
 
     # per-name attribution coverage: how many names actually cite a commodity driver?
     names = d.get("names", [])

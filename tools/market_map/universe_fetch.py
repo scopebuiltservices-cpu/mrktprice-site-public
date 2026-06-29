@@ -338,7 +338,7 @@ def main():
         import fmp_history as fh
         key = fh._key()
     except Exception:
-        key = os.environ.get("FMP_API_KEY")
+        key = os.environ.get("FMP_ULTIMATE_API_KEY") or os.environ.get("FMP_API_KEY")
     u = fetch_universe("all", key=key)
     if not u:
         print("no universe (no key/network) — caller would keep SEED"); return

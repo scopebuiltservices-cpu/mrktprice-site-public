@@ -33,7 +33,7 @@ _DRIVER_SYMS = {"OIL":"CLUSD","BRENT":"BZUSD","NATGAS":"NGUSD","GOLD":"GCUSD","S
 
 
 def _key():
-    for k in ("FMP_API_KEY", "FMP_ULTIMATE_API_KEY", "FMP_UTIMATE_API_KEY"):
+    for k in ("FMP_ULTIMATE_API_KEY", "FMP_API_KEY", "FMP_UTIMATE_API_KEY"):
         v = os.environ.get(k, "").strip()
         if v:
             return v

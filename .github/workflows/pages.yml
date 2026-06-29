@@ -89,7 +89,10 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
-          FMP_API_KEY: ${{ secrets.FMP_API_KEY || secrets.FMP_ULTIMATE_API_KEY || secrets.FMP_UTIMATE_API_KEY }}
+          # FMP_ULTIMATE_API_KEY is the canonical secret; FMP_API_KEY is kept as an alias to the SAME value
+          # so any path still reading the old name keeps working. All code now prefers FMP_ULTIMATE_API_KEY.
+          FMP_ULTIMATE_API_KEY: ${{ secrets.FMP_ULTIMATE_API_KEY || secrets.FMP_API_KEY || secrets.FMP_UTIMATE_API_KEY }}
+          FMP_API_KEY: ${{ secrets.FMP_ULTIMATE_API_KEY || secrets.FMP_API_KEY || secrets.FMP_UTIMATE_API_KEY }}
           EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
           ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
           ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}

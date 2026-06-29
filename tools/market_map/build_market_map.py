@@ -266,6 +266,15 @@ def aggregate(wr):
 
 def build(names,mkt,ff,macro=None):
     macro=macro or {}
+    # AUTHORITATIVE SECTOR before the in-build sector consumers (sector-relative valuation, secRel, sector
+    # correlation/dependency): apply the prior run's GICS profile (sector is ~static; nightly fmp_profile
+    # refreshes it). Preserves the seed label in n["secSeed"]. No-op on the first run (no profile yet).
+    try:
+        import sector_seed as _ss
+        _nseco=_ss.apply_authoritative(names, _ss.load())
+        if _nseco: sys.stderr.write("build: applied authoritative GICS sector to %d names (pre-consumer)\n"%_nseco)
+    except Exception as _e:
+        pass
     # Normalize every series to a common trailing length so real-data tickers with
     # different listing histories align (synthetic data is already uniform). Guards the
     # OLS factor regression (mkt[w]) and the sector-mean loop against ragged arrays.

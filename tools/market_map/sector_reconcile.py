@@ -26,10 +26,10 @@ def enrich(mm, prof):
         auth = (rec or {}).get("sector")
         if not auth:                                       # no authoritative equity sector -> leave as-is
             continue
-        orig = n.get("sec")
-        n["secOrig"] = orig
+        seed = n.get("secSeed") if n.get("secSeed") is not None else n.get("sec")   # prefer the build-preserved seed
+        n["secOrig"] = seed
         n["secAuth"] = auth
-        n["secMismatch"] = bool(orig and orig not in NON_EQUITY and orig != auth)
+        n["secMismatch"] = bool(seed and seed not in NON_EQUITY and seed != auth)
         if n["secMismatch"]:
             mism += 1
         n["sec"] = auth                                    # client grouping/display now authoritative

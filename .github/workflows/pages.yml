@@ -202,7 +202,7 @@ jobs:
         run: |
           git config user.name  "mrktprice-bot"
           git config user.email "bot@mrktprice.com"
-          git add -A marketmap.json xsection.json universe.json events.json sec_events.json fmp_health.json projlearn.json hist/ monitoring/latest.json data/alpha_log.jsonl data/ff_factors.csv tools/market_map/est_history.jsonl tools/market_map/factor_snapshots.jsonl tools/market_map/factor_ic.jsonl tools/market_map/trig_snap.jsonl tools/market_map/trig_out.jsonl tools/market_map/drift_ref.json tools/market_map/drift_store.jsonl tools/market_map/trial_ledger.jsonl tools/market_map/health_log.jsonl 2>/dev/null || true
+          git add -A marketmap.json xsection.json universe.json events.json sec_events.json fmp_health.json projlearn.json hist/ monitoring/latest.json data/alpha_log.jsonl data/ff_factors.csv data/profile.json data/fundamentals.json data/estimates.json data/actions.json data/float.json tools/market_map/est_history.jsonl tools/market_map/factor_snapshots.jsonl tools/market_map/factor_ic.jsonl tools/market_map/trig_snap.jsonl tools/market_map/trig_out.jsonl tools/market_map/drift_ref.json tools/market_map/drift_store.jsonl tools/market_map/trial_ledger.jsonl tools/market_map/health_log.jsonl 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "::notice::no data changes to commit"
           else

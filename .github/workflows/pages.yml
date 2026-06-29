@@ -131,9 +131,13 @@ jobs:
             # considerations, in the reports, and in the board number. cik.json already emitted above.
             python tools/market_map/sec_forms.py --cik cik.json --marketmap marketmap.json --out sec_events.json || echo "::warning::SEC event ingestion skipped"
             python tools/market_map/event_board.py --map marketmap.json --sec sec_events.json || echo "::warning::SEC event tilt skipped"
+            # REAL FLOAT (FMP /stable/shares-float, gated): the correct, much-smaller denominator for the
+            # crowding short-interest % — engages the penalty on low-float, squeeze-prone names. FMP has NO
+            # short interest, so the FTD numerator stays. Absent -> crowding_board falls back to mcap/price.
+            FMP_API_KEY="$FMP_API_KEY" python tools/market_map/fmp_float.py --marketmap marketmap.json --out data/float.json || echo "::warning::FMP float fetch skipped"
             # CROWDING (#7): fold SEC fails-to-deliver + committed volume history into a per-name days-to-cover,
-            # FTD short-interest proxy, and crowding penalty (verified crowding_engine) -> n.cr for the board chip.
-            python tools/market_map/crowding_board.py --map marketmap.json --hist hist || echo "::warning::crowding enrichment skipped"
+            # FTD short-interest % (real float denom when present), and crowding penalty -> n.cr for the board chip.
+            python tools/market_map/crowding_board.py --map marketmap.json --hist hist --float data/float.json || echo "::warning::crowding enrichment skipped"
             # REGIME (#5): per-name 2-state Gaussian HMM on committed log-returns -> current calm/stress
             # regime + variance separation (regime_ic). Names in a real stress regime get a board chip.
             python tools/market_map/regime_board.py --map marketmap.json --hist hist || echo "::warning::regime enrichment skipped"

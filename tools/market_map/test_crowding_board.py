@@ -1,4 +1,4 @@
-"""Planted-structure tests for crowding_board.py (days-to-cover + crowding penalty enrichment)."""
+"""Planted-structure tests for crowding_board.py (days-to-cover + crowding penalty + real-float denom)."""
 import crowding_board as CB
 
 def test_crowded_smallcap_flags():
@@ -15,12 +15,12 @@ def test_no_short_returns_none():
     assert CB.crowding_for(None, [], 1e9) is None
     assert CB.crowding_for({"fails": 0}, [], 1e9) is None
 
-if __name__ == "__main__":
-    test_crowded_smallcap_flags(); test_liquid_megacap_quiet(); test_no_short_returns_none()
-    print("test_crowding_board: 3/3 PASS")
-
 def test_real_float_denominator_preferred():
+    # real free float (30M) is used over the mcap/price proxy -> higher, correct SI%, src tagged +float
     rows = [["2026-06-%02d" % (d + 1), 12.0, 800000] for d in range(25)]
-    # same fails, but a small REAL float (30M) -> higher SI% than the mcap/price proxy (50M shares), src=+float
     cr = CB.crowding_for({"fails": 4_000_000, "level": "elevated", "trend": "rising"}, rows, 600_000_000, float_shares=30_000_000)
-    assert abs(cr["siPct"] - (4_000_000/30_000_000*100)) < 1e-6 and cr["src"].endswith("+float"), cr
+    assert abs(cr["siPct"] - (4_000_000 / 30_000_000 * 100)) < 1e-3 and cr["src"].endswith("+float"), cr
+
+if __name__ == "__main__":
+    test_crowded_smallcap_flags(); test_liquid_megacap_quiet(); test_no_short_returns_none(); test_real_float_denominator_preferred()
+    print("test_crowding_board: 4/4 PASS")

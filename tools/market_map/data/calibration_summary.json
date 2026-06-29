@@ -1,0 +1,11 @@
+{
+  "snapshots": 8,
+  "outcomes": 0,
+  "pairs": 0,
+  "avgRichnessPct": 65.03,
+  "richness_predicts_downmove_hitrate": null,
+  "maturedAttachedThisRun": 0,
+  "pendingNotYetMatured": 4,
+  "skippedDemo": 4,
+  "generatedUtc": "2026-06-29T12:14:37.833008Z"
+}

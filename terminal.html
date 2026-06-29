@@ -185,7 +185,7 @@ button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--i
  <div class="ctitle"><div class="legend">
    <span><i style="background:var(--hist)"></i>price</span><span><i style="background:var(--accent)"></i>central path</span><span><i style="background:#7bb3f0"></i>conformal 90%</span>
    <span><i style="background:var(--vwap)"></i>VWAP anc</span><span><i style="background:var(--vwap2)"></i>VWAP20</span><span><b style="background:rgba(105,114,127,.4)"></b>±2σ band</span>
-   <span><b style="background:var(--b80)"></b>80%</span><span><b style="background:var(--b95)"></b>95%</span><span><i style="background:var(--caution)"></i>P6</span></div>
+   <span><b style="background:var(--b80)"></b>80%</span><span><b style="background:var(--b95)"></b>95%</span><span><i style="background:var(--caution)"></i>P6</span><span title="SEC filings on the timeline"><b style="background:#e88c4a"></b>8-K ◆</span><span title="13D/13G ownership"><b style="background:#a882e0"></b>13D/G ▲</span><span title="Form 3/4/5 insider"><b style="background:#5ac8d2"></b>insider ●</span></div>
   <div class="toggles">
    <label><input type="checkbox" id="tReg" checked>regimes</label>
    <label><input type="checkbox" id="tVwap" checked>VWAP</label>
@@ -1308,8 +1308,35 @@ function drawEarningsLayer(g,G){try{
     if(_qFut.est!=null){g.fillStyle='#cfe0f0';g.fillText('est EPS '+_qFut.est,xf+2,yu);yu+=9;}
     var _fv=(_mmName(G.sym)||{}).val;if(_fv&&_fv.fpe!=null){g.fillStyle='#9ab4e0';g.fillText('fwd P/E '+_fv.fpe.toFixed(1)+'x',xf+2,yu);}
   }}
+  try{drawSecEventsLayer(g,G);}catch(_se){}
   try{_qBuildExpTile(G.sym,_qFut,_qPast);}catch(_et){}
 }catch(_qe){}}
+/* SEC FILING TIMELINE — draws 8-K (◆), 13D/13G (▲) as dashed verticals near the bottom axis and Form
+   3/4/5 insider filings as small ● ticks, from n.ev.events[] (event_board.py). Shares the EXACT session
+   axis as the quarterly report verticals (same d/h0/show/X), so dates line up. Bottom-anchored so it never
+   collides with the top quarterly labels. Material-first: 13D/G + high-severity 8-K get a flag; the rest tick. */
+function drawSecEventsLayer(g,G){try{
+  var nn=_mmName(G.sym); if(!nn||!nn.ev||!nn.ev.events||!nn.ev.events.length||_isETF(G.sym))return;
+  var d=G.d,h0=G.h0,show=G.show,X=G.X,yP0=G.yP0,yBot=G.yBot;
+  function idxFor(iso){for(var k=0;k<d.length;k++){if(d[k]>=iso)return k;}return -1;}
+  var placed=[];                                   // avoid label pile-ups within ~8px
+  nn.ev.events.slice(0,40).forEach(function(e){
+    if(!e.date)return; var ix=idxFor(e.date); if(ix<0)return; var xi=ix-h0; if(xi<0||xi>=show)return; var xx=X(xi);
+    var is8k=e.form==='8-K', is13=(e.form.indexOf('13D')>=0||e.form.indexOf('13G')>=0), isIns=(e.form==='3'||e.form==='4'||e.form==='5');
+    var rgb=is8k?'232,140,74':is13?'168,130,224':'90,200,210';
+    if(isIns||(is8k&&(e.sev||0)<0.55)){           // frequent/low-severity -> small bottom tick only
+      g.fillStyle='rgba('+rgb+',.7)'; g.beginPath(); g.arc(xx,yBot-3,1.8,0,7); g.fill(); return;
+    }
+    var a=is8k?Math.max(0.35,Math.min(0.9,e.sev||0.5)):0.6;
+    g.strokeStyle='rgba('+rgb+','+a+')'; g.globalAlpha=1; g.lineWidth=1.2; g.setLineDash([2,3]);
+    g.beginPath(); g.moveTo(xx,yP0+36); g.lineTo(xx,yBot); g.stroke(); g.setLineDash([]);
+    var crowd=placed.some(function(px){return Math.abs(px-xx)<9;});
+    if(!crowd){ var lab=(is8k?'◆':'▲')+(is8k&&e.items&&e.items.length?(' '+e.items[0]):''); placed.push(xx);
+      g.font='bold 8px sans-serif'; var fw=g.measureText(lab).width+5;
+      g.fillStyle='rgba('+rgb+',.9)'; g.fillRect(xx,yBot-11,fw,10);
+      g.fillStyle='#0b0e13'; g.textAlign='left'; g.fillText(lab,xx+2,yBot-3); }
+  });
+}catch(_e){}}
 function _cadencePastDates(d,sym,k){
   // FALLBACK: estimated past report dates from the company's fiscal cadence (qMonths if known, else
   // the generic Feb/May/Aug/Nov calendar). Flagged conf:false/est:true so they are never shown as

@@ -159,6 +159,8 @@ jobs:
             python tools/market_map/proj_board.py --map marketmap.json --hist hist || echo "::warning::projection enrichment skipped"
             # FUNDAMENTALS (#1+bulk): merge FMP bulk ratios/metrics/targets/rating + analyst target upside -> n.fund
             python tools/market_map/fundamentals_board.py --map marketmap.json --fund data/fundamentals.json --hist hist || echo "::warning::fundamentals enrichment skipped"
+            # SECTOR RECONCILE: make per-name sector authoritative (GICS) + flag mismatches (n.secAuth/secMismatch)
+            python tools/market_map/sector_reconcile.py --map marketmap.json --profile data/profile.json || echo "::warning::sector reconcile skipped"
             # FMP Ultimate multi-endpoint health probe -> fmp_health.json (also runs standalone every 6h)
             FMP_API_KEY="$FMP_API_KEY" python tools/market_map/fmp_healthcheck.py --out fmp_health.json || echo "::warning::FMP healthcheck skipped"
             # SERVER-SIDE universe-wide projClose learning: no-lookahead walk-forward over all hist ->

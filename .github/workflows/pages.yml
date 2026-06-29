@@ -143,6 +143,8 @@ jobs:
             FMP_API_KEY="$FMP_API_KEY" python tools/market_map/fmp_estimates.py --marketmap marketmap.json --out data/estimates.json || echo "::warning::FMP estimates skipped"
             # CORPORATE ACTIONS: trailing-12m dividend (total-return income) + next ex-date + last split. -> data/actions.json
             FMP_API_KEY="$FMP_API_KEY" python tools/market_map/fmp_actions.py --marketmap marketmap.json --out data/actions.json || echo "::warning::FMP actions skipped"
+            # AUTHORITATIVE SECTOR (GICS): FMP profile-bulk (4 parts) -> data/profile.json (sector/industry/exchange)
+            FMP_API_KEY="$FMP_API_KEY" python tools/market_map/fmp_profile.py --marketmap marketmap.json --out data/profile.json || echo "::warning::FMP profile skipped"
             # ADJUSTED BETA (econometric): replace raw OLS beta with leave-one-out + Vasicek-shrunk beta
             # (noisy/extreme betas pulled toward the cross-sectional mean) — feeds the board market-drag term.
             python tools/market_map/beta_board.py --map marketmap.json || echo "::warning::beta adjustment skipped"

@@ -133,6 +133,9 @@ jobs:
             python tools/market_map/event_board.py --map marketmap.json --sec sec_events.json || echo "::warning::SEC event tilt skipped"
             # FMP Ultimate multi-endpoint health probe -> fmp_health.json (also runs standalone every 6h)
             FMP_API_KEY="$FMP_API_KEY" python tools/market_map/fmp_healthcheck.py --out fmp_health.json || echo "::warning::FMP healthcheck skipped"
+            # SERVER-SIDE universe-wide projClose learning: no-lookahead walk-forward over all hist ->
+            # pooled Mincer-Zarnowitz recalibration -> projlearn.json (seeds the terminal's learning tiles).
+            python tools/market_map/projledger.py --hist hist --marketmap marketmap.json --out projlearn.json || echo "::warning::projledger skipped"
             # KEYLESS: refresh cik.json (ticker->CIK) from SEC's free company_tickers.json so the
             # terminal can pull CONFIRMED quarterly report dates client-side for the whole universe.
             python tools/market_map/emit_cik.py --out cik.json --marketmap marketmap.json --cards cards || echo "::warning::cik.json refresh skipped"
@@ -169,7 +172,7 @@ jobs:
         run: |
           git config user.name  "mrktprice-bot"
           git config user.email "bot@mrktprice.com"
-          git add -A marketmap.json xsection.json universe.json events.json sec_events.json fmp_health.json hist/ monitoring/latest.json data/alpha_log.jsonl data/ff_factors.csv tools/market_map/est_history.jsonl tools/market_map/factor_snapshots.jsonl tools/market_map/factor_ic.jsonl tools/market_map/trig_snap.jsonl tools/market_map/trig_out.jsonl tools/market_map/drift_ref.json tools/market_map/drift_store.jsonl tools/market_map/trial_ledger.jsonl tools/market_map/health_log.jsonl 2>/dev/null || true
+          git add -A marketmap.json xsection.json universe.json events.json sec_events.json fmp_health.json projlearn.json hist/ monitoring/latest.json data/alpha_log.jsonl data/ff_factors.csv tools/market_map/est_history.jsonl tools/market_map/factor_snapshots.jsonl tools/market_map/factor_ic.jsonl tools/market_map/trig_snap.jsonl tools/market_map/trig_out.jsonl tools/market_map/drift_ref.json tools/market_map/drift_store.jsonl tools/market_map/trial_ledger.jsonl tools/market_map/health_log.jsonl 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "::notice::no data changes to commit"
           else

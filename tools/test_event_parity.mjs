@@ -1,0 +1,20 @@
+/* Exact Py<->JS parity: event_engine.js vs tools/event_golden.json. Run: node tools/test_event_parity.mjs */
+import { createRequire } from 'module'; import fs from 'node:fs'; import path from 'node:path'; import url from 'node:url';
+const require = createRequire(import.meta.url);
+const here = path.dirname(url.fileURLToPath(import.meta.url));
+const E = require('../event_engine.js');
+const g = JSON.parse(fs.readFileSync(path.join(here,'event_golden.json'),'utf8'));
+let fails=0; const ok=(n,c)=>{console.log((c?'  PASS  ':'  FAIL  ')+n); if(!c)fails++;};
+const close=(a,b)=>Math.abs(a-b)<=1e-9*(1+Math.abs(b));
+const vclose=(A,B)=>A.length===B.length&&A.every((x,i)=>close(x,B[i]));
+ok('API',['abnormalReturns','car','scar','eventIntensity','stakeSignal','insiderNet','eventTilt','eightkSeverity'].every(k=>typeof E[k]==='function'));
+const r=E.abnormalReturns(g.ri,g.rm,50,240,250,252);
+ok('beta',close(r.b,g.b)); ok('sigma',close(r.sigma,g.sigma)); ok('ar',vclose(r.ar,g.ar));
+ok('car',close(E.car(r.ar),g.car)); ok('scar',close(E.scar(r.ar,r.sigma),g.scar));
+ok('intensity',close(E.eventIntensity(g.events,12,10.0),g.intensity));
+ok('sev402',close(E.eightkSeverity(["4.02","8.01"]),g.sev402));
+ok('stake13D',close(E.stakeSignal("13D",3.0,true),g.stake13D));
+ok('stake13G',close(E.stakeSignal("13G",3.0,false),g.stake13G));
+ok('insider',close(E.insiderNet(120,40,80),g.insider));
+ok('tilt',close(E.eventTilt(0.05,1.5,0.3,0.4),g.tilt));
+console.log('\n'+(fails?fails+' FAILED':'ALL EVENT PARITY TESTS PASSED')); process.exit(fails?1:0);

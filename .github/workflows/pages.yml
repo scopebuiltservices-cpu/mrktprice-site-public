@@ -134,6 +134,12 @@ jobs:
             # CROWDING (#7): fold SEC fails-to-deliver + committed volume history into a per-name days-to-cover,
             # FTD short-interest proxy, and crowding penalty (verified crowding_engine) -> n.cr for the board chip.
             python tools/market_map/crowding_board.py --map marketmap.json --hist hist || echo "::warning::crowding enrichment skipped"
+            # REGIME (#5): per-name 2-state Gaussian HMM on committed log-returns -> current calm/stress
+            # regime + variance separation (regime_ic). Names in a real stress regime get a board chip.
+            python tools/market_map/regime_board.py --map marketmap.json --hist hist || echo "::warning::regime enrichment skipped"
+            # PROJECTION (#4/#8): per-name no-lookahead forward projection (proj_server OU/EMA blend) ->
+            # projClose, % vs now, and calibrated P(up) over the horizon (proj_engine) -> n.pj for the board.
+            python tools/market_map/proj_board.py --map marketmap.json --hist hist || echo "::warning::projection enrichment skipped"
             # FMP Ultimate multi-endpoint health probe -> fmp_health.json (also runs standalone every 6h)
             FMP_API_KEY="$FMP_API_KEY" python tools/market_map/fmp_healthcheck.py --out fmp_health.json || echo "::warning::FMP healthcheck skipped"
             # SERVER-SIDE universe-wide projClose learning: no-lookahead walk-forward over all hist ->

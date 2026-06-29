@@ -19,6 +19,7 @@
       var lab='', col='#9ab4e0';
       if(up!=null){ col=up>=0?'#2ecc8f':'#ef5f4e'; lab='PT '+(up>=0?'+':'')+up.toFixed(0)+'%'; }
       if(f.rating){ lab=(lab?lab+' ':'')+f.rating; }
+      if(f.surprisePct!=null&&Math.abs(f.surprisePct)>=3){ lab=(lab?lab+' ':'')+'ER'+(f.surprisePct>=0?'+':'')+Math.round(f.surprisePct)+'%'; }
       var sp=document.createElement('span'); sp.className=CHIP;
       sp.style.cssText='font-size:8px;font-weight:700;letter-spacing:.02em;color:'+col+';border:1px solid '+col
         +'66;border-radius:3px;padding:0 4px;margin-left:6px;white-space:nowrap';
@@ -28,7 +29,10 @@
         +(f.pe!=null?(' · P/E '+(+f.pe).toFixed(1)):'')
         +(f.roe!=null?(' · ROE '+(f.roe*100).toFixed(0)+'%'):'')
         +(f.fcfYield!=null?(' · FCF-yield '+(f.fcfYield*100).toFixed(1)+'%'):'')
-        +'. Bulk FMP (4 calls/universe). Research only.';
+        +(f.epsFwd!=null?(' · fwd EPS '+f.epsFwd):'')
+        +(f.surprisePct!=null?(' · last surprise '+(f.surprisePct>=0?'+':'')+f.surprisePct+'%'):'')
+        +(f.div12m!=null?(' · div(12m) $'+f.div12m):'')
+        +'. Bulk FMP ratios/targets/rating + per-symbol estimates/surprise/dividends. Research only.';
       sp.textContent=lab;
       hd.appendChild(sp);
     });

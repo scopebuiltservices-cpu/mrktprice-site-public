@@ -133,4 +133,10 @@ def main():
     tmp = a.out + ".tmp"
     with open(tmp, "w") as f:
         json.dump(rep, f, separators=(",", ":"))
-    os.replace(tmp, a.
+    os.replace(tmp, a.out)
+    sys.stderr.write("projledger: wrote %s names=%d samples=%d\n" % (a.out, rep.get("names", 0), rep.get("samples", 0)))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

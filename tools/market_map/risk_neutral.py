@@ -63,10 +63,13 @@ def model_free_iv(chain, spot, T, r, forward=None):
     var=(2.0/T)*s-(1.0/T)*((F/K0-1)**2)
     return {"mfImpliedVar":var,"mfImpliedVol":math.sqrt(var) if var>0 else None,"F":F,"K0":K0}
 
-def variance_risk_premium(chain, spot, T, r, rv_forecast_var):
+def variance_risk_premium(chain, spot, T, r, rv_forecast_var, forward=None):
     """VRP = model-free implied variance - forecast realized variance (HAR-RV).
-    Positive => options expensive vs expected realized (sell-vol edge)."""
-    mf=model_free_iv(chain,spot,T,r)
+    Positive => options expensive vs expected realized (sell-vol edge).
+    `forward` MUST be threaded through so the implied variance here uses the SAME forward the summary
+    reports for mfImpliedVolPct; otherwise mf and vrp silently use two different forwards (F=Se^{rT} here
+    vs a parity forward upstream), which is a forward-inconsistency bug."""
+    mf=model_free_iv(chain,spot,T,r,forward=forward)
     if not mf or rv_forecast_var is None: return None
     return {"impliedVar":round(mf["mfImpliedVar"],6),"forecastVar":round(rv_forecast_var,6),
             "vrp":round(mf["mfImpliedVar"]-rv_forecast_var,6),

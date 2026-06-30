@@ -225,19 +225,29 @@ def conformal_band(logpath, resid_by_h, alpha=0.90):
 
 # --------------------------------------------------------------------------- decision + coverage
 def decision(p_T, hi_logpath, lo_logpath, h_idx, cost=0.0, G=1.0):
-    """Act on the BOUND-adjusted payoff, not the point forecast, AND apply the regime gate at the
-    ACTION layer: a hot regime (G<1) downweights size; a hard gate (G=0) vetoes the trade. 'tradable'
-    requires a bound-implied edge over cost AND an open gate. Long score = upper-bound log-move minus
-    cost; short score = lower-bound minus cost."""
+    """LOWER-CONFIDENCE decision rule (conservative interval edge) + regime gate at the ACTION layer.
+
+    The earlier rule used the OPTIMISTIC interval endpoint as reward (long = hi - p_T, short = p_T - lo).
+    For any interval that straddles the current log-price that is positive whenever half-width > cost, so
+    a zero point-forecast still reads 'tradable' — it converts predictive UNCERTAINTY into presumed profit
+    and manufactures false positives. The correct conservative edge requires the trade to clear cost even
+    at the UNFAVORABLE bound:
+        long  edge = lo - p_T - cost   (go long only if even the lower bound beats current + cost)
+        short edge = p_T - hi - cost   (go short only if even the upper bound is below current - cost)
+    Both can be negative simultaneously (no directional edge), which is the correct answer for a symmetric
+    band around the current price. The optimistic scores are still returned as diagnostics (optLong/optShort).
+    A hot regime (G<1) downweights size; a hard gate (G=0) vetoes the trade."""
     if h_idx >= len(hi_logpath):
         return {"tradable": False, "side": None, "edge": 0.0, "size": 0.0, "regimeG": round(G, 2)}
-    long_s = hi_logpath[h_idx] - p_T - cost
-    short_s = p_T - lo_logpath[h_idx] - cost
+    hi = hi_logpath[h_idx]; lo = lo_logpath[h_idx]
+    long_s = lo - p_T - cost                 # conservative long edge (lower bound clears cost)
+    short_s = p_T - hi - cost                # conservative short edge (upper bound clears cost)
     side = "long" if (long_s > 0 and long_s >= short_s) else ("short" if short_s > 0 else None)
     edge = long_s if side == "long" else (short_s if side == "short" else max(long_s, short_s))
     tradable = bool(side and edge > 0 and G > 0)
     return {"tradable": tradable, "side": side if tradable else None, "edge": round(edge, 5),
-            "size": round(max(G, 0.0), 2) if tradable else 0.0, "regimeG": round(G, 2)}
+            "size": round(max(G, 0.0), 2) if tradable else 0.0, "regimeG": round(G, 2),
+            "optLong": round(hi - p_T - cost, 5), "optShort": round(p_T - lo - cost, 5)}
 
 def coverage(hits):
     h = [1 if x else 0 for x in hits]

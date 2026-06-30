@@ -87,6 +87,10 @@ def macro_report(mm):
                           "why": ((n.get("news") or {}).get("topPos") or [None])[0]} for n in tw if _num((n.get("news") or {}).get("net")) > 0],
         "topHeadwinds": [{"t": n["t"], "sec": n.get("sec"), "net": _num((n.get("news") or {}).get("net")),
                           "why": ((n.get("news") or {}).get("topNeg") or [None])[0]} for n in hw if _num((n.get("news") or {}).get("net")) < 0],
+        "treasuryCurve": _treasury_curve(mm),
+        "macroComplex": _macro_complex(eq, _MM.compute(mm.get("macroSeries")) if isinstance(mm, dict) else None),
+        "regimeMix": _regime_mix(eq),
+        "earningsAhead": _earnings_density(eq),
     }
 
 
@@ -164,6 +168,9 @@ def company_report(mm, ticker):
         "news": {"net": _num(nw.get("net")), "label": nw.get("label", "no-news"), "n": nw.get("n", 0),
                  "tailwinds": nw.get("topPos") or [], "headwinds": nw.get("topNeg") or []},
         "winds": winds,
+        "ebitda": ebitda_block(n),
+        "calendar": calendar_block(n, mm.get("_macroEvents") if isinstance(mm, dict) else None),
+        "sensitivities": sensitivities_block(n, _MM.compute(mm.get("macroSeries")) if isinstance(mm, dict) else None),
         "verdict": _verdict(n),
     }
 
@@ -173,3 +180,158 @@ def _verdict(n):
     score = _tot(n) + 2.0 * _num(pj.get("projPct")) / 100.0 + 0.5 * _num(nw.get("net")) + 0.01 * _num(f.get("targetUpsidePct"))
     tag = "constructive" if score > 0.3 else ("cautious" if score < -0.3 else "balanced")
     return {"score": round(score, 3), "tag": tag}
+
+
+# ---------------- 100x enrichment: EBITDA, calendar, macro/commodity sensitivities ----------------
+import datetime as _dt
+import macro_moves as _MM
+
+
+def _future_earnings(n):
+    """Next + last earnings dates from n['earn']['q'] (real payload field)."""
+    qs = ((n.get("earn") or {}).get("q")) or []
+    today = _dt.date.today()
+    fut, past = [], []
+    for q in qs:
+        d = str(q.get("d") or "")[:10]
+        try:
+            dd = _dt.date.fromisoformat(d)
+        except Exception:
+            continue
+        (fut if dd >= today else past).append((dd, q))
+    nextq = min(fut, key=lambda x: x[0]) if fut else None
+    lastq = max(past, key=lambda x: x[0]) if past else None
+    return nextq, lastq
+
+
+def ebitda_block(n):
+    """Adjusted EBITDA last quarter + expected EBITDA next quarter (defensive: populates once the
+    fundamentals/estimates pull carries them; never crashes if absent)."""
+    f = n.get("fund") or {}
+    last = f.get("ebitdaLastQ", f.get("ebitdaAdjLastQ", f.get("ebitdaTtm")))
+    nxt = f.get("ebitdaNextQ", f.get("ebitdaFwd", f.get("ebitdaEstNext")))
+    g = None
+    if _num(last, None) not in (None, 0) and _num(nxt, None) is not None:
+        try:
+            g = round((float(nxt) - float(last)) / abs(float(last)) * 100.0, 1)
+        except Exception:
+            g = None
+    return {"lastQAdj": last, "nextQExp": nxt, "growthPct": g,
+            "have": (last is not None or nxt is not None)}
+
+
+def calendar_block(n, macro_events=None):
+    nextq, lastq = _future_earnings(n)
+    f = n.get("fund") or {}
+    rows = []
+    if nextq:
+        rows.append({"event": "Next earnings", "date": nextq[0].isoformat(), "detail": "Q%s FY%s (est EPS %s)" % (nextq[1].get("q"), nextq[1].get("y"), nextq[1].get("e"))})
+    if f.get("nextExDate"):
+        rows.append({"event": "Ex-dividend", "date": str(f.get("nextExDate"))[:10], "detail": "div $%s (ttm)" % f.get("div12m", "—")})
+    ls = f.get("lastSplit") or {}
+    if isinstance(ls, dict) and ls.get("date"):
+        rows.append({"event": "Last split", "date": str(ls.get("date"))[:10], "detail": str(ls.get("ratio") or "")})
+    if lastq:
+        rows.append({"event": "Last earnings", "date": lastq[0].isoformat(), "detail": "surprise %s%%" % lastq[1].get("s")})
+    for e in (macro_events or [])[:4]:
+        rows.append({"event": e.get("event", "Macro"), "date": str(e.get("date"))[:10], "detail": e.get("detail", "high impact")})
+    rows.sort(key=lambda r: r["date"])
+    return rows
+
+
+def _sens_row(d, kind, moves=None):
+    """Normalize a dependency dict (n.deps row or n.macro3 entry) into a report sensitivity row.
+    sens = expected % stock move per +1 sigma of the factor (build-computed). When the factor's CURRENT
+    move is available, also report driverSigma (how many sigma the driver moved) and the LIVE implied
+    contribution impliedPct = sens x driverSigma, and set the wind by the contribution's sign."""
+    sens = _num(d.get("sens"))
+    mv = _MM.lookup(d.get("f"), moves) if moves else None
+    driver_sigma = _num(mv.get("sigma")) if mv else None
+    driver_move = _num(mv.get("movePct")) if mv else None
+    implied = round(sens * driver_sigma, 2) if (mv and driver_sigma is not None) else None
+    if implied is not None and abs(implied) > 1e-9:
+        wind = "tailwind" if implied > 0 else "headwind"
+    else:
+        wind = "tailwind" if (sens > 0) else ("headwind" if sens < 0 else "neutral")
+    return {"factor": d.get("f"), "kind": kind, "sensPct": round(sens, 2), "corr": _num(d.get("corr")),
+            "pcorr": _num(d.get("pcorr")), "sig": bool(d.get("sig")), "weak": bool(d.get("weak")),
+            "dir": d.get("dir") or ("with" if sens >= 0 else "against"), "stab": d.get("stab"),
+            "wind": wind, "lag": d.get("lag"),
+            "driverMovePct": driver_move, "driverSigma": driver_sigma, "impliedPct": implied}
+
+
+def sensitivities_block(n, moves=None):
+    """The detailed %/sigma exposures to the dependent commodities + interest rates the name trades on.
+    Built from the build's own n['macro3'] (rate + top commodities) and n['deps'] (market/sector), enriched
+    with each driver's CURRENT move/sigma and the live implied % contribution when macroSeries is present."""
+    m3 = n.get("macro3") or {}
+    rate = m3.get("rate")
+    commodities = [_sens_row(d, "commodity", moves) for d in (m3.get("top") or [])]
+    rate_row = _sens_row(rate, "rate", moves) if isinstance(rate, dict) else None
+    market = [_sens_row(d, "market", moves) for d in (n.get("deps") or []) if isinstance(d, dict)]
+    contribs = [r["impliedPct"] for r in (commodities + ([rate_row] if rate_row else [])) if r.get("impliedPct") is not None]
+    total = round(sum(contribs), 2) if contribs else None
+    return {"macroR2": _num(n.get("macroR2")), "dominantDriver": n.get("drv"),
+            "rate": rate_row, "commodities": commodities, "market": market,
+            "liveContribPct": total, "hasLive": total is not None,
+            "note": "sens = expected %% stock move per +1\u03c3 in the driver; impliedPct = sens \u00d7 driver\u2019s current \u03c3-move"}
+
+
+def _treasury_curve(mm):
+    ms = (mm.get("macroSeries") or {}).get("treasury") or {}
+    ten = ms.get("tenors") or {}
+    order = ["1M", "3M", "6M", "1Y", "2Y", "5Y", "10Y", "30Y"]
+    pts = [{"tenor": t, "yield": _num(ten[t])} for t in order if t in ten]
+    slope = None
+    if "2Y" in ten and "10Y" in ten:
+        slope = round(_num(ten["10Y"]) - _num(ten["2Y"]), 2)
+    return {"points": pts, "slope2s10s": slope, "inverted": (slope is not None and slope < 0)}
+
+
+def _macro_complex(eq, moves=None):
+    """Which commodities/rates the WHOLE market is most exposed to (avg |sens| across names)."""
+    agg = {}
+    for n in eq:
+        m3 = n.get("macro3") or {}
+        rows = list(m3.get("top") or [])
+        if isinstance(m3.get("rate"), dict):
+            rows.append(m3["rate"])
+        for d in rows:
+            f = d.get("f")
+            if not f:
+                continue
+            a = agg.setdefault(f, {"sum": 0.0, "n": 0, "net": 0.0})
+            a["sum"] += abs(_num(d.get("sens"))); a["net"] += _num(d.get("sens")); a["n"] += 1
+    out = [{"driver": f, "avgAbsSens": round(a["sum"] / a["n"], 2), "avgSens": round(a["net"] / a["n"], 2), "names": a["n"]}
+           for f, a in agg.items() if a["n"] >= 2]
+    if moves:
+        for r in out:
+            mv = _MM.lookup(r["driver"], moves)
+            if mv:
+                r["nowMovePct"] = _num(mv.get("movePct")); r["nowSigma"] = _num(mv.get("sigma"))
+    out.sort(key=lambda x: -x["avgAbsSens"])
+    return out[:8]
+
+
+def _regime_mix(eq):
+    calm = stress = 0
+    for n in eq:
+        st = (n.get("reg") or {}).get("state", n.get("regime"))
+        if st in (1, "stress"):
+            stress += 1
+        else:
+            calm += 1
+    tot = calm + stress or 1
+    return {"calm": calm, "stress": stress, "stressPct": round(100.0 * stress / tot, 1)}
+
+
+def _earnings_density(eq):
+    today = _dt.date.today(); horizon = today + _dt.timedelta(days=14)
+    names = []
+    for n in eq:
+        nq, _ = _future_earnings(n)
+        if nq and today <= nq[0] <= horizon:
+            names.append({"t": n.get("t"), "date": nq[0].isoformat()})
+    names.sort(key=lambda x: x["date"])
+    return {"next14d": len(names), "names": names[:12]}
+

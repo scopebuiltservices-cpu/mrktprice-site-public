@@ -111,6 +111,24 @@ def render_macro(m, shell=True):
                      % (_h.escape(str(x["t"])), _h.escape(str(x.get("sec") or "")), _f(x["net"], 2, "", True), _h.escape(str(x.get("why") or ""))))
         b.append("</table></div>")
     b.append("</div>")
+    tc = m.get("treasuryCurve", {})
+    if tc.get("points"):
+        b.append("<h2>Treasury curve &amp; rate complex</h2><div class='tiles'>")
+        for p in tc["points"]:
+            b.append(tile(p["tenor"], _f(p["yield"], 2, "%")))
+        b.append(tile("2s10s slope", _f(tc.get("slope2s10s"), 2, "%", True) + (" <span class='dn'>inverted</span>" if tc.get("inverted") else ""), _cls(tc.get("slope2s10s"))))
+        b.append("</div>")
+    mc = m.get("macroComplex", [])
+    if mc:
+        b.append("<h2>Market-wide commodity &amp; rate exposure</h2><table><tr><th>Driver</th><th>Avg sens (%/\u03c3)</th><th>Net</th><th>Now \u03c3</th><th>Names</th></tr>")
+        for r in mc:
+            b.append("<tr><td>%s</td><td>%s</td><td class='%s'>%s</td><td class='%s'>%s</td><td>%s</td></tr>" % (_h.escape(str(r["driver"])), _f(r["avgAbsSens"], 2), _cls(r["avgSens"]), _f(r["avgSens"], 2, "", True), _cls(r.get("nowSigma")), (_f(r.get("nowSigma"), 2, "\u03c3", True) if r.get("nowSigma") is not None else "\u2014"), r["names"]))
+        b.append("</table>")
+    rm = m.get("regimeMix", {}); ea = m.get("earningsAhead", {})
+    b.append("<div class='tiles'>")
+    b.append(tile("Vol regime", "%d calm / %d stress (%s%% stress)" % (rm.get("calm", 0), rm.get("stress", 0), _f(rm.get("stressPct"), 0))))
+    b.append(tile("Earnings next 14d", str(ea.get("next14d", 0)) + " names"))
+    b.append("</div>")
     body = "".join(b)
     return _shell("Market Report — %s" % m.get("asof"), body) if shell else body
 
@@ -151,6 +169,38 @@ def _name_table(rows):
     return "".join(h)
 
 
+def _sig_star(r):
+    return "<span class='up'>\u2605</span>" if r.get("sig") else ("<span class='mut'>\u00b7</span>" if r.get("weak") else "")
+
+
+def sens_table(s):
+    rows = []
+    if s.get("rate"):
+        rows.append(("Interest rate", s["rate"]))
+    for r in s.get("commodities", []):
+        rows.append(("Commodity", r))
+    for r in s.get("market", []):
+        rows.append(("Market/sector", r))
+    h = ["<table><tr><th>Driver</th><th>Type</th><th>Sens (%/\u03c3)</th><th>Now move</th><th>Now \u03c3</th><th>Implied %</th><th>Corr</th><th>Sig</th><th>Read</th></tr>"]
+    for kind, r in rows:
+        h.append("<tr><td><b>%s</b></td><td class='mut'>%s</td><td class='%s'>%s</td><td>%s</td><td class='%s'>%s</td><td class='%s'><b>%s</b></td><td>%s</td><td>%s</td><td>%s</td></tr>"
+                 % (_h.escape(str(r.get("factor"))), _h.escape(kind), _cls(r.get("sensPct")), _f(r.get("sensPct"), 2, "", True),
+                    (_f(r.get("driverMovePct"), 2, "%", True) if r.get("driverMovePct") is not None else "\u2014"),
+                    _cls(r.get("driverSigma")), (_f(r.get("driverSigma"), 2, "\u03c3", True) if r.get("driverSigma") is not None else "\u2014"),
+                    _cls(r.get("impliedPct")), (_f(r.get("impliedPct"), 2, "%", True) if r.get("impliedPct") is not None else "\u2014"),
+                    _f(r.get("corr"), 2, "", True), _sig_star(r), _pill(r.get("wind")) if r.get("wind") else ""))
+    h.append("</table>")
+    return "".join(h)
+
+
+def cal_table(rows):
+    h = ["<table><tr><th>Date</th><th>Event</th><th>Detail</th></tr>"]
+    for r in rows:
+        h.append("<tr><td>%s</td><td><b>%s</b></td><td class='mut'>%s</td></tr>" % (_h.escape(str(r.get("date"))), _h.escape(str(r.get("event"))), _h.escape(str(r.get("detail") or ""))))
+    h.append("</table>")
+    return "".join(h)
+
+
 def render_company(c, shell=True):
     if not c.get("found"):
         return _shell("Company", "<h1>%s</h1><p class='sub'>not in universe</p>" % _h.escape(c.get("ticker", "")))
@@ -175,6 +225,25 @@ def render_company(c, shell=True):
     for hdl in (nw.get("headwinds") or [])[:3]:
         b.append("<tr><td class='dn'>− headline</td><td class='mut' style='font-size:11px'>%s</td></tr>" % _h.escape(str(hdl)))
     b.append("</table>")
+    eb = c.get("ebitda", {})
+    if eb.get("have"):
+        b.append("<h2>EBITDA</h2><div class='tiles'>")
+        b.append(tile("Adj. EBITDA last Q", _f(eb.get("lastQAdj"), 0)))
+        b.append(tile("Expected EBITDA next Q", _f(eb.get("nextQExp"), 0)))
+        if eb.get("growthPct") is not None:
+            b.append(tile("Expected QoQ", _f(eb.get("growthPct"), 1, "%", True), _cls(eb.get("growthPct"))))
+        b.append("</div>")
+    cal = c.get("calendar", [])
+    if cal:
+        b.append("<h2>Important calendar dates</h2>" + cal_table(cal))
+    s = c.get("sensitivities", {})
+    if s.get("rate") or s.get("commodities") or s.get("market"):
+        live = ("<div class='tiles'>" + tile("Live macro contribution (this period)", _f(s.get("liveContribPct"), 2, "%", True), _cls(s.get("liveContribPct"))) + "</div>") if s.get("hasLive") else ""
+        b.append("<h2>Macro &amp; commodity sensitivities</h2>"
+                 "<p class='sub'>macro R\u00b2 %s%% · dominant driver %s · sens = %% per +1\u03c3 of the driver · implied %% = sens \u00d7 driver\u2019s current \u03c3-move</p>"
+                 % (_f(s.get("macroR2"), 0), _h.escape(str(s.get("dominantDriver") or "—"))))
+        b.append(live)
+        b.append(sens_table(s))
     b.append("<h2>Macro tilt (partial betas)</h2><div class='tiles'>")
     for d in c.get("macroTilt", []):
         b.append(tile(d["driver"], _f(d["beta"], 2, "", True), _cls(d["beta"])))

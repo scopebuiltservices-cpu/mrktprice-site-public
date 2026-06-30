@@ -53,6 +53,10 @@ def fund_for(rec, est, act, close):
             out["revFwd"] = est["revAvg"]
         if est.get("surprisePct") is not None:
             out["surprisePct"] = est["surprisePct"]
+        if est.get("ebitdaNextQ") is not None:
+            out["ebitdaNextQ"] = est["ebitdaNextQ"]
+        if est.get("ebitdaLastQ") is not None:
+            out["ebitdaLastQ"] = est["ebitdaLastQ"]
     if act:
         if act.get("div12m") is not None:
             out["div12m"] = act["div12m"]

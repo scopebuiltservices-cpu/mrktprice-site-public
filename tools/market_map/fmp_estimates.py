@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""fmp_estimates.py — GATED FMP connector: forward analyst ESTIMATES + earnings SURPRISES (per symbol).
+"""fmp_estimates.py — GATED FMP connector: forward analyst ESTIMATES + earnings SURPRISES + EBITDA (per symbol).
 
-These two are genuinely missing forward signals and have no bulk endpoint, so they're fetched per symbol:
-  - analyst-estimates?symbol=X&period=annual  -> next fiscal year's consensus revenue/EPS (avg/low/high, n)
+Fetched per symbol (no bulk endpoint):
+  - analyst-estimates?symbol=X&period=annual  -> next fiscal period consensus revenue/EPS/EBITDA (avg, n)
   - earnings?symbol=X                          -> most recent epsActual vs epsEstimated -> surprise %
-Emits data/estimates.json {ticker: {fy, revAvg, epsAvg, nEst, surprisePct, surpriseDate}}. The board folds
-forward EPS growth + last surprise into n.fund. Network runs ONLY in CI (gated); parsers pure + offline-tested.
-Research only, not advice."""
+  - income-statement?symbol=X&period=quarter   -> latest quarter EBITDA (GAAP) -> 'last quarter' EBITDA
+Emits data/estimates.json {ticker: {fy, revAvg, epsAvg, nEst, ebitdaNextQ, surprisePct, surpriseDate,
+ebitdaLastQ, ebitdaLastQDate}}. The board folds these into n.fund for the daily report's EBITDA + forward
+panels. Network runs ONLY in CI (gated); parsers pure + offline-tested. Research only, not advice."""
 import argparse, datetime as dt, json, os, sys
 
 STABLE = "https://financialmodelingprep.com/stable"
@@ -55,7 +56,17 @@ def parse_estimates(payload, today=None):
         "revAvg": _num(_pick(rec, "estimatedRevenueAvg", "revenueAvg", "estimatedRevenue")),
         "epsAvg": _num(_pick(rec, "estimatedEpsAvg", "epsAvg", "estimatedEps")),
         "nEst": _num(_pick(rec, "numberAnalystsEstimatedRevenue", "numberAnalystEstimatedEps", "numberAnalysts")),
+        "ebitdaNextQ": _num(_pick(rec, "estimatedEbitdaAvg", "ebitdaAvg", "estimatedEbitda")),
     }
+
+
+def parse_income(payload):
+    """income-statement list (newest first). Latest period's EBITDA -> 'last quarter' EBITDA (GAAP)."""
+    if not isinstance(payload, list) or not payload:
+        return None
+    rec = payload[0]
+    eb = _num(_pick(rec, "ebitda", "EBITDA"))
+    return {"ebitdaLastQ": eb, "ebitdaLastQDate": str(_pick(rec, "date") or "")[:10]} if eb is not None else None
 
 
 def parse_surprise(payload):
@@ -87,6 +98,14 @@ def fetch_one(symbol, sess, key, timeout=20):
             sp = parse_surprise(r.json())
             if sp:
                 out.update(sp)
+    except Exception:
+        pass
+    try:
+        r = sess.get("%s/income-statement?symbol=%s&period=quarter&limit=1&apikey=%s" % (STABLE, symbol, key), timeout=timeout)
+        if r.status_code == 200:
+            inc = parse_income(r.json())
+            if inc:
+                out.update(inc)
     except Exception:
         pass
     return out or None
@@ -128,7 +147,7 @@ def main():
     res = build(names)
     if not res:
         return 0
-    res["_meta"] = {"names": len(res), "source": "FMP analyst-estimates + earnings"}
+    res["_meta"] = {"names": len(res), "source": "FMP analyst-estimates + earnings + income-statement EBITDA"}
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     tmp = a.out + ".tmp"
     with open(tmp, "w") as f:

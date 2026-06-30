@@ -2199,6 +2199,7 @@ function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementByI
  if(am==='ou'&&CUR.ou&&CUR.ou.meanRev){pj=projectOU(P0,H,CUR.ou,asym);}
  else if(am==='blend'&&CUR.ou&&CUR.ou.meanRev){const aa=project(P0,_V,H,sig,cf,asym,_ctb),bb=projectOU(P0,H,CUR.ou,asym);pj={lam:aa.lam,sdn:aa.sdn,sup:aa.sup,bands:aa.bands,path:aa.path.map((pp,k)=>({t:pp.t,price:(pp.price+bb.path[k].price)/2})),p80:aa.p80.map((pp,k)=>({t:pp.t,low:(pp.low+bb.p80[k].low)/2,high:(pp.high+bb.p80[k].high)/2})),p95:aa.p95.map((pp,k)=>({t:pp.t,low:(pp.low+bb.p95[k].low)/2,high:(pp.high+bb.p95[k].high)/2}))};}
  else{pj=project(P0,_V,H,sig,cf,asym,_ctb);}
+ CUR.coneH=H;try{if(window.MrktAntiDev&&MrktAntiDev.on())pj=MrktAntiDev.adjustProjection(pj,H,sig);}catch(_adp){}  // anti-deviation cone correction (server-learned, user-toggleable)
  CUR.pj=pj;CUR.anchors={low,mid,high};CUR.driftTarget=_V;CUR.autoMid=_autoMid;
  const projDamp=P0+em.slope*dsum,projLin=P0+em.slope*H;CUR.emaProj={N:selN,path:emaProjPath(em.slope,P0,H,phi),projDamp,projLin};
  document.getElementById('ematab').innerHTML='<tr><td>EMA</td><td class=r>last</td><td class=r>slope/d</td><td class=r>R²</td><td class=r>RMSE</td><td class=r>dir</td></tr>'+EMAP.map(N=>{const m=CUR.emaM[N];const fl=(N===CUR.bestTrack?' ★':'')+(N===CUR.bestFit?' R':'');return `<tr><td style="color:${EMACOL[N]}">${N}d${fl}</td><td class=r>${m.last.toFixed(2)}</td><td class=r>${m.slope.toFixed(3)}</td><td class=r>${m.r2.toFixed(2)}</td><td class=r>${m.rmse.toFixed(2)}</td><td class=r>${(m.dir*100).toFixed(0)}%</td></tr>`;}).join('');

@@ -25,8 +25,10 @@
   function _setOn(v) { try { localStorage.setItem(LS_KEY, v ? "1" : "0"); } catch (e) {} }
 
   function on() {
-    var box = document.getElementById("antidevOn");
-    if (box) return !!box.checked;
+    if (typeof document !== "undefined" && document.getElementById) {
+      var box = document.getElementById("antidevOn");
+      if (box) return !!box.checked;
+    }
     return _lsOn();
   }
 
@@ -62,6 +64,14 @@
       if (!pj || !on()) return pj;
       var ad = controllerFor(H);
       if (!ad || !ad.active) return pj;
+      return _applyCorrection(pj, ad, H);
+    } catch (e) { return pj; }
+  }
+
+  /* pure math (no DOM/fetch) — exported for testing. Identity-preserving. */
+  function _applyCorrection(pj, ad, H) {
+    try {
+      if (!pj || !ad) return pj;
       var bias = +ad.biasAdj || 0, scl = +ad.scaleAdj || 1;
       var qLo = (ad.qLower != null) ? +ad.qLower : -ZBASE, qHi = (ad.qUpper != null) ? +ad.qUpper : ZBASE;
       var skDn = Math.abs(qLo) / ZBASE, skUp = Math.abs(qHi) / ZBASE;
@@ -138,8 +148,9 @@
     });
   }
 
-  window.MrktAntiDev = { on: on, setOn: _setOn, load: load, controllerFor: controllerFor, adjustProjection: adjustProjection, render: render, _reason: _reason };
-  if (typeof module !== "undefined" && module.exports) module.exports = window.MrktAntiDev;   // node-testable
+  var _root = (typeof window !== "undefined") ? window : {};
+  _root.MrktAntiDev = { on: on, setOn: _setOn, load: load, controllerFor: controllerFor, adjustProjection: adjustProjection, applyCorrection: _applyCorrection, render: render, _reason: _reason };
+  if (typeof module !== "undefined" && module.exports) module.exports = _root.MrktAntiDev;   // node-testable
   if (typeof document !== "undefined" && document.addEventListener) {
     document.addEventListener("DOMContentLoaded", function () {
       var b = document.getElementById("antidevOn");

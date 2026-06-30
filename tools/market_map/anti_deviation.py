@@ -55,11 +55,12 @@ def effective_n(resid, max_lag=None):
     m = sum(resid) / n
     den = sum((v - m) ** 2 for v in resid) or 1e-12
     K = max_lag or min(n // 4, 20)
-    pos = 0.0
+    band = 2.0 / math.sqrt(n)   # Bartlett white-noise significance band: only count autocorrelation that
+    pos = 0.0                   # exceeds sampling noise, so genuinely-iid residuals keep n_eff ~ n
     for k in range(1, K + 1):
         num = sum((resid[i] - m) * (resid[i - k] - m) for i in range(k, n))
         rho = num / den
-        if rho > 0:
+        if rho > band:
             pos += rho
     return n / (1.0 + 2.0 * pos)
 
@@ -203,7 +204,13 @@ def fit_controllers(matured, sigma_raw_ref, parent_matured=None, alpha=0.10,
         ne_par = float("inf")   # no hierarchy supplied -> parent sufficiency not required
     bias = center_bias(resid, pr, sigma_raw=sigma_raw_ref)
     scl = scale_factor(z)
-    ql, qu = tail_quantiles(z, pz, alpha)
+    # tail quantiles must be taken on residuals studentized by the CORRECTED center+scale (zc), NOT the raw
+    # z — otherwise the published band applies the scale multiplier AND a spread already baked into the raw
+    # quantiles, double-counting the dispersion and ballooning the interval. With zc, qLo/qHi ~ ±z and the
+    # band mu'=(mu+bias), sigma'=(sigma·scl), [mu'+qLo·sigma', mu'+qHi·sigma'] is properly calibrated.
+    zc = [(m["residual"] - bias) / max(m["sigmaRaw"] * scl, 1e-12) for m in matured]
+    pzc = [(m["residual"] - bias) / max(m["sigmaRaw"] * scl, 1e-12) for m in (parent_matured or [])]
+    ql, qu = tail_quantiles(zc, pzc, alpha)
     # OOS interval-score delta: corrected vs raw band on the SAME matured points (honest in-bucket check)
     isc_raw = isc_adj = 0.0
     for m in matured:

@@ -45,6 +45,38 @@ Run it yourself any time:
 python3 tools/truncation_sentinel.py --git-baseline --root .
 ```
 
+### Auto-repair: `--fix`
+
+On the **host** (not the sandbox), `--fix` safely restores each truncated file from its last-good
+commit: it first confirms the committed version is itself clean, backs the broken file up to
+`<file>.truncated.bak`, runs `git checkout`, and re-verifies. It **refuses** to "fix" a file that is
+new/uncommitted or whose committed version is also broken (it reports `MANUAL` instead of fabricating
+a repair), so it can never silently lose new work.
+
+```sh
+python3 tools/truncation_sentinel.py --fix --root .     # run on your machine, then review the .bak files
+```
+
+## One command for "anything truncated OR inaccurate?" — `integrity_report.py`
+
+Truncation is only one failure mode. `tools/integrity_report.py` runs every gate and prints **one
+verdict** grouped by category:
+
+- **STRUCTURE** — `truncation_sentinel` (intact file?)
+- **CONTRACT** — `validate_payload` (schema + invariants) and `verify_artifact guard` (does the payload match its contract?)
+- **ACCURACY** — `monitoring --strict` (calibration/drift, advisory) and `coverage_regression` (did a whole data domain drop to zero?)
+
+Hard gates fail the verdict; the advisory drift gate only WARNs. It's wired into `ci.yml` (`--md` job
+summary) and you can run it locally:
+
+```sh
+python3 tools/integrity_report.py --md --root .
+```
+
+This is the closest thing to "recognize any truncation **or** data inaccuracy and report": STRUCTURE
+catches truncation/corruption, CONTRACT catches schema/shape violations, ACCURACY catches drift and
+dead feeds. It does **not** catch a value that is well-formed but simply wrong (no oracle for that).
+
 ## Better mount-free solutions (ranked)
 
 1. **Host pre-push hook = the real fix.** You commit from your own machine, where files are complete.

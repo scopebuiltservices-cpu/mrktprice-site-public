@@ -187,6 +187,62 @@ def _heuristic_truncated(path):
     return True, ""
 
 
+def classify(path, ext, size):
+    """Validate one file by type. Returns (applicable, ok, msg)."""
+    if ext in CODE_PY:
+        return (True,) + _py_check(path)
+    if ext in CODE_JS:
+        return (True,) + _node_check(path)
+    if ext in DATA_JSON:
+        if size == 0:
+            return True, False, "0-byte JSON file"
+        return (True,) + _json_check(path)
+    if ext in DATA_JSONL:
+        return (True,) + _jsonl_check(path)
+    if ext in DATA_CSV:
+        return (True,) + _csv_check(path)
+    if ext in MARKUP:
+        return (True,) + _html_check(path)
+    return False, True, ""
+
+
+def _git(root, args):
+    return subprocess.run(["git", "-C", root] + args, capture_output=True, text=True)
+
+
+def attempt_fix(root, rel, ext):
+    """Safely restore a truncated file from its last-good committed version. Never loses data:
+    the broken copy is backed up to <file>.truncated.bak first, and we refuse to restore when the
+    committed version is ALSO broken or the file is new/uncommitted. Returns (status, message),
+    status in {'restored','manual'}. Intended to run on the HOST (complete files), not the sandbox."""
+    import tempfile
+    path = os.path.join(root, rel)
+    if _git(root, ["cat-file", "-e", "HEAD:" + rel]).returncode != 0:
+        return "manual", "no committed version in HEAD (new/uncommitted file) — reconstruct manually"
+    show = _git(root, ["show", "HEAD:" + rel])
+    if show.returncode != 0:
+        return "manual", "could not read the HEAD version — reconstruct manually"
+    tf = tempfile.NamedTemporaryFile(suffix=ext, delete=False, mode="w", encoding="utf-8")
+    tf.write(show.stdout); tf.close()
+    try:
+        _ap, ok, _msg = classify(tf.name, ext, os.path.getsize(tf.name))
+    finally:
+        os.unlink(tf.name)
+    if not ok:
+        return "manual", "the committed HEAD version is ALSO broken — reconstruct manually"
+    try:
+        shutil.copy2(path, path + ".truncated.bak")
+    except Exception:
+        pass
+    if _git(root, ["checkout", "HEAD", "--", rel]).returncode != 0:
+        return "manual", "git checkout failed — restore manually"
+    _ap, ok2, msg2 = classify(path, ext, os.path.getsize(path))
+    if ok2:
+        return "restored", ("restored from last commit; broken copy saved to %s.truncated.bak "
+                            "(if it held NEW uncommitted work, reconstruct from that .bak)" % rel)
+    return "manual", "restore did not produce a clean file (%s) — reconstruct manually" % msg2
+
+
 def scan(root, git_baseline=False):
     issues = []  # (severity, rel, symptom, artifact, breaks, fix)
     head_sizes = {}
@@ -212,24 +268,10 @@ def scan(root, git_baseline=False):
             except OSError:
                 continue
 
-            ok, msg, sev = True, "", "ERROR"
-            if ext in CODE_PY:
-                ok, msg = _py_check(path)
-            elif ext in CODE_JS:
-                ok, msg = _node_check(path)
-            elif ext in DATA_JSON:
-                if size == 0:
-                    ok, msg = False, "0-byte JSON file"
-                else:
-                    ok, msg = _json_check(path)
-            elif ext in DATA_JSONL:
-                ok, msg = _jsonl_check(path)
-            elif ext in DATA_CSV:
-                ok, msg = _csv_check(path)
-            elif ext in MARKUP:
-                ok, msg = _html_check(path)
-            else:
-                continue  # not a type we validate
+            applicable, ok, msg = classify(path, ext, size)
+            if not applicable:
+                continue
+            sev = "ERROR"
 
             # git-baseline shrink check: a parse-OK file that lost >25% of its bytes vs HEAD is suspect
             if ok and git_baseline and rel in head_sizes and head_sizes[rel] > 400:
@@ -258,6 +300,8 @@ def main():
     ap.add_argument("--root", default=".")
     ap.add_argument("--warn-only", action="store_true", help="never exit non-zero")
     ap.add_argument("--git-baseline", action="store_true", help="also flag files that shrank vs HEAD")
+    ap.add_argument("--fix", action="store_true",
+                    help="safely restore ERROR files from the last-good commit (run on the HOST, not the sandbox)")
     a = ap.parse_args()
     root = os.path.abspath(a.root)
     issues = scan(root, git_baseline=a.git_baseline)
@@ -278,6 +322,21 @@ def main():
         print("  AFFECTS: %s" % artifact)
         print("  HOW    : %s" % breaks)
         print("  FIX    : %s\n" % fix)
+
+    if a.fix and errors:
+        print("\n--fix: attempting safe restore of ERROR files from the last-good commit "
+              "(run this on the HOST, not the sandbox)...\n")
+        unresolved = 0
+        for sev, rel, msg, *_ in issues:
+            if sev != "ERROR":
+                continue
+            ext = os.path.splitext(rel)[1].lower()
+            status, fmsg = attempt_fix(root, rel, ext)
+            print("  [%s] %s — %s" % ("FIXED " if status == "restored" else "MANUAL", rel, fmsg))
+            if status != "restored":
+                unresolved += 1
+        print("\n--fix: %d restored, %d need manual reconstruction." % (len(errors) - unresolved, unresolved))
+        return 1 if unresolved else 0
 
     if a.warn_only:
         return 0

@@ -48,3 +48,7 @@ jobs:
             python3 tools/verify_artifact.py guard "$f" --min-bytes 200 --ends-with '</html>' || fail=1
           done
           [ "$fail" -eq 0 ] || { echo "::error::a served HTML file does not end in </html> — truncated build"; exit 1; }
+
+      - name: Consolidated integrity report (structure + contract + accuracy)
+        if: always()
+        run: python3 tools/integrity_report.py --md --root .

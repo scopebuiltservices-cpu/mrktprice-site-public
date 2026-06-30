@@ -9,7 +9,21 @@
     "event": {
       "type": "object",
       "required": ["date"],
-      "properties": { "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}" }, "event": { "type": ["string", "null"] } }
+      "properties": {
+        "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}" },
+        "event": { "type": ["string", "null"] },
+        "impact": { "type": ["string", "null"] },
+        "actual": { "type": ["string", "number", "null"] },
+        "estimate": { "type": ["string", "number", "null"] },
+        "previous": { "type": ["string", "number", "null"] },
+        "source": { "type": "string", "description": "Data origin / feed name (e.g. 'fmp')." },
+        "sourceTimestamp": { "type": ["string", "null"], "description": "ISO8601 ingest/observation time, or null." },
+        "timezone": { "type": "string", "description": "Calendar wall-clock zone (default America/New_York)." },
+        "session": { "type": "string", "enum": ["premarket", "regular", "afterhours", "unknown"], "description": "Trading session derived from event time." },
+        "canonicalId": { "type": "string", "description": "Stable sha1(date|normalized-name|source)[:12] for dedupe/alignment across runs." },
+        "revision": { "type": "integer", "description": "Revision counter; bumps when a later pull changes actual/estimate for the same canonicalId." },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1, "description": "Completeness score: 1.0 actual present, 0.6 estimate only, 0.4 bare date/event." }
+      }
     }
   },
   "properties": {

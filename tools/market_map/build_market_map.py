@@ -1670,7 +1670,7 @@ def main():
     try:
         import events_calendar as _ev
         _evraw=_ev.fetch_economic_calendar()
-        if _evraw is not None: snap["events"]=_ev.build_events(_evraw)
+        if _evraw is not None: snap["events"]=_ev.build_events(_evraw, source="fmp", source_ts=snap.get("asof"))
     except Exception: pass
     snap.setdefault("schemaVersion","1.0")                                 # producer-stamped contract version (consumer version-gates)
     snap=_finite(snap)

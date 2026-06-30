@@ -11,7 +11,7 @@ major print, and expect a distribution shift right after one).
 FMP stable endpoint: /stable/economic-calendar?from=&to=&apikey=. Fail-soft: returns None without a key
 or on any error, so the build degrades gracefully. Parser is unit-tested against a fixture (no network).
 """
-import os, json, datetime
+import os, json, datetime, hashlib, re
 
 STABLE = "https://financialmodelingprep.com/stable"
 # event-name patterns that move the whole tape (case-insensitive), beyond FMP's own "High" impact tag
@@ -42,16 +42,85 @@ def is_high_impact(ev):
     return any(p in name for p in KEY_PATTERNS)
 
 
-def normalize(ev):
-    return {"date": str(ev.get("date") or "")[:10], "event": ev.get("event"),
+def _norm_name(name):
+    """Lowercase + collapse whitespace/punctuation so the same event canonicalizes identically across runs."""
+    return re.sub(r"[^a-z0-9]+", " ", str(name or "").lower()).strip()
+
+
+def _canonical_id(date, event, source):
+    """Stable deterministic id: first 12 hex chars of sha1(date|normalized-name|source).
+    Same event from the same source produces the same id, so rows dedupe/align across runs."""
+    basis = "%s|%s|%s" % (str(date or "")[:10], _norm_name(event), str(source or "").lower())
+    return hashlib.sha1(basis.encode("utf-8")).hexdigest()[:12]
+
+
+def _session_of(ev):
+    """Derive the trading session from an event time if present.
+    America/New_York wall-clock buckets (US equities): premarket <09:30, regular 09:30-16:00,
+    afterhours >=16:00. Returns 'unknown' when no parseable HH:MM time is available."""
+    raw = str(ev.get("time") or ev.get("date") or "")
+    m = re.search(r"(\d{1,2}):(\d{2})", raw)
+    if not m:
+        return "unknown"
+    mins = int(m.group(1)) * 60 + int(m.group(2))
+    if mins < 9 * 60 + 30:
+        return "premarket"
+    if mins < 16 * 60:
+        return "regular"
+    return "afterhours"
+
+
+def _confidence(ev):
+    """Completeness rubric in [0,1]:
+      1.0 -> actual is present (the print has landed / fully observed)
+      0.6 -> only estimate/forecast present (forward-looking, not yet observed)
+      0.4 -> only a bare date/event (scheduled, no numbers)."""
+    def _has(v):
+        return v not in (None, "")
+    if _has(ev.get("actual")):
+        return 1.0
+    if _has(ev.get("estimate")) or _has(ev.get("forecast")):
+        return 0.6
+    return 0.4
+
+
+def normalize(ev, source="fmp", source_ts=None, timezone="America/New_York"):
+    """Normalize one raw calendar row into the audited per-event contract.
+
+    Adds provenance fields with safe defaults so existing consumers (which only read
+    date/event/impact/actual/estimate/previous) keep working unchanged:
+      source          - data origin (provider/feed name); 'fmp' by default, 'unknown' if blank.
+      sourceTimestamp - ISO8601 ingest/observation time (build/asof time passed by caller); null if absent.
+      timezone        - calendar wall-clock zone; 'America/New_York' unless the row overrides via ev['timezone'].
+      session         - premarket/regular/afterhours/unknown, derived from event time (see _session_of).
+      canonicalId     - sha1(date|normalized-name|source)[:12], stable across runs for dedupe/alignment.
+      revision        - integer revision counter; default 0. Bumping on later actual/estimate changes for the
+                        same canonicalId needs cross-run bookkeeping that isn't available in this pure pass,
+                        so it stays 0 here (a downstream store can increment it).
+      confidence      - completeness score in [0,1] (see _confidence)."""
+    date = str(ev.get("date") or "")[:10]
+    src = (str(source).strip() or "unknown") if source is not None else "unknown"
+    return {"date": date, "event": ev.get("event"),
             "impact": ev.get("impact"), "actual": ev.get("actual"),
-            "estimate": ev.get("estimate"), "previous": ev.get("previous")}
+            "estimate": ev.get("estimate"), "previous": ev.get("previous"),
+            "source": src,
+            "sourceTimestamp": source_ts,
+            "timezone": ev.get("timezone") or timezone,
+            "session": _session_of(ev),
+            "canonicalId": _canonical_id(date, ev.get("event"), src),
+            "revision": int(ev.get("revision") or 0),
+            "confidence": _confidence(ev)}
 
 
-def build_events(raw, today=None):
-    """From a raw FMP economic-calendar list -> {asof, nextHighImpact, daysToNext, upcoming[], recent[]}."""
+def build_events(raw, today=None, source="fmp", source_ts=None):
+    """From a raw FMP economic-calendar list -> {asof, nextHighImpact, daysToNext, upcoming[], recent[]}.
+
+    source/source_ts flow into each event's provenance fields. source_ts defaults to the build/asof
+    instant (today at midnight, ISO8601) when the caller does not supply one."""
     today = today or datetime.date.today()
-    hi = [normalize(e) for e in (raw or []) if is_high_impact(e)]
+    if source_ts is None:
+        source_ts = datetime.datetime(today.year, today.month, today.day).isoformat()
+    hi = [normalize(e, source=source, source_ts=source_ts) for e in (raw or []) if is_high_impact(e)]
     def _d(s):
         try:
             return datetime.date.fromisoformat(str(s)[:10])

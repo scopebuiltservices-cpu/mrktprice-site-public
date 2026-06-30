@@ -32,8 +32,12 @@ def implied_forward(chain, spot, T, r, style="american"):
     # slope should be ~ -dfr; F = intercept/dfr
     F=intercept/dfr
     q_imp=r-math.log(F/spot)/T if (F>0 and spot>0 and T>0) else None
+    european_valid = str(style).lower() == "european"
     return {"forward":round(F,4),"impliedDivYield":round(q_imp,4) if q_imp is not None else None,
             "basisPct":round(100*(F/spot-1),3) if spot>0 else None,
             "slope":round(slope,4),"slopeExpected":round(-dfr,4),
             "hardToBorrow":(q_imp is not None and q_imp>0.05),  # high implied carry => borrow cost
+            "style":str(style).lower(),
+            "europeanValid":european_valid,             # parity identity exact only for European exercise
+            "impliedDivYieldValid":european_valid,      # do NOT override user q from an American chain
             "pairs":len(xs)}

@@ -792,10 +792,26 @@ def volume_ahead(rows: Sequence[Sequence], horizons=HORIZONS,
     return {"sigvol": sv, "base": base}
 
 
+def _sigma_h(lr: Sequence[float], h: int, sd: float) -> float:
+    """Horizon σ as a FIRST-CLASS blended forecast — the single source of truth for H-step scale. Prefers
+    metrics.sigma_horizon (empirical HV term structure + EWMA recency + bounded variance-ratio multiplier)
+    over the unconditional sd·√h, falling back to sd·√h only when the blended estimate is unavailable
+    (short series). This replaces silent √H scaling in the forward-looking forecast band per the
+    rolling-HV/conformal design note."""
+    try:
+        import metrics
+        s = metrics.sigma_horizon(list(lr), int(h))
+        if s is not None and s == s and s > 0:
+            return s
+    except Exception:
+        pass
+    return sd * math.sqrt(h)
+
+
 def touch_odds(rows: Sequence[Sequence], horizons=HORIZONS,
                lookback: int = 20, mu_per_day: float = 0.0) -> Dict:
-    """Per-horizon touch-before-finish odds to the recent high (up) and low (down), via
-    first-passage with the name's daily σ. Returns {horizon: {pUp,pDn,levelHigh,levelLow}}."""
+    """Per-horizon touch-before-finish odds to the recent high (up) and low (down), via first-passage with
+    the name's blended HORIZON σ (metrics.sigma_horizon, √h fallback). Returns {horizon: {pUp,pDn,levels}}."""
     closes = [float(r[1]) for r in rows if r[1] is not None]
     if len(closes) < lookback + 5:
         return {}
@@ -808,7 +824,7 @@ def touch_odds(rows: Sequence[Sequence], horizons=HORIZONS,
     for label, days, _p in horizons:
         h = max(1, round(days))
         mu_h = mu_per_day * h
-        sig_h = sd * math.sqrt(h)
+        sig_h = _sigma_h(lr, h, sd)            # blended horizon σ (single source of truth), √h fallback
         a_up = math.log(hi / S) if (hi > S and S > 0) else None
         a_dn = math.log(lo / S) if (lo < S and S > 0) else None
         out[label] = {

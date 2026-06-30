@@ -38,7 +38,7 @@ def test_learns_overshoot():
         # AR(1) momentum so past mean return predicts future, but with decay (overshoot)
         x = 0.25 * prev + rng.gauss(0, 0.01); r.append(x); prev = x; c.append(c[-1] * math.exp(x))
     wf = J.walk_forward(c, [21], lb=21, shrink=0.5, step=3)
-    pred = [p for p, _ in wf[21]]; real = [q for _, q in wf[21]]
+    pred = [t[0] for t in wf[21]]; real = [t[1] for t in wf[21]]   # rows are (pred, real, sigmaH) triples
     import projlearn_engine as PL
     L = PL.learn(pred, real)
     assert L["n"] > 50 and L["applied"], L
@@ -53,7 +53,8 @@ def test_build_emits_json():
         json.dump({"ticker": tk, "rows": rows}, open(os.path.join(hd, tk + ".json"), "w"))
     rep = J.build(hd, ["AAA", "BBB", "CCC", "MISSING"])
     assert rep["names"] == 3 and rep["samples"] > 100 and "21" in rep["byHorizon"]
-    assert rep["schema"] == "projlearn/1"
+    assert rep["schema"] == "projlearn/2"
+    assert "antiDeviation" in rep["byHorizon"]["21"]   # anti-deviation controller emitted per horizon
     print("  PASS  build pools 3 names -> %d samples, byHorizon keys %s" % (rep["samples"], sorted(rep["byHorizon"])))
 
 if __name__ == "__main__":

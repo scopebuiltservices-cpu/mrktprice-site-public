@@ -17,7 +17,7 @@ from options_gex import compute_gex
 import black_scholes as _bs
 import options_analytics as _oa
 import chain_quality as _cq
-import rate_curve as _rc
+import rate_accessor as _ra
 try: import bs_record as _rec
 except Exception: _rec = None
 
@@ -28,21 +28,12 @@ _FEED = os.environ.get("ALPACA_OPT_FEED", "indicative")   # free=indicative, pai
 _HORIZON_DAYS = int(os.environ.get("ALPACA_OPT_HORIZON_DAYS", "120"))  # cap expiries pulled
 _MAX_PAGES = int(os.environ.get("ALPACA_OPT_MAX_PAGES", "6"))          # 1000 contracts/page
 _MONEYNESS = float(os.environ.get("ALPACA_OPT_MONEYNESS", "0.40"))     # keep strikes within +/-40% of spot
-_CURVE = None
 
 # OCC option symbol: root (1-6 alnum) + YYMMDD + C/P + strike(8 digits, x1000)
 _OCC = re.compile(r"^([A-Z0-9]{1,6})(\d{6})([CP])(\d{8})$")
 
-
-def _rate(days):
-    """Per-maturity risk-free from the curve (live FRED if MRKT_FETCH_CURVE=1, else static)."""
-    global _CURVE
-    try:
-        if _CURVE is None:
-            _CURVE = _rc.Curve(_rc.fetch_curve()) if os.environ.get("MRKT_FETCH_CURVE") == "1" else _rc.default_curve()
-        return _CURVE.rate_for(max(days, 1) / 365.0)
-    except Exception:
-        return _R
+# Canonical per-maturity risk-free accessor (single source of truth in rate_accessor).
+_rate = _ra.rate_for_days
 
 
 def _f(x):

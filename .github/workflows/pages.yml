@@ -48,6 +48,15 @@ jobs:
         with: { fetch-depth: 0 }   # full history so the change-detector can diff the whole push range
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+
+      # TRUNCATION GATE: a source file truncated mid-statement (e.g. an interrupted edit) silently
+      # corrupts or kills the data we publish. Block the deploy BEFORE building if any tracked
+      # py/js/json/jsonl/csv/html file is truncated; --git-baseline also flags files that shrank
+      # >25% vs HEAD. Emits ::error:: annotations naming the file, its data impact, and the fix.
+      - name: Truncation sentinel (block publish on any truncated source/data)
+        run: python3 tools/truncation_sentinel.py --git-baseline --root .
 
       # ROOT-CAUSE FIX: a push that changes the build engine but NOT .rebuild (and has no
       # [rebuild] tag) used to deploy stale data — the new code sat committed but never executed.

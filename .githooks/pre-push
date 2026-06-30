@@ -1,0 +1,30 @@
+#!/bin/sh
+# pre-push truncation + syntax gate — runs on YOUR machine's COMPLETE files (no sandbox mount),
+# so a truncated/broken file is caught BEFORE it ever reaches GitHub.
+#
+# Enable once per clone:
+#     git config core.hooksPath .githooks
+#     # (on Windows, run from Git Bash; python3/node must be on PATH)
+#
+# Bypass in an emergency (not recommended): git push --no-verify
+set -u
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+cd "$ROOT"
+echo "pre-push: running truncation sentinel + offline gates on the working tree..."
+
+fail=0
+python3 tools/truncation_sentinel.py --git-baseline --root . || fail=1
+
+# Full offline suite (py compile, unit tests, JS syntax, JSON well-formedness, sentinel).
+if [ -f tools/run-checks.sh ]; then
+  sh tools/run-checks.sh || fail=1
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo ""
+  echo "pre-push BLOCKED: a gate failed above (likely a truncated or broken file)."
+  echo "Fix the file(s) named, re-run 'sh tools/run-checks.sh', then push again."
+  exit 1
+fi
+echo "pre-push: all gates green — pushing."
+exit 0

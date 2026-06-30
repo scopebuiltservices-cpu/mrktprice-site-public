@@ -237,6 +237,14 @@ def scan(root, git_baseline=False):
                     ok, msg, sev = False, "shrank %d -> %d bytes vs HEAD (>25%% smaller)" % (
                         head_sizes[rel], size), "WARN"
 
+            # Heuristic checks (CSV ragged-row, HTML <script> tag-balance) can fire on legitimate files
+            # (footer rows, "</script>" inside a JS string), so they ALERT but never fail the build.
+            if not ok and sev == "ERROR":
+                if ext in DATA_CSV:
+                    sev = "WARN"
+                elif ext in MARKUP and "unbalanced <script" in msg:
+                    sev = "WARN"
+
             if not ok:
                 artifact, breaks = _impact(rel)
                 fix = ("restore from git (`git checkout -- %s`) OR re-pull the authoritative "

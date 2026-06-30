@@ -49,6 +49,9 @@ for j in marketmap.json xsection.json cik.json alpha_calib.json; do
 done
 echo "    ok"
 
+echo "==> integrity  Truncation sentinel (detects truncated py/js/json/jsonl/csv/html + data impact)"
+python3 tools/truncation_sentinel.py --root . || fail=1
+
 if [ "$fail" -ne 0 ]; then
   echo ""
   echo "RESULT: FAIL - one or more gates above failed."

@@ -72,10 +72,14 @@ def test_tail_controller_asymmetric():
 
 def test_coverage_controller_adapts():
     a_lo, a_hi = 0.05, 0.05
-    # a lower-side miss (y below lower bound) must raise the lower miscoverage parameter
+    # Gibbs-Candès: a_{t+1} = a_t + eta*(a/2 - 1{miss}). A LOWER-side miss (y below lower bound) DECREASES
+    # the lower miscoverage parameter -> a more extreme lower quantile -> a WIDER lower tail next time.
     nlo, nhi = ad.coverage_update(a_lo, a_hi, y=-5.0, lo=-1.6, hi=1.6)
-    assert nlo > a_lo and abs(nhi - a_hi) < 0.01
-    # an inside point nudges both gently toward target
+    assert nlo < a_lo and abs(nhi - a_hi) < 0.01
+    # symmetric on the upper side: an upper-side miss decreases the upper parameter (widens upper tail)
+    ulo, uhi = ad.coverage_update(a_lo, a_hi, y=5.0, lo=-1.6, hi=1.6)
+    assert uhi < a_hi and abs(ulo - a_lo) < 0.01
+    # an inside point nudges both gently toward target (no miss on either side)
     nlo2, nhi2 = ad.coverage_update(a_lo, a_hi, y=0.0, lo=-1.6, hi=1.6)
     assert nlo2 != a_lo and nhi2 != a_hi
 

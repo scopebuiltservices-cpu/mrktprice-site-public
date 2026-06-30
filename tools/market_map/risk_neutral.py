@@ -22,19 +22,34 @@ def _otm_strip(chain, spot):
         elif "C" in d and "P" in d: strip.append((K,0.5*(d["C"]+d["P"])))
     return strip
 
-def bl_density(call_strikes_prices, T, r):
-    """Breeden-Litzenberger: f(K)=e^{rT} * second difference of call price in K."""
+def bl_density(call_strikes_prices, T, r, with_diag=False):
+    """Breeden-Litzenberger: f(K)=e^{rT} * second difference of call price in K.
+
+    NOTE: a raw second finite difference + clip-to-zero GUARANTEES a nonnegative normalized function but
+    NOT that it came from an arbitrage-free call surface — clipping can hide local convexity (butterfly)
+    violations rather than fix the surface. We therefore measure the RAW negative-density mass share BEFORE
+    clipping; a large share means the density is cosmetically repaired, not data-supported. Set with_diag=True
+    to get {density, negMassShare, nConvexityViolations, arbConsistent}. Default returns the density list
+    (backward-compatible)."""
     pts=sorted(call_strikes_prices)
     if len(pts)<3: return None
     Ks=[k for k,_ in pts]; Cs=[c for _,c in pts]; dfr=math.exp(r*T)
-    dens=[]
+    raw=[]
     for i in range(1,len(Ks)-1):
         h1=Ks[i]-Ks[i-1]; h2=Ks[i+1]-Ks[i]
         d2=2*(Cs[i-1]/(h1*(h1+h2))-Cs[i]/(h1*h2)+Cs[i+1]/(h2*(h1+h2)))
-        dens.append((Ks[i],max(dfr*d2,0.0)))
-    # normalize via trapezoid
+        raw.append((Ks[i],dfr*d2))                                 # unclipped (may be negative)
+    # diagnostic: |negative mass| / total |mass| before clipping, and count of convexity violations
+    pos_mass=sum(abs(v) for _,v in raw if v>0); neg_mass=sum(-v for _,v in raw if v<0)
+    tot=pos_mass+neg_mass
+    neg_share=round(neg_mass/tot,4) if tot>0 else 0.0
+    n_viol=sum(1 for _,v in raw if v<0)
+    dens=[(k,max(v,0.0)) for k,v in raw]                           # clip for the usable density
     area=sum((dens[i+1][0]-dens[i][0])*(dens[i+1][1]+dens[i][1])/2 for i in range(len(dens)-1))
     if area>0: dens=[(k,v/area) for k,v in dens]
+    if with_diag:
+        return {"density":dens,"negMassShare":neg_share,"nConvexityViolations":n_viol,
+                "arbConsistent":bool(n_viol==0)}
     return dens
 
 def prob_below(dens, level):

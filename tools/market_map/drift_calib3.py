@@ -144,14 +144,23 @@ def ks_uniform(us):
     return d
 
 
-def build_rows3(closes, H=20, win=20, mwin=21, ern=20, er_thr=0.5):
-    """Point-in-time rows [1, gap, mom, gap*R, mom*R] + realized + time index (bars-from-end) + regime R."""
-    c = [x for x in closes if x is not None and x == x and x > 0]
+def build_rows3(closes, H=20, win=20, mwin=21, ern=20, er_thr=0.5, dates=None):
+    """Point-in-time rows [1, gap, mom, gap*R, mom*R] + realized + time index + regime R.
+
+    The time index feeds Driscoll-Kraay cross-sectional aggregation, which is only valid when the index is a
+    SHARED CALENDAR date across names. If `dates` (an ordinal/integer trading-date code aligned to `closes`,
+    comparable across names) is supplied, we emit the real date code so DK clusters genuine common dates.
+    Otherwise we fall back to bars-from-end (N-1-t), which only coincides with calendar time when every name
+    has identical length and no gaps — a fragile assumption flagged by the caller as a pseudo-panel HAC."""
+    cz = [(x, (dates[i] if dates is not None and i < len(dates) else None))
+          for i, x in enumerate(closes) if x is not None and x == x and x > 0]
+    c = [x for x, _ in cz]; dc = [d for _, d in cz]
     X = []; y = []; tt = []; reg = []
     lo = max(win - 1, mwin, ern)
     if len(c) < lo + H + 1:
         return X, y, tt, reg
     N = len(c)
+    have_dates = dates is not None and all(d is not None for d in dc)
     for t in range(lo, N - H):
         sma = sum(c[t - win + 1:t + 1]) / win
         if sma <= 0 or c[t - mwin] <= 0:
@@ -159,16 +168,22 @@ def build_rows3(closes, H=20, win=20, mwin=21, ern=20, er_thr=0.5):
         gap = math.log(sma / c[t]); mom = math.log(c[t] / c[t - mwin])
         R = 1.0 if efficiency_ratio(c, t, ern) > er_thr else 0.0
         X.append([1.0, gap, mom, gap * R, mom * R]); y.append(math.log(c[t + H] / c[t]))
-        tt.append((N - 1) - t); reg.append(R)   # bars-from-end: aligns the panel by recent calendar day
+        tt.append(dc[t] if have_dates else (N - 1) - t); reg.append(R)
     return X, y, tt, reg
 
 
-def calibrate3(closes_by_name, H=20, win=20, mwin=21, lam=6.0):
+def calibrate3(closes_by_name, H=20, win=20, mwin=21, lam=6.0, dates_by_name=None):
     """Pool regime-interacted rows across the universe; ridge fit; Driscoll-Kraay t-stats; purged
-    walk-forward OOS R^2 + CRPS + PIT-KS; gate the regime-conditional betas on OOS edge AND DK significance."""
+    walk-forward OOS R^2 + CRPS + PIT-KS; gate the regime-conditional betas on OOS edge AND DK significance.
+
+    Pass `dates_by_name` (a list of per-name ordinal trading-date codes aligned to each closes series, shared
+    across names) to get genuine calendar-aligned Driscoll-Kraay. Without it the time index is bars-from-end
+    and the covariance is honestly a PSEUDO-PANEL HAC approximation (flagged via tidxKind/dkLabel)."""
     X = []; y = []; tt = []; per = []
-    for closes in (closes_by_name or []):
-        Xi, yi, ti, ri = build_rows3(closes, H, win, mwin)
+    have_dates = bool(dates_by_name) and len(dates_by_name) == len(closes_by_name or [])
+    for k, closes in enumerate(closes_by_name or []):
+        di = dates_by_name[k] if have_dates else None
+        Xi, yi, ti, ri = build_rows3(closes, H, win, mwin, dates=di)
         if Xi:
             per.append((Xi, yi)); X.extend(Xi); y.extend(yi); tt.extend(ti)
     if len(y) < 80:
@@ -208,4 +223,7 @@ def calibrate3(closes_by_name, H=20, win=20, mwin=21, lam=6.0):
             "oosR2": (None if oosR2 != oosR2 else round(oosR2, 5)),
             "crps": (None if crps != crps else round(crps, 6)),
             "pitKS": (None if pitKS != pitKS else round(pitKS, 4)),
+            "tidxKind": ("calendar_date" if have_dates else "bars_from_end"),
+            "dkLabel": ("Driscoll-Kraay (calendar-aligned)" if have_dates
+                        else "pseudo-panel HAC (bars-from-end proxy; NOT date-aligned)"),
             "n": len(y), "nTest": nt, "gated": gated}

@@ -142,6 +142,12 @@ def harq_regime_forecast(closes, ann=252):
         "n": len(X), "beta": beta, "b1Q": beta[2], "phvNow": xf[5],
         "comp": {"rvD": rv[n - 1], "rvW": xf[3], "rvM": xf[4], "sqrtRQz": srq[n - 1] - srq_bar},
         "labels": ["const", "RVd", "sqrtRQ~*RVd (HARQ)", "RVw", "RVm", "p(high-vol)"],
+        # HONESTY: the realized MEASURE here is a daily-square proxy (RV_t=r_t^2, RQ from daily r^4), NOT the
+        # intraday realized-variance/quarticity the BPQ (2016) HARQ measurement-error correction was built for.
+        # The HARQ INTERACTION structure is faithful; the data layer is a daily-square approximation.
+        "realizedMeasure": "daily_square_proxy",
+        "harqFaithful": False,
+        "measureNote": "HARQ-style interaction on a daily-square RV proxy; not intraday-RV BPQ.",
     }
 
 

@@ -4,15 +4,18 @@ import math
 import black_scholes as bs, american as am, realized as rl
 import chain_quality as cq, parity as par, risk_neutral as rn, vol_surface as vs
 
-def analyze(ticker, spot, closes, chain, days, r=0.04, q=0.0, record=True):
+def analyze(ticker, spot, closes, chain, days, r=0.04, q=0.0, record=True, style="american"):
     if not chain or not spot or spot<=0: return None
     T=max(days,1)/365.0
     clean=cq.liquidity_filter(chain)
     if len(clean)<4: clean=chain
     arb=cq.no_arb_violations(clean,spot,T,r,q)
-    # parity: implied forward + dividend (overrides q when available)
-    pf=par.implied_forward(clean,spot,T,r)
-    if pf and pf.get("impliedDivYield") is not None and -0.05<pf["impliedDivYield"]<0.20:
+    # parity: implied forward + dividend. EXERCISE-STYLE FIREWALL — put-call parity is EXACT only for
+    # European exercise, so we only OVERRIDE the user q when the chain is European-valid (index/cash-settled).
+    # For American single-name chains (default) the implied q is biased by the early-exercise spread; it is
+    # still reported (flagged impliedDivYieldValid=False) but never feeds the pricer.
+    pf=par.implied_forward(clean,spot,T,r,style=style)
+    if pf and pf.get("europeanValid") and pf.get("impliedDivYield") is not None and -0.05<pf["impliedDivYield"]<0.20:
         q=pf["impliedDivYield"]
     # realized + HAR-RV forecast from closes
     rv_cc=rl.close_to_close(closes) if closes else None
@@ -24,8 +27,10 @@ def analyze(ticker, spot, closes, chain, days, r=0.04, q=0.0, record=True):
     # BS richness/greeks vs realized
     val=bs.value_chain(clean,spot,days,r=r,q=q,ref_vol=refv)
     # model-free implied var + VRP
-    mf=rn.model_free_iv(clean,spot,T,r,forward=(pf["forward"] if pf else None))
-    vrp=rn.variance_risk_premium(clean,spot,T,r,fvar) if (mf and fvar) else None
+    _fwd=(pf["forward"] if pf else None)
+    mf=rn.model_free_iv(clean,spot,T,r,forward=_fwd)
+    # pass the SAME forward into VRP so mfImpliedVolPct and vrpVolPts reference one consistent forward
+    vrp=rn.variance_risk_premium(clean,spot,T,r,fvar,forward=_fwd) if (mf and fvar) else None
     bkm=rn.bkm_moments(clean,spot,T,r)
     # SVI slice from per-strike mid IV
     svi_feat=None
@@ -59,6 +64,7 @@ def analyze(ticker, spot, closes, chain, days, r=0.04, q=0.0, record=True):
            -0.20*_z(feats["avgRichnessPct"],10.0)) # paying up for options -> slight caution
     summary={"ticker":ticker,"spot":round(spot,4),"days":days,"r":round(r,4),"q":round(q,4),
              "forward":(pf["forward"] if pf else None),"impliedDivYield":(pf.get("impliedDivYield") if pf else None),
+             "impliedDivYieldValid":(pf.get("impliedDivYieldValid") if pf else None),"parityStyle":style,
              "hardToBorrow":(pf.get("hardToBorrow") if pf else None),
              "noArbViolations":len(arb),"nContracts":(val["summary"]["n"] if val else 0),
              "refVolPct":round((refv or 0)*100,1) if refv else None,

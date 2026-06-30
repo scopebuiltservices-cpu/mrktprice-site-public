@@ -2347,7 +2347,7 @@ function buildBullBearBoard(){
     S.push({t:t,sec:n.sec||'',beta:beta,drag:beta*DIR.MKT,tilt:tilt,short:-shp,lvl:lvl,tr:sh.trend,
       sector:(n.secRel!=null?n.secRel:0),opp:(n.opp!=null?n.opp:0),ema:(n.ema21sig!=null?n.ema21sig:0),
       vel:(n.ema21sl!=null?n.ema21sl:0),iflow:(n.flow&&n.flow.net3m!=null?n.flow.net3m:0),   // velocity = EMA21 slope (1st derivative); iflow = integral net 3m flow
-      r1m:(n.ret&&n.ret['1m']!=null?n.ret['1m']:0),flow:(n.flow&&n.flow.net1m!=null?n.flow.net1m:0),rate:(n.rate||null),volp:(n.rvol!=null?n.rvol:1),vol:(n.vol!=null?n.vol:null),reg:(n.regime!=null?String(n.regime):''),mb:mb,deps:n.deps||[],dq:(n.dq||null),drift:(n.drift||null),crPen:(n.cr&&n.cr.pen!=null?n.cr.pen:0),stress:!!(n.reg&&n.reg.state==='stress'),divYld:(n.fund&&n.fund.divYield!=null?n.fund.divYield:0)});});
+      r1m:(n.ret&&n.ret['1m']!=null?n.ret['1m']:0),flow:(n.flow&&n.flow.net1m!=null?n.flow.net1m:0),rate:(n.rate||null),volp:(n.rvol!=null?n.rvol:1),vol:(n.vol!=null?n.vol:null),reg:(n.regime!=null?String(n.regime):''),mb:mb,deps:n.deps||[],dq:(n.dq||null),drift:(n.drift||null),crPen:(n.cr&&n.cr.pen!=null?n.cr.pen:0),stress:!!(n.reg&&n.reg.state==='stress'),divYld:(n.fund&&n.fund.divYield!=null?n.fund.divYield:0),tbv:(n.fund&&n.fund.pTbv!=null?n.fund.pTbv:null),tbvF:(n.fund&&n.fund.tbvFlag?n.fund.tbvFlag:null),tbvps:(n.fund&&n.fund.tbvps!=null?n.fund.tbvps:null)});});
   if(!S.length){el.innerHTML='<div class="note">Bull/Bear board — universe not loaded.</div>';return;}
   function z(a){var m=a.reduce(function(x,y){return x+y;},0)/a.length,sd=Math.sqrt(a.reduce(function(x,y){return x+(y-m)*(y-m);},0)/Math.max(1,a.length-1))||1;return a.map(function(x){return (x-m)/sd;});}
   var zt=z(S.map(function(s){return s.tilt;})),zse=z(S.map(function(s){return s.sector;})),zsh=z(S.map(function(s){return s.short;})),
@@ -2464,7 +2464,10 @@ function buildBullBearBoard(){
   var bull=S.filter(function(s){return s.tot>=0;}).sort(function(a,b){return _bk(b)-_bk(a);}),
       bear=S.filter(function(s){return !(s.tot>=0);}).sort(function(a,b){return _bk(a)-_bk(b);});
   var MOVE={RATE:DIR.RATE,OIL:DIR.OIL,DXY:DIR.DXY,VIX:DIR.VIX},MLAB={RATE:'10Y',OIL:'Oil',DXY:'USD',VIX:'Risk'};
-  function tiles(s){var out='';['RATE','OIL','DXY','VIX'].forEach(function(k){var b=s.mb[k];if(b==null)return;var mv=MOVE[k],tw=b*mv,c=tw>0?'#2ecc8f':(tw<0?'#ef5f4e':'#8a93a3');
+  function tiles(s){var out='';
+    if(s.tbvF==='negative_tbv'){out+='<span class="bt" style="border-color:#ef5f4e66" title="tangible book value per share is NEGATIVE — equity is goodwill/intangible-heavy (e.g. post-acquisition); no asset-backing floor"><b>TBV</b> <span style="color:#ef5f4e">neg ⚠</span></span>';}
+    else if(s.tbv!=null){var _tc=(s.tbv<1?'#2ecc8f':(s.tbv<=2?'#cfd8e3':'#e0a13c'));out+='<span class="bt" style="border-color:'+_tc+'66" title="price ÷ tangible book value per share'+(s.tbvps!=null?(' · TBVPS $'+s.tbvps.toFixed(2)):'')+'; below 1× = trading under tangible book (asset-backed margin of safety)"><b>P/TBV</b> <span style="color:'+_tc+'">'+s.tbv.toFixed(2)+'×'+(s.tbv<1?' ◂below':'')+'</span></span>';}
+    ['RATE','OIL','DXY','VIX'].forEach(function(k){var b=s.mb[k];if(b==null)return;var mv=MOVE[k],tw=b*mv,c=tw>0?'#2ecc8f':(tw<0?'#ef5f4e':'#8a93a3');
       out+='<span class="bt" style="border-color:'+c+'55"><b>'+MLAB[k]+'</b> β'+b.toFixed(2)+' <span style="color:'+c+'">'+(mv>=0?'+':'')+mv.toFixed(1)+'%'+(tw>0?' ▲':tw<0?' ▼':'')+'</span></span>';});
     (s.deps||[]).forEach(function(dp){var f=(dp.f||'').toLowerCase(),pm=null,lab=null;
       if(f.indexOf('copper')>=0){pm=DIR.COPPER;lab='Copper';}else if(f.indexOf('gold')>=0){pm=DIR.GOLD;lab='Gold';}else if(f.indexOf('gas')>=0){pm=DIR.NATGAS;lab='NatGas';}else return;

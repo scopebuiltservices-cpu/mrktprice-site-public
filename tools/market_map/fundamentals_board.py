@@ -46,6 +46,28 @@ def fund_for(rec, est, act, close):
         ta = rec.get("targetAvg")
         if ta and close and close > 0:
             out["targetUpsidePct"] = round((ta / close - 1.0) * 100.0, 2)
+        # --- TANGIBLE BOOK VALUE ----------------------------------------------------------------
+        # TBVPS = tangible book value per share = (equity - goodwill - intangibles)/shares. We surface
+        # the per-share book vs tangible-book gap (intangible "air"), and derive P/TBV + premium/discount
+        # to TBV from OUR last committed close (fresher than the vendor ratio). A firm whose tangible
+        # equity is NEGATIVE (goodwill/intangible-heavy, e.g. post-acquisition) is flagged honestly rather
+        # than hidden; trading BELOW tangible book is flagged as an asset-backed margin of safety.
+        tbvps = rec.get("tbvps"); bvps = rec.get("bvps")
+        if tbvps is not None:
+            out["tbvps"] = round(tbvps, 4)
+            if bvps is not None:
+                out["bvps"] = round(bvps, 4)
+                out["intangPerSh"] = round(bvps - tbvps, 4)            # goodwill+intangibles carried in book
+            if rec.get("pTbvFmp") is not None:
+                out["pTbvFmp"] = round(rec["pTbvFmp"], 3)              # vendor P/TBV cross-check
+            if close and close > 0:
+                if tbvps > 0:
+                    out["pTbv"] = round(close / tbvps, 3)             # price / tangible book per share
+                    out["tbvDiscPct"] = round((close / tbvps - 1.0) * 100.0, 1)   # +premium / -discount to TBV
+                    out["tbvFlag"] = "below_tbv" if close < tbvps else None
+                else:
+                    out["pTbv"] = None
+                    out["tbvFlag"] = "negative_tbv"                   # tangible equity < 0
     if est:
         if est.get("epsAvg") is not None:
             out["epsFwd"] = est["epsAvg"]

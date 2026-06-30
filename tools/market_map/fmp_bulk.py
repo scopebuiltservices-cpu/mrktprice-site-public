@@ -83,6 +83,9 @@ def merge(ratios_rows, metrics_rows, target_rows, rating_rows):
         d["debtEq"]   = _num(_pick(r, "debtToEquityRatioTTM", "debtEquityRatioTTM", "debtToEquityTTM"))
         d["divYield"] = _num(_pick(r, "dividendYieldTTM", "dividendYielTTM"))
         d["fcfYield"] = _num(_pick(r, "freeCashFlowYieldTTM", "fcfYieldTTM"))
+        # FMP's own price-to-tangible-book (cross-check for our close-derived pTbv)
+        d["pTbvFmp"]  = _num(_pick(r, "priceToTangibleBookRatioTTM", "priceToTangibleBooksRatioTTM",
+                                   "priceToTangibleBookValueTTM", "ptbRatioTTM"))
     for r in metrics_rows or []:
         t = _sym(r)
         if not t:
@@ -91,6 +94,12 @@ def merge(ratios_rows, metrics_rows, target_rows, rating_rows):
         d["roe"]   = _num(_pick(r, "returnOnEquityTTM", "roeTTM"))
         if d.get("fcfYield") is None:
             d["fcfYield"] = _num(_pick(r, "freeCashFlowYieldTTM", "fcfYieldTTM"))
+        # TANGIBLE book value per share = (equity - goodwill - intangibles) / shares (FMP's definition).
+        # bookValuePerShare is TOTAL book (includes goodwill+intangibles); the gap between them is the
+        # per-share intangible/goodwill "air" we surface so users see how asset-backed the book really is.
+        d["tbvps"] = _num(_pick(r, "tangibleBookValuePerShareTTM", "tangibleBookValuePerShare",
+                                "tangibleBookValuePerShareOutTTM"))
+        d["bvps"]  = _num(_pick(r, "bookValuePerShareTTM", "bookValuePerShare"))
     for r in target_rows or []:
         t = _sym(r)
         if not t:

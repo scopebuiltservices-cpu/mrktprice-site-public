@@ -209,8 +209,12 @@ def spa(D, B=1000, block=5, seed=777):
         v = sum((cols[k][t] - means[k]) ** 2 for t in range(T)) / max(T - 1, 1)
         sds.append(math.sqrt(v / T) if v > 0 else 1e-9)             # std error of the mean
     Tstat = max(means[k] / sds[k] for k in range(K))
-    A = 1.0 / 4.0 * (T ** -0.25)                                    # recentering threshold rate (Hansen)
-    thr = [means[k] if means[k] >= -math.sqrt(sds[k] * sds[k] * T) * A * 0 - sds[k] * math.sqrt(2 * math.log(math.log(T))) else 0.0 for k in range(K)]
+    # Hansen (2005) CONSISTENT recentering: model k keeps its sample mean only if that mean is not
+    # significantly negative at the studentized rate sqrt(2 ln ln T); otherwise it is recentered to 0
+    # (treated as a non-beating model under the null). sds[k] is already the std error of the mean
+    # (= sqrt(var_k / T)), so sds[k]*sqrt(2 ln ln T) is exactly Hansen's threshold sqrt((omega_k^2/T)*2 ln ln T).
+    llt = math.sqrt(2.0 * math.log(math.log(T))) if T >= 3 else 0.0
+    thr = [means[k] if means[k] >= -sds[k] * llt else 0.0 for k in range(K)]
     rng = _mulberry32(seed); ge = 0
     for _ in range(B):
         idx = _block_idx(T, block, rng)

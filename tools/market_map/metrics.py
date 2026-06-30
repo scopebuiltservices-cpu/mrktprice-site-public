@@ -14,7 +14,7 @@ import math
 __all__ = ["winsorize", "zscores", "ann_vol", "beta", "pearson", "_var", "_resid_on", "partial_corr",
            "_betacf", "_betai", "_t_two_sided_p", "ols_betas", "cluster_order", "money_flow", "MACROF",
            "_ok", "mfi", "atr", "zstd", "lasso_cd", "macro_fit", "ema_series", "daily_logvol", "_logret",
-           "half_life", "variance_ratio", "parkinson_vol", "jump_ratio", "_phi", "prob_touch",
+           "half_life", "variance_ratio", "variance_ratio_stat", "parkinson_vol", "jump_ratio", "_phi", "prob_touch",
            "contradiction", "_Q75", "median_touch_days", "_dvol", "regime_flip_prob", "calibrate_touch",
            # canonical risk/return library (previously missing or duplicated across modules):
            "mean", "stdev", "sharpe", "downside_dev", "sortino", "max_drawdown", "calmar", "cagr",
@@ -22,7 +22,10 @@ __all__ = ["winsorize", "zscores", "ann_vol", "beta", "pearson", "_var", "_resid
            "ewma_vol", "spearman", "hurst",
            # canonical backtest performance metrics (report section 15/18):
            "hit_rate", "payoff_ratio", "profit_factor", "exposure", "turnover", "drawdown_duration",
-           "tracking_error", "binom_test_greater"]
+           "tracking_error", "binom_test_greater",
+           # horizon-scale + asymmetric conformal (rolling-HV / VR / conformal design note):
+           "hv_term_structure", "ewma_sigma2", "ewma_horizon_scale", "vr_multiplier", "sigma_horizon",
+           "conformal_tails", "conformal_band"]
 
 
 def winsorize(xs,p=0.02):
@@ -237,7 +240,9 @@ def half_life(closes, cap=252):
     return round(min(h,cap),1) if h>0 else None
 
 def variance_ratio(closes, q=5):
-    """P3-25 Lo-MacKinlay variance ratio. VR=Var(q-sum)/(q*Var(1)). >1 trending, <1 mean-reverting, ~1 random walk."""
+    """P3-25 RAW variance ratio (point estimate only, no test statistic). VR=Var(q-sum)/(q*Var(1)).
+    >1 trending, <1 mean-reverting, ~1 random walk. This is the heuristic diagnostic; for the actual
+    Lo-MacKinlay TEST (with a heteroskedasticity-robust z-stat and p-value) use variance_ratio_stat()."""
     r=_logret(closes)
     if len(r)<q*4: return None
     v1=_var(r)
@@ -245,6 +250,40 @@ def variance_ratio(closes, q=5):
     qs=[sum(r[i:i+q]) for i in range(0,len(r)-q+1)]
     vq=_var(qs)
     return round(vq/(q*v1),2) if v1>0 else None
+
+def variance_ratio_stat(closes, q=5):
+    """Lo-MacKinlay (1988) variance-ratio TEST with the heteroskedasticity-ROBUST statistic M2.
+    Uses overlapping q-period returns with the unbiased VR estimator and the robust asymptotic variance
+        theta*(q) = sum_{j=1}^{q-1} [2(q-j)/q]^2 * delta_j,  delta_j = (sum (r_t-mu)^2 (r_{t-j}-mu)^2) / (sum (r_t-mu)^2)^2
+    z = (VR - 1) / sqrt(theta*).  Returns {vr, z, p, q, n} or None. p is two-sided N(0,1).
+    Under H0 (random walk / martingale difference) VR=1; |z|>1.96 rejects at 5%."""
+    r = _logret(closes)
+    T = len(r)
+    if T < q * 4 or q < 2:
+        return None
+    mu = sum(r) / T
+    dev = [x - mu for x in r]
+    s2 = sum(d * d for d in dev) / T                      # MLE one-period variance (T denom, per L-M)
+    if s2 <= 0:
+        return None
+    # overlapping q-sums; unbiased VR estimator m = T*q*(1 - q/T) normalization (Lo-MacKinlay)
+    qs = [sum(r[i:i + q]) for i in range(0, T - q + 1)]
+    muq = q * mu
+    m = q * (T - q + 1) * (1.0 - q / float(T))
+    vq = sum((x - muq) ** 2 for x in qs) / m   # m's q-factor already rescales to one-period units
+    vr = vq / s2
+    s2sq = (T * s2) ** 2                                   # (sum dev^2)^2
+    theta = 0.0
+    for j in range(1, q):
+        num = sum(dev[t] * dev[t] * dev[t - j] * dev[t - j] for t in range(j, T))
+        delta = num / s2sq if s2sq > 0 else 0.0
+        w = (2.0 * (q - j) / q)
+        theta += w * w * delta
+    if theta <= 0:
+        return {"vr": round(vr, 3), "z": None, "p": None, "q": q, "n": T}
+    z = (vr - 1.0) / math.sqrt(theta)
+    p = 2.0 * (1.0 - 0.5 * (1.0 + math.erf(abs(z) / math.sqrt(2.0))))
+    return {"vr": round(vr, 3), "z": round(z, 2), "p": round(p, 4), "q": q, "n": T}
 
 def parkinson_vol(highs, lows, n=21):
     """P3-19 Parkinson range volatility (daily): sqrt( (1/(4 ln2 N)) * sum ln(H/L)^2 ). More efficient than close-to-close."""
@@ -552,3 +591,101 @@ def binom_test_greater(k, n, p=0.5):
     if n <= 0 or k < 0 or k > n:
         return float("nan")
     return min(1.0, sum(_binom_pmf(i, n, p) for i in range(k, n + 1)))
+
+
+# ------------------------------------------------------------------------------------------------------
+# Horizon-specific volatility scale + asymmetric conformal bands (per the rolling-HV / VR / conformal
+# design note). The point of sigma_horizon() is to make the H-step scale a FIRST-CLASS object built from
+# (a) the empirical HV term structure measured directly on matured H-step returns, (b) an EWMA recency
+# variance, and (c) a BOUNDED variance-ratio multiplier — instead of silently multiplying a one-step sigma
+# by sqrt(H). Bands are asymmetric: separate lower/upper studentized-residual quantiles (no mirroring).
+# ------------------------------------------------------------------------------------------------------
+
+def hv_term_structure(returns, horizons, overlap=True):
+    """Empirical horizon-vol term structure: sigma_H = stdev of the H-step (summed) returns measured
+    DIRECTLY, not synthesized by sqrt-time. Overlapping by default (more samples; report dependency-aware
+    uncertainty elsewhere); set overlap=False for non-overlapping (theoretically clean) blocks.
+    Returns {H: sigma_H} for usable horizons."""
+    r = _clean(returns)
+    out = {}
+    n = len(r)
+    for H in horizons:
+        H = int(H)
+        if H < 1 or n < H + 2:
+            continue
+        step = 1 if overlap else H
+        blocks = [sum(r[i:i + H]) for i in range(0, n - H + 1, step)]
+        if len(blocks) < 3:
+            continue
+        out[H] = stdev(blocks)
+    return out
+
+
+def ewma_sigma2(returns, lam=0.94):
+    """RiskMetrics EWMA one-step variance: s2_t = lam*s2_{t-1} + (1-lam)*r_t^2. Returns the latest s2."""
+    r = _clean(returns)
+    if not r:
+        return None
+    s2 = r[0] * r[0] if r[0] else 1e-12
+    for x in r[1:]:
+        s2 = lam * s2 + (1.0 - lam) * (x * x)
+    return max(s2, 1e-18)
+
+
+def ewma_horizon_scale(returns, horizons, lam=0.94):
+    """EWMA recency scale per horizon: sqrt(s2_ewma)*sqrt(H) SEED (recency informs the level; the HV term
+    structure carries the true horizon shape). Returns {H: sigma_rec_H}."""
+    s2 = ewma_sigma2(returns, lam=lam)
+    if s2 is None:
+        return {}
+    one = math.sqrt(s2)
+    return {int(H): one * math.sqrt(max(int(H), 1)) for H in horizons}
+
+
+def vr_multiplier(returns, H, lo=0.85, hi=1.20):
+    """Bounded variance-ratio scale multiplier m_VR = clip(sqrt(VR(H)), lo, hi). A variance ratio is a
+    DIAGNOSTIC, so its effect on scale is clamped — it never launches the vol estimate into the sun."""
+    closes = [1.0]
+    for x in _clean(returns):
+        closes.append(closes[-1] * math.exp(x))
+    st = variance_ratio_stat(closes, q=max(2, int(H)))
+    if not st or st.get("vr") is None or st["vr"] <= 0:
+        return 1.0
+    return max(lo, min(hi, math.sqrt(st["vr"])))
+
+
+def sigma_horizon(returns, H, hv_weight=0.60, recency_weight=0.40, lam=0.94, vr_lo=0.85, vr_hi=1.20):
+    """Blended horizon-specific volatility forecast:
+        base_var = w_hv*sigma_HV(H)^2 + w_rec*sigma_rec(H)^2 ;  sigma_H = sqrt(base_var) * m_VR(H).
+    Single source of truth for the H-step scale (no downstream sqrt(H)). Returns sigma_H or None."""
+    H = int(H)
+    hv = hv_term_structure(returns, [H]).get(H)
+    rec = ewma_horizon_scale(returns, [H], lam=lam).get(H)
+    if hv is None and rec is None:
+        return None
+    hv = hv if hv is not None else rec
+    rec = rec if rec is not None else hv
+    base_var = hv_weight * hv * hv + recency_weight * rec * rec
+    if base_var <= 0:
+        return None
+    return math.sqrt(base_var) * vr_multiplier(returns, H, lo=vr_lo, hi=vr_hi)
+
+
+def conformal_tails(residuals, alpha=0.10):
+    """SEPARATE lower/upper empirical quantiles of (studentized) residuals — the asymmetric, finite-sample
+    conformal tails. Mirroring |resid| around the center is exactly the information loss this avoids.
+    Returns (q_lower, q_upper) using the conformal rank index ceil/floor((1±)/2 (n+1)), or None if sparse."""
+    z = sorted(float(x) for x in residuals if x is not None and x == x)
+    n = len(z)
+    if n < 5:
+        return None
+    i_lo = min(n, max(1, int(math.floor((alpha / 2.0) * (n + 1))))) - 1
+    i_hi = min(n, max(1, int(math.ceil((1.0 - alpha / 2.0) * (n + 1))))) - 1
+    return z[i_lo], z[i_hi]
+
+
+def conformal_band(mu, sigma, q_lower, q_upper):
+    """Publish the asymmetric interval L = mu + sigma*q_lower, U = mu + sigma*q_upper (q_lower<=0<=q_upper
+    typically). Keeps lower and upper tails distinct so downside skew / jump asymmetry survive."""
+    return {"mu": mu, "sigma": sigma, "qLower": q_lower, "qUpper": q_upper,
+            "lower": mu + sigma * q_lower, "upper": mu + sigma * q_upper}

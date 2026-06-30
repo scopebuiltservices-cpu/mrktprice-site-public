@@ -1,18 +1,26 @@
 """Real-rate curve architecture (stdlib) — replaces the TLT proxy with the actual real Treasury curve.
 
-Treasury's daily REAL constant-maturity table has no 2-year point (only 5/7/10/20/30), so we build the
-Diebold-Li level/slope/curvature from the real 5s/10s/30s (FRED DFII5/DFII10/DFII30):
+Treasury's daily REAL constant-maturity table has no 2-year point (only 5/7/10/20/30), so we build a
+THREE-POINT level/slope/curvature PROXY from the real 5s/10s/30s (FRED DFII5/DFII10/DFII30):
     L = (y5 + y10 + y30)/3      S = y30 - y5      C = 2*y10 - y5 - y30
-and drive per-name exposure off the daily CHANGES dL,dS,dC. Per-name duration betas come from a rolling
-OLS  r_i = a + bMKT*rmkt + bL*dL + bS*dS + bC*dC + e  with t-stats, then a curve-aware classification.
-fetch is FRED-gated and self-skips to None without a key. Research only.
+NOTE: this is a hand-built linear-combination proxy, NOT a Nelson-Siegel / Diebold-Li factor model (which
+fits exponential factor loadings with a decay parameter lambda). The L/S/C combinations are the usual
+empirical level/slope/curvature summaries; we use them only as curve-state descriptors, not as estimated
+NS factors. We drive per-name exposure off the daily CHANGES dL,dS,dC. Per-name duration betas come from a
+rolling OLS  r_i = a + bMKT*rmkt + bL*dL + bS*dS + bC*dC + e  with Newey-West HAC t-stats, then a
+curve-aware classification. fetch is FRED-gated and self-skips to None without a key. Research only.
 """
 import os, math
 
 
-def lsc(y5, y10, y30):
-    """Diebold-Li level/slope/curvature from the real 5/10/30 points."""
+def real_curve_proxy_lsc(y5, y10, y30):
+    """Three-point real-yield level/slope/curvature PROXY (NOT Diebold-Li / Nelson-Siegel).
+    L=(y5+y10+y30)/3, S=y30-y5, C=2*y10-y5-y30. A linear-combination descriptor of curve state."""
     return {"L": (y5 + y10 + y30) / 3.0, "S": y30 - y5, "C": 2.0 * y10 - y5 - y30}
+
+
+# Backward-compatible alias (callers used lsc()); the name no longer claims a Diebold-Li factor model.
+lsc = real_curve_proxy_lsc
 
 
 def _diff(a):
@@ -34,8 +42,14 @@ def _inv(M):
     return [row[n:] for row in A]
 
 
-def _ols_t(X, y):
-    """OLS betas + t-stats (classical SE). Returns (beta[], t[]) or None."""
+def _ols_t(X, y, hac_lag=None):
+    """OLS betas + Newey-West HAC t-stats. Returns (beta[], t[]) or None.
+
+    Daily return regressions are heteroskedastic and serially dependent, so classical OLS SEs are
+    anti-conservative. We use the Newey-West (1987) HAC sandwich:
+        Cov = (X'X)^-1 . S . (X'X)^-1,   S = S0 + sum_{l=1..L} w_l (G_l + G_l'),  w_l = 1 - l/(L+1)
+    where S0 = sum_i e_i^2 x_i x_i' and G_l = sum_{i>l} e_i e_{i-l} x_i x_{i-l}'. Lag L defaults to the
+    Newey-West automatic rule floor(4 (n/100)^(2/9))."""
     n = len(X); p = len(X[0])
     if n <= p + 1: return None
     XtX = [[0.0] * p for _ in range(p)]; Xty = [0.0] * p
@@ -46,13 +60,26 @@ def _ols_t(X, y):
     inv = _inv(XtX)
     if inv is None: return None
     beta = [sum(inv[a][b] * Xty[b] for b in range(p)) for a in range(p)]
-    sse = 0.0
-    for i in range(n):
-        yh = sum(X[i][a] * beta[a] for a in range(p)); sse += (y[i] - yh) ** 2
-    s2 = sse / max(1, n - p)
+    e = [y[i] - sum(X[i][a] * beta[a] for a in range(p)) for i in range(n)]
+    L = hac_lag if hac_lag is not None else int(4.0 * (n / 100.0) ** (2.0 / 9.0))
+    L = max(0, min(L, n - 1))
+    # S0: contemporaneous outer products weighted by squared residuals
+    S = [[sum(e[i] * e[i] * X[i][a] * X[i][b] for i in range(n)) for b in range(p)] for a in range(p)]
+    # Newey-West Bartlett-weighted autocovariance terms (symmetrized)
+    for l in range(1, L + 1):
+        w = 1.0 - l / (L + 1.0)
+        for a in range(p):
+            for b in range(p):
+                g = sum(e[i] * e[i - l] * X[i][a] * X[i - l][b] for i in range(l, n))
+                g2 = sum(e[i] * e[i - l] * X[i][b] * X[i - l][a] for i in range(l, n))
+                S[a][b] += w * (g + g2)
+    # sandwich Cov = inv . S . inv ; small-sample dof scaling n/(n-p)
+    AS = [[sum(inv[a][k] * S[k][b] for k in range(p)) for b in range(p)] for a in range(p)]
+    cov = [[(n / max(1.0, n - p)) * sum(AS[a][k] * inv[k][b] for k in range(p)) for b in range(p)] for a in range(p)]
     t = []
     for a in range(p):
-        se = (s2 * inv[a][a]) ** 0.5 if inv[a][a] > 0 else float("inf")
+        v = cov[a][a]
+        se = v ** 0.5 if v > 0 else float("inf")
         t.append(beta[a] / se if se > 0 and se != float("inf") else 0.0)
     return beta, t
 

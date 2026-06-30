@@ -89,8 +89,13 @@ def gate(ic_history, weights, *, horizon, n_trials, breadth=1.0,
                 "convictionScale": 0.0, "nObs": n_obs, "nTrials": int(n_trials),
                 "reason": "insufficient composite history"}
     skew, kurt = _moments(series)
-    # dispersion of trial Sharpes: with no measured dispersion, 1.0 is the conventional conservative prior
-    d = fe.deflated_sharpe(sr_raw, n_obs, skew=skew, kurt=kurt, n_trials=int(n_trials), sr_trials_std=1.0)
+    # Cross-trial Sharpe DISPERSION estimated from the actual trial ledger (each factor's IC series is one
+    # tried configuration). DSR's expected-max-Sharpe null scales with this dispersion, not the trial count
+    # alone. Fall back to the conservative 1.0 prior only when fewer than 2 usable trials exist.
+    trial_series = [ic_history[f] for f in weights if f in ic_history and ic_history.get(f)]
+    sr_disp = fe.estimate_sr_trials_std(trial_series)
+    sr_trials_std = sr_disp if sr_disp is not None else 1.0
+    d = fe.deflated_sharpe(sr_raw, n_obs, skew=skew, kurt=kurt, n_trials=int(n_trials), sr_trials_std=sr_trials_std)
     dsr = d.get("dsr")
     passed = bool(dsr is not None and dsr >= dsr_hurdle and breadth >= min_breadth)
     scale = 1.0
@@ -105,4 +110,5 @@ def gate(ic_history, weights, *, horizon, n_trials, breadth=1.0,
             "dsr": dsr, "sr0": d.get("sr0"), "pass": passed,
             "convictionScale": round(scale, 4), "nObs": n_obs, "nTrials": int(n_trials),
             "skew": round(skew, 3), "kurt": round(kurt, 3), "breadth": round(breadth, 3),
+            "srTrialsStd": (round(sr_trials_std, 4) if sr_disp is not None else None),
             "dsrHurdle": dsr_hurdle, "reason": reason}

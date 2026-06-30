@@ -127,6 +127,28 @@ def factor_weights(ic_history, maxlags=None, q=0.10):
     return out
 
 
+def estimate_sr_trials_std(trial_series):
+    """Cross-trial Sharpe DISPERSION for the deflated-Sharpe null (Bailey & Lopez de Prado). `trial_series`
+    is an iterable of per-trial return/IC series (one per tried configuration). Returns the sample stdev of
+    the per-trial (per-observation) Sharpe ratios, or None if fewer than 2 usable trials. DSR's expected-max
+    Sharpe under the null scales with THIS dispersion, not with the trial count alone — hard-coding it to 1.0
+    makes the gate arbitrarily strict or loose. Pass the result as sr_trials_std to deflated_sharpe()."""
+    srs = []
+    for s in trial_series or []:
+        s = [float(x) for x in s if x is not None]
+        if len(s) < 2:
+            continue
+        mu = sum(s) / len(s)
+        var = sum((x - mu) ** 2 for x in s) / (len(s) - 1)
+        if var > 0:
+            srs.append(mu / math.sqrt(var))
+    if len(srs) < 2:
+        return None
+    m = sum(srs) / len(srs)
+    v = sum((x - m) ** 2 for x in srs) / (len(srs) - 1)
+    return math.sqrt(v) if v > 0 else None
+
+
 def deflated_sharpe(sr, n_obs, skew=0.0, kurt=3.0, n_trials=1, sr_trials_std=1.0):
     """Deflated Sharpe Ratio (Bailey & Lopez de Prado). `sr` is the observed (per-period) Sharpe of the
     composite; n_trials is the HONEST number of configurations tried; sr_trials_std is the dispersion of

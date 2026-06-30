@@ -209,15 +209,29 @@ def _quantile(xs, q):
         return s[lo]
     return s[lo] + (s[hi] - s[lo]) * (pos - lo)
 
+def _conformal_q(xs, p, upper):
+    """Finite-sample split-conformal order-statistic quantile (the recipe that earns the 'distribution-free'
+    label): upper tail uses index ceil(p*(n+1)), lower tail floor(p*(n+1)), clamped to [1,n]. This is the
+    same order-statistic correction lineage.py uses — not a linearly-interpolated empirical quantile."""
+    s = sorted(xs); n = len(s)
+    if n == 0:
+        return 0.0
+    if upper:
+        idx = min(n, max(1, int(math.ceil(p * (n + 1)))))
+    else:
+        idx = min(n, max(1, int(math.floor(p * (n + 1)))))
+    return s[idx - 1]
+
 def conformal_band(logpath, resid_by_h, alpha=0.90):
-    """Distribution-free, TRIGGER-MATCHED band. resid_by_h[h] = list of historical post-trigger
-    log-price forecast errors e = p_realized - p_forecast at horizon h. Returns (lo,hi) log-prices."""
+    """Distribution-free, TRIGGER-MATCHED band using FINITE-SAMPLE split-conformal order-statistic quantiles
+    (not linearly-interpolated empirical quantiles). resid_by_h[h] = list of historical post-trigger log-price
+    forecast errors e = p_realized - p_forecast at horizon h. Returns (lo,hi) log-prices."""
     lo = []; hi = []
     ql = (1 - alpha) / 2.0; qh = (1 + alpha) / 2.0
     for h, lp in enumerate(logpath):
         res = resid_by_h.get(h) or resid_by_h.get(h + 1) or []
         if len(res) >= 8:
-            lo.append(lp + _quantile(res, ql)); hi.append(lp + _quantile(res, qh))
+            lo.append(lp + _conformal_q(res, ql, upper=False)); hi.append(lp + _conformal_q(res, qh, upper=True))
         else:
             lo.append(float("nan")); hi.append(float("nan"))
     return lo, hi

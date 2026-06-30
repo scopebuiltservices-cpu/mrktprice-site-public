@@ -273,12 +273,30 @@ def sensitivities_block(n, moves=None):
     commodities = [_sens_row(d, "commodity", moves) for d in (m3.get("top") or [])]
     rate_row = _sens_row(rate, "rate", moves) if isinstance(rate, dict) else None
     market = [_sens_row(d, "market", moves) for d in (n.get("deps") or []) if isinstance(d, dict)]
-    contribs = [r["impliedPct"] for r in (commodities + ([rate_row] if rate_row else [])) if r.get("impliedPct") is not None]
-    total = round(sum(contribs), 2) if contribs else None
-    return {"macroR2": _num(n.get("macroR2")), "dominantDriver": n.get("drv"),
+    macro_rows = commodities + ([rate_row] if rate_row else [])
+    _imp = lambda r: r.get("impliedPct")
+    # SIGNIFICANCE GATE: only statistically SIGNIFICANT, STABLE, non-WEAK drivers earn an attributed live
+    # contribution. The build already computes per-factor sig/p/stab/weak in n.deps & n.macro3; summing every
+    # driver's impliedPct (the prior behavior) laundered insignificant betas into a confident macro
+    # attribution. liveContribPct now reports the DEFENSIBLE sig-gated total; grossContribPct keeps the
+    # unfiltered sum for transparency.
+    gross = [_imp(r) for r in macro_rows if _imp(r) is not None]
+    sig_rows = [r for r in macro_rows
+                if _imp(r) is not None and r.get("sig") and not r.get("weak") and (r.get("stab") in (None, "stable"))]
+    gross_total = round(sum(gross), 2) if gross else None
+    sig_total = (round(sum(_imp(r) for r in sig_rows), 2) if gross else None)
+    if sig_total is None and gross:
+        sig_total = 0.0
+    r2 = _num(n.get("macroR2"))
+    plausible = (sig_total is None) or (abs(sig_total) <= 50.0)   # absurdity bound: >50% single-period macro move = distrust
+    return {"macroR2": r2, "macroExplainedShare": (round(r2 / 100.0, 3) if r2 is not None else None),
+            "dominantDriver": n.get("drv"),
             "rate": rate_row, "commodities": commodities, "market": market,
-            "liveContribPct": total, "hasLive": total is not None,
-            "note": "sens = expected %% stock move per +1\u03c3 in the driver; impliedPct = sens \u00d7 driver\u2019s current \u03c3-move"}
+            "liveContribPct": sig_total, "grossContribPct": gross_total,
+            "nSigDrivers": len(sig_rows), "nDrivers": len(gross), "plausible": plausible,
+            "hasLive": sig_total is not None,
+            "note": "liveContribPct = sum of impliedPct (sens \u00d7 driver\u2019s current \u03c3-move) over ONLY "
+                    "statistically-significant, stable, non-weak drivers; grossContribPct includes all."}
 
 
 def _treasury_curve(mm):

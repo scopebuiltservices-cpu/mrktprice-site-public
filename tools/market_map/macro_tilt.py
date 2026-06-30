@@ -13,7 +13,8 @@ complex, the CORRECT way:
                                   sum of double-counting univariate betas. 'MKT' is excluded (the board
                                   scores market beta separately as drag).
   rate_real_tilt(rate, move)      real-rate curve contribution = bL*dL + bS*dS + bC*dC, where bL/bS/bC are
-                                  the Diebold-Li level/slope/curvature DURATION betas (rate_real.py, fit vs
+                                  the 5/10/30 real-rate level/slope/curvature (L/S/C) PROXY DURATION betas (not
+                                  Diebold-Li/Nelson-Siegel; rate_real.py, fit vs
                                   the REAL yields DFII5/10/30) and dL/dS/dC are the recent real-curve moves.
                                   This is the real discount-rate driver, not the TLT price proxy.
   combined_tilt(...)              the headline term the board feeds into alpha. When the real-rate curve is

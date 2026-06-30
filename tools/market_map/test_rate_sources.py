@@ -34,7 +34,7 @@ ok("short curve rejected (<30)", rr._valid_curve(short) is False)
 nan_curve = dict(good, y5=[float("nan")] * 40)
 ok("non-finite curve rejected", rr._valid_curve(nan_curve) is False)
 
-# --- L/S/C math: Diebold-Li from 5/10/30 ---
+# --- L/S/C math: 5/10/30 real-rate level/slope/curvature PROXY (not Diebold-Li) ---
 d = rr.lsc(1.8, 2.1, 2.4)
 ok("L = (5+10+30)/3", abs(d["L"] - (1.8 + 2.1 + 2.4) / 3) < 1e-9)
 ok("S = 30 - 5", abs(d["S"] - (2.4 - 1.8)) < 1e-9)

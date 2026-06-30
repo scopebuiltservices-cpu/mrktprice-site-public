@@ -1,8 +1,13 @@
 # mrktprice-site-public
 
 Public website for **[mrktprice.com](https://mrktprice.com)** — the MrktPrice market terminal
-(`index.html`) and the **Opportunity News** reports (`reports/`). This repo holds only the published
-site files; the analysis source code lives in a separate private repo.
+(`terminal.html` / `marketmap.html`) and the **Opportunity News** reports (`reports/`).
+
+This repo holds **both** the published site files **and** the analysis/build source code that produces
+the published data: the nightly market-map build engine, connectors, econometric/forecast modules,
+tests, and GitHub Actions workflows all live here under **`tools/market_map/`** and `tools/`. (Earlier
+versions of this README said analysis code lived in a separate private repo — that is no longer true;
+the pipeline is now self-contained and self-publishing from this repository.)
 
 © 2026 MrktPrice™ / Marc Jones. All rights reserved. Research/education only — **not investment advice.**
 
@@ -42,5 +47,6 @@ Done — **https://mrktprice.com** serves the dashboard, and **/reports/** serve
    *(Or run `python build_reports.py` locally first if you want to preview the list.)*
 
 ## Updating the dashboard
-Replace `index.html` with a newer build and push. (If you use the private repo's daily refresh, have
-it copy the rebuilt `index.html` here.)
+The nightly GitHub Actions workflow (`.github/workflows/pages.yml`) rebuilds the published data from
+the in-repo engine under `tools/market_map/` and redeploys automatically; a push with `[rebuild]` (or
+any change under `tools/market_map/`) regenerates `marketmap.json` and the terminal data in place.

@@ -15,7 +15,7 @@ nat-gas, silver, ags…) and the **real-rate curve** were computed but **display
   (already computed in `build_market_map.py`) dotted against the latest move of **every** macro driver.
   The pipeline emits those moves as `marketmap.json.factorMoves` (one per macro factor, same units the
   betas were fit on).
-- **Real-rate curve** via the Diebold-Li **level/slope/curvature duration betas** `n.rate` (from
+- **Real-rate curve** via the 5/10/30 real-rate **level/slope/curvature (L/S/C) PROXY duration betas** (not Diebold-Li/Nelson-Siegel) `n.rate` (from
   `rate_real.py`, fit against the **real** yields DFII5/10/30) dotted against the recent real-curve moves
   `marketmap.json.realCurve.{dL,dS,dC}`. When the real curve is present the nominal `RATE` factor is
   dropped so rates are counted once (no double-count); otherwise nominal RATE is the fallback.

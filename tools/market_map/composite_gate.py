@@ -95,6 +95,10 @@ def gate(ic_history, weights, *, horizon, n_trials, breadth=1.0,
     trial_series = [ic_history[f] for f in weights if f in ic_history and ic_history.get(f)]
     sr_disp = fe.estimate_sr_trials_std(trial_series)
     sr_trials_std = sr_disp if sr_disp is not None else 1.0
+    # Honest provenance for the dispersion input: did we MEASURE it from the trial ledger, or fall back
+    # to the conservative 1.0 prior (and if so, why)? The board can flag a provisional DSR accordingly.
+    disp_status = ("measured" if sr_disp is not None
+                   else ("insufficient_trials" if len(trial_series) < 2 else "fallback_prior"))
     d = fe.deflated_sharpe(sr_raw, n_obs, skew=skew, kurt=kurt, n_trials=int(n_trials), sr_trials_std=sr_trials_std)
     dsr = d.get("dsr")
     passed = bool(dsr is not None and dsr >= dsr_hurdle and breadth >= min_breadth)
@@ -111,4 +115,6 @@ def gate(ic_history, weights, *, horizon, n_trials, breadth=1.0,
             "convictionScale": round(scale, 4), "nObs": n_obs, "nTrials": int(n_trials),
             "skew": round(skew, 3), "kurt": round(kurt, 3), "breadth": round(breadth, 3),
             "srTrialsStd": (round(sr_trials_std, 4) if sr_disp is not None else None),
+            "dispersionStatus": disp_status,   # measured | fallback_prior | insufficient_trials
+            "dsrProvisional": (disp_status != "measured"),
             "dsrHurdle": dsr_hurdle, "reason": reason}

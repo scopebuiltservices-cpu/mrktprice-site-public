@@ -197,18 +197,38 @@
     var qLo=eSorted[Math.min(ne,Math.max(1,Math.floor((alpha/2)*(ne+1))))-1];
     var eaSorted=eSorted.map(function(x){return Math.abs(x);}).sort(function(a,b){return a-b;});
     var qSym=eaSorted[Math.min(ne,Math.max(1,Math.ceil((1-alpha)*(ne+1))))-1];
-    var covA=0,covS=0,covG=0,widths=[],crps=[],isc=[],pits=[],regCov={};
+    // REGIME-CONDITIONED conformal: SEPARATE lower/upper finite-sample quantiles per regime from that
+    // regime's OWN calibration residuals; falls back to the pooled qLo/qHi where a regime is too thin.
+    var MIN_REG_CAL=20, regE={}, regQ={};
+    cal.forEach(function(s){ if(s[4]!=null){ (regE[s[4]]=regE[s[4]]||[]).push((s[3]-s[1])/s[2]); } });
+    Object.keys(regE).forEach(function(rg){
+      var es=regE[rg]; if(es.length>=MIN_REG_CAL){
+        var es2=es.slice().sort(function(a,b){return a-b;}), m=es2.length;
+        var qh=es2[Math.min(m,Math.max(1,Math.ceil((1-alpha/2)*(m+1))))-1];
+        var ql=es2[Math.min(m,Math.max(1,Math.floor((alpha/2)*(m+1))))-1];
+        regQ[rg]=[ql,qh];
+      }
+    });
+    var covA=0,covS=0,covG=0,covRC=0,widths=[],crps=[],isc=[],pits=[],regCov={},regRc={};
     test.forEach(function(s){
       var muN=s[1],sigN=s[2],y=s[3],rg=s[4];
       var loA=muN+qLo*sigN, hiA=muN+qHi*sigN, cA=(loA<=y&&y<=hiA)?1:0; covA+=cA;
+      // regime-conditioned padded interval: regime's own quantiles when available, else pooled
+      var rq=(rg!=null && regQ[rg])?regQ[rg]:[qLo,qHi];
+      var loRC=muN+rq[0]*sigN, hiRC=muN+rq[1]*sigN, cRC=(loRC<=y&&y<=hiRC)?1:0; covRC+=cRC;
       var loS=muN-qSym*sigN, hiS=muN+qSym*sigN; covS+=(loS<=y&&y<=hiS)?1:0;
       var loG=muN-z*sigN, hiG=muN+z*sigN; covG+=(loG<=y&&y<=hiG)?1:0;
       widths.push(hiA-loA); crps.push(crpsGaussian(y,muN,sigN));
       isc.push(intervalScore(y,loA,hiA,alpha)); pits.push(normCdf((y-muN)/sigN));
-      if(rg!=null){ (regCov[rg]=regCov[rg]||[]).push(cA); }
+      if(rg!=null){ (regCov[rg]=regCov[rg]||[]).push(cA); (regRc[rg]=regRc[rg]||[]).push(cRC); }
     });
     var mt=test.length, k=covA, w=wilsonInterval(k,mt);
     var byReg={}; Object.keys(regCov).forEach(function(rg){ var cs=regCov[rg]; if(cs.length>=15) byReg[rg]={n:cs.length, coverage:r3(_mean(cs))}; });
+    var byRegConf={}; Object.keys(regQ).forEach(function(rg){
+      var rc=regRc[rg]||[];
+      byRegConf[rg]={nCal:regE[rg].length, qLo:r4(regQ[rg][0]), qHi:r4(regQ[rg][1]),
+        coverage:(rc.length?r3(_mean(rc)):null)};
+    });
     var ks=pitKs(pits), dk=dkwBand(mt);
     return { n:mt, nSteps:n, nCal:cal.length, embargo:n, embargoGap:embargoGap,
       coverage:r3(k/mt), wilsonLo:r3(w[0]), wilsonHi:r3(w[1]),
@@ -217,6 +237,11 @@
       crps:r6(_mean(crps)), intervalScore:r6(_mean(isc)), widthMean:r6(_mean(widths)),
       pitKS:ks.D!=null?r3(ks.D):null, pitUniformP:ks.p!=null?r3(ks.p):null,
       dkw:dk!=null?r4(dk):null, byRegime:byReg,
+      // schema-promised fields, now genuinely emitted (1:1 with lineage.py)
+      conformalPad:r4(qSym-z),
+      coveragePadded:r3(covRC/mt),
+      regimeConditioned:(Object.keys(regQ).length>0),
+      byRegimeConformal:byRegConf,
       calibrated: (w[0]<=(1-alpha) && (1-alpha)<=w[1]) };
   }
 

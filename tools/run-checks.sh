@@ -49,6 +49,9 @@ for j in marketmap.json xsection.json cik.json alpha_calib.json; do
 done
 echo "    ok"
 
+echo "==> security   Web-storage auth lint (advisory until AUTH_HARDENING.md migration lands; then add --strict)"
+node tools/check-localstorage-auth.mjs || true
+
 echo "==> integrity  Truncation sentinel (detects truncated py/js/json/jsonl/csv/html + data impact)"
 python3 tools/truncation_sentinel.py --root . || fail=1
 

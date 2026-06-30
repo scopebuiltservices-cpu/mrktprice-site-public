@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import composite_gate as cg
 import trial_ledger as tl
 import intraday_conviction as ic
+import factor_eval as fe
 
 F = []
 def ok(n, c, d=""):
@@ -39,10 +40,25 @@ ok("strong composite: DSR high", g["dsr"] is not None and g["dsr"] > 0.9, g["dsr
 ok("strong composite: passes gate", g["pass"] is True, g)
 ok("strong composite: conviction scale 1.0", abs(g["convictionScale"] - 1.0) < 1e-9, g["convictionScale"])
 
-# same signal but a HUGE honest trial count -> DSR collapses -> degrade (PDF's core point)
-g2 = cg.gate(strong, w, horizon=5, n_trials=100000, breadth=0.8)
-ok("massive trial count deflates DSR", g2["dsr"] is not None and g2["dsr"] < g["dsr"], (g["dsr"], g2["dsr"]))
+# DEFLATION (the PDF's core point), now under the CORRECTED measured-dispersion DSR: the expected-max
+# Sharpe null scales with sr_trials_std * sqrt(2 ln N_trials), so deflation requires REAL cross-trial
+# dispersion (a strong arm + a weak arm), not just a huge count. With low-dispersion `strong` above the
+# signal is genuinely too strong to deflate — which is correct. Here we plant real dispersion and a modest
+# composite so a huge honest trial count measurably collapses DSR.
+rng2 = random.Random(11)
+varied = {"a": [0.09 + 0.05 * rng2.gauss(0, 1) for _ in range(60)],   # strong arm  (Sharpe ~1.8)
+          "b": [0.005 + 0.05 * rng2.gauss(0, 1) for _ in range(60)]}  # near-zero arm (Sharpe ~0.1) -> dispersion
+gv  = cg.gate(varied, w, horizon=5, n_trials=2, breadth=0.8)
+g2  = cg.gate(varied, w, horizon=5, n_trials=100000, breadth=0.8)
+ok("dispersion is MEASURED (not the 1.0 fallback prior)", g2.get("dispersionStatus") == "measured", g2.get("dispersionStatus"))
+ok("massive trial count deflates DSR", g2["dsr"] is not None and gv["dsr"] is not None and g2["dsr"] < gv["dsr"], (gv["dsr"], g2["dsr"]))
 ok("deflated composite degrades conviction (<1)", g2["convictionScale"] < 1.0, g2["convictionScale"])
+ok("deflated DSR flagged provisional? no — dispersion measured", g2.get("dsrProvisional") is False, g2.get("dsrProvisional"))
+
+# DETERMINISTIC guard (no RNG): at a FIXED positive dispersion, DSR is strictly decreasing in trial count.
+_dsr_lo = fe.deflated_sharpe(1.0, 250, n_trials=2, sr_trials_std=0.5)["dsr"]
+_dsr_hi = fe.deflated_sharpe(1.0, 250, n_trials=100000, sr_trials_std=0.5)["dsr"]
+ok("DSR strictly decreases with trial count at fixed dispersion", _dsr_hi < _dsr_lo, (_dsr_lo, _dsr_hi))
 
 # zero-mean noise composite -> ~0.5 DSR, should not pass
 noise = {"a": [0.0 + 0.05 * rng.gauss(0, 1) for _ in range(60)],

@@ -1607,7 +1607,7 @@ def main():
             _ch=_rr.fetch_real_curve_history()
             if _ch:
                 _cs=_rr.curve_state(_ch)
-                if _cs: snap["realCurve"]=_cs                                # Diebold-Li real L/S/C + dL/dS/dC
+                if _cs: snap["realCurve"]=_cs                                # 5/10/30 real-rate L/S/C PROXY (not Diebold-Li) + dL/dS/dC
                 try: snap["rateBetaN"]=_rr.attach_duration_betas(names, _ch, is_etf=lambda t:(t in _etf))   # per-name n['rate']={bL,tL,...,class}
                 except Exception: pass
         except Exception: pass

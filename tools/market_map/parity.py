@@ -1,9 +1,18 @@
 """Implied forward and dividend/borrow extracted from put-call parity on the chain:
   C - P = e^{-rT}(F - K)   ->   regress (C-P) vs K: slope=-e^{-rT}, intercept=e^{-rT} F.
-Then implied continuous yield q from  F = S e^{(r-q)T}. Free, and exposes hard-to-borrow."""
+Then implied continuous yield q from  F = S e^{(r-q)T}. Free, and exposes hard-to-borrow.
+
+EXERCISE-STYLE FIREWALL: the equality C - P = e^{-rT}(F - K) is EXACT only for EUROPEAN options. For
+American single-name equity options (the OCC-cleared default) early-exercise premia E_C, E_P make
+  C_A - P_A = Se^{-qT} - Ke^{-rT} + (E_C - E_P),
+so the parity intercept recovers F only up to the discounted early-exercise spread e^{rT}(E_C - E_P), and the
+implied dividend yield is biased by the same term. We therefore tag the output with `style`/`europeanValid`
+and mark `impliedDivYieldValid`; consumers must NOT override a user-supplied q from an American chain."""
 import math
 
-def implied_forward(chain, spot, T, r):
+def implied_forward(chain, spot, T, r, style="american"):
+    """style: 'european' (cash-settled index) makes the parity identity exact; 'american' (single-name
+    default) flags the forward/dividend as a biased heuristic (europeanValid=False)."""
     pairs={}
     for o in chain:
         m=o.get("mark")

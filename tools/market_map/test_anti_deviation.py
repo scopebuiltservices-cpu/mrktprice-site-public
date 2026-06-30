@@ -22,19 +22,24 @@ def test_maturity_gating_no_leakage():
     assert rec["side"] == "inside" and rec["coverageFlag"] == 1 and abs(rec["residual"] - 0.3) < 1e-9
 
 
-def test_effective_n_discounts_dependence():
+def test_effective_n_geyer_ims():
     random.seed(1)
-    iid = [random.gauss(0, 1) for _ in range(400)]
-    ar = [0.0] * 400
-    e = 0.0
-    for i in range(400):
-        e = 0.8 * e + random.gauss(0, 1)
-        ar[i] = e
-    n_iid = ad.effective_n(iid)
-    n_ar = ad.effective_n(ar)
-    assert n_iid > 0.7 * len(iid)            # ~iid -> n_eff near n
-    assert n_ar < 0.5 * len(ar)              # strong positive autocorrelation -> n_eff sharply discounted
-    assert n_ar < n_iid
+    n = 4000
+    iid = [random.gauss(0, 1) for _ in range(n)]
+    assert ad.effective_n(iid) > 0.85 * n            # Geyer IMS keeps iid n_eff ~ n (no over-discount)
+
+    def ar1(phi):
+        e = 0.0; out = []
+        for _ in range(n):
+            e = phi * e + random.gauss(0, 1); out.append(e)
+        return out
+    # AR(1) theoretical ESS = n·(1-phi)/(1+phi); the IMS estimator should land near it
+    for phi in (0.5, 0.8):
+        theo = n * (1 - phi) / (1 + phi)
+        est = ad.effective_n(ar1(phi))
+        assert 0.45 * theo < est < 1.9 * theo, (phi, theo, est)
+    # monotone: stronger persistence -> fewer effective samples
+    assert ad.effective_n(ar1(0.9)) < ad.effective_n(ar1(0.5))
 
 
 def test_center_controller_shrinks_and_caps():
@@ -119,6 +124,30 @@ def test_apply_passthrough_when_gated():
     out = ad.apply_controllers(0.0, 2.0, {"active": False})
     assert out["active"] is False and out["biasAdj"] == 0.0 and out["scaleAdj"] == 1.0
     assert out["lower"] < 0 < out["upper"]
+
+
+def test_identity_no_op_on_clean_data():
+    # well-specified forecast: residuals exactly N(0, sigma_raw). The controller must be a near-NO-OP
+    # (bias~0, scale~1, qLo~-1.645, qHi~+1.645) so the corrected band ~ raw band — it cannot invent edge.
+    random.seed(13)
+    samples = [(0.0, 1.0, random.gauss(0, 1.0)) for _ in range(400)]
+    c = ad.fit_from_samples(samples)
+    assert abs(c["biasAdj"]) < 0.15
+    assert abs(c["scaleAdj"] - 1.0) < 0.12
+    assert -2.0 < c["qLower"] < -1.2 and 1.2 < c["qUpper"] < 2.0
+    assert abs(c["coverageAdj"] - c["coverageRaw"]) < 0.06     # corrected band ~ raw band on clean data
+
+
+def test_fit_from_samples_recovers_bias_and_scale():
+    random.seed(14)
+    # planted +0.4 center bias and 1.4x under-scaled sigma, fed as (mu, sigma, y) triples
+    samples = [(0.0, 1.0, 0.4 + random.gauss(0, 1.4)) for _ in range(300)]
+    c = ad.fit_from_samples(samples)
+    assert c["active"] is True and c["biasAdj"] > 0.15 and c["scaleAdj"] > 1.1
+    assert c["coverageAdj"] >= c["coverageRaw"]               # corrected band covers better than the raw σ√ band
+    assert c["coverageRaw"] < 0.9                             # the mis-specified raw band under-covers
+    # malformed/empty input is handled gracefully
+    assert ad.fit_from_samples([])["active"] is False
 
 
 if __name__ == "__main__":

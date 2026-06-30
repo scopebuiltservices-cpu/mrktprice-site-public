@@ -34,10 +34,11 @@ def _logrets(closes):
 
 
 def walk_forward(closes, horizons=HORIZONS, lb=21, shrink=0.5, step=3, cap=2.0):
-    """No-lookahead walk-forward. Returns {H: [(predLR, realLR), ...]}. Forecast at bar t uses ONLY
-    closes[:t+1] (data through t); realized uses close[t+H]. The forecast is the cone-style OU/EMA-blend
-    drift (proj_server) so the universe-wide recalibration learns the SAME forecast family the terminal
-    shows. Falls back to the shrunk-momentum proxy if proj_server is unavailable."""
+    """No-lookahead walk-forward. Returns {H: [(predLR, realLR, sigmaH), ...]}. Forecast at bar t uses ONLY
+    closes[:t+1] (data through t); realized uses close[t+H]; sigmaH = decision-time cone band σ (sd·√H,
+    computed from data < t, no lookahead) so the anti-deviation layer can studentize the matured residuals.
+    The forecast is the cone-style OU/EMA-blend drift (proj_server) so the universe-wide recalibration learns
+    the SAME forecast family the terminal shows. Falls back to the shrunk-momentum proxy if unavailable."""
     try:
         import proj_server as _PS
         _blend = _PS.blend_drift
@@ -59,13 +60,17 @@ def walk_forward(closes, horizons=HORIZONS, lb=21, shrink=0.5, step=3, cap=2.0):
                     pred = _blend(hist, h) if _blend else max(-cap * sd * math.sqrt(h),
                                                               min(cap * sd * math.sqrt(h), mu * h))
                     real = math.log(closes[t + h] / closes[t])
-                    out[h].append((pred, real))
+                    out[h].append((pred, real, max(sd * math.sqrt(h), 1e-6)))   # decision-time cone σ
         t += step
     return out
 
 
 def build(hist_dir, names, horizons=HORIZONS):
-    pooled = {h: {"pred": [], "real": []} for h in horizons}
+    try:
+        import anti_deviation as AD
+    except Exception:
+        AD = None
+    pooled = {h: {"pred": [], "real": [], "samp": []} for h in horizons}
     used = 0
     for tk in names:
         p = os.path.join(hist_dir, "%s.json" % tk)
@@ -81,18 +86,28 @@ def build(hist_dir, names, horizons=HORIZONS):
         wf = walk_forward(closes, horizons)
         any_h = False
         for h in horizons:
-            for pr, rl in wf[h]:
-                pooled[h]["pred"].append(pr); pooled[h]["real"].append(rl); any_h = True
+            for pr, rl, sg in wf[h]:
+                pooled[h]["pred"].append(pr); pooled[h]["real"].append(rl)
+                pooled[h]["samp"].append((pr, rl, sg)); any_h = True
         if any_h:
             used += 1
     by = {}
     total = 0
     for h in horizons:
         pr, rl = pooled[h]["pred"], pooled[h]["real"]
-        by[str(h)] = PL.learn(pr, rl)
+        rec = PL.learn(pr, rl)
+        # ANTI-DEVIATION: fit the matured-residual controllers (bias/scale/asymmetric-tail) on the SAME
+        # no-lookahead walk-forward samples, so the published cone band is recalibrated for systematic
+        # center/scale/shape error, gated by Geyer-ESS sufficiency + an out-of-sample interval-score benefit.
+        if AD is not None:
+            ad = AD.fit_from_samples(pooled[h]["samp"])
+            rec["antiDeviation"] = {k: ad.get(k) for k in (
+                "active", "nEff", "nRaw", "biasAdj", "scaleAdj", "qLower", "qUpper",
+                "iscDelta", "coverageRaw", "coverageAdj", "target", "reason")}
+        by[str(h)] = rec
         total += len(pr)
     return {"asof": dt.date.today().isoformat(), "horizons": horizons, "byHorizon": by,
-            "names": used, "samples": total, "schema": "projlearn/1",
+            "names": used, "samples": total, "schema": "projlearn/2",
             "survivorshipBias": "universe = CURRENT constituents; delisted names absent -> pooled skill is an UPWARD-biased estimate"}
 
 

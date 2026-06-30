@@ -45,24 +45,47 @@ def _median(xs):
     return s[n // 2] if n % 2 else 0.5 * (s[n // 2 - 1] + s[n // 2])
 
 
+def _autocorr_seq(x, K):
+    """Sample autocorrelations rho[0..K] (biased 1/n normalization, the standard ESS convention)."""
+    n = len(x)
+    m = sum(x) / n
+    g0 = sum((v - m) ** 2 for v in x) / n or 1e-12
+    rho = [1.0]
+    for k in range(1, K + 1):
+        gk = sum((x[i] - m) * (x[i - k] - m) for i in range(k, n)) / n
+        rho.append(gk / g0)
+    return rho
+
+
 def effective_n(resid, max_lag=None):
-    """Dependence-discounted effective sample size: n_eff = n / (1 + 2·Σ_{k=1..K} ρ_k·1{ρ_k>0}).
-    Overlapping multi-step residuals are positively autocorrelated, so n_eff << n — this stops sparse,
-    serially-dependent buckets from masquerading as independent evidence."""
+    """GEYER (1992) initial-monotone-sequence effective sample size — the gold-standard ESS estimator.
+
+    Pairs Gamma_m = rho_{2m} + rho_{2m+1}, keeps the INITIAL POSITIVE sequence (truncate at the first
+    non-positive pair) and enforces a monotone non-increasing envelope, then n_eff = n / (-1 + 2·Σ Gamma_m).
+    This is provably consistent and, unlike a per-lag significance-band sum, (a) does NOT over-discount
+    genuinely-iid residuals (Σ Gamma -> 1 -> n_eff -> n) and (b) correctly handles alternating-sign
+    dependence by pairing adjacent lags. For AR(1) with parameter phi it recovers n·(1-phi)/(1+phi). The
+    result is capped at n (anti-persistence giving ESS>n is treated conservatively)."""
     n = len(resid)
     if n < 8:
         return float(n)
-    m = sum(resid) / n
-    den = sum((v - m) ** 2 for v in resid) or 1e-12
-    K = max_lag or min(n // 4, 20)
-    band = 2.0 / math.sqrt(n)   # Bartlett white-noise significance band: only count autocorrelation that
-    pos = 0.0                   # exceeds sampling noise, so genuinely-iid residuals keep n_eff ~ n
-    for k in range(1, K + 1):
-        num = sum((resid[i] - m) * (resid[i - k] - m) for i in range(k, n))
-        rho = num / den
-        if rho > band:
-            pos += rho
-    return n / (1.0 + 2.0 * pos)
+    K = max_lag or min(n - 2, max(10, n // 4))
+    if K % 2 == 0:
+        K -= 1
+    rho = _autocorr_seq(resid, K + 1)   # need rho up to index K+1 for the last pair
+    gammas = []
+    m = 0
+    while 2 * m + 1 <= K:
+        g = rho[2 * m] + rho[2 * m + 1]
+        if m > 0 and g <= 0.0:          # initial positive sequence
+            break
+        gammas.append(g)
+        m += 1
+    for i in range(1, len(gammas)):     # initial monotone sequence (non-increasing envelope)
+        if gammas[i] > gammas[i - 1]:
+            gammas[i] = gammas[i - 1]
+    tau = max(-1.0 + 2.0 * sum(gammas), 1e-6)   # = 1 + 2·Σ_{k>=1} rho_k under the IMS truncation
+    return min(float(n), n / tau)
 
 
 def shrink_weight(n_eff, k=SHRINK_K):
@@ -211,15 +234,19 @@ def fit_controllers(matured, sigma_raw_ref, parent_matured=None, alpha=0.10,
     zc = [(m["residual"] - bias) / max(m["sigmaRaw"] * scl, 1e-12) for m in matured]
     pzc = [(m["residual"] - bias) / max(m["sigmaRaw"] * scl, 1e-12) for m in (parent_matured or [])]
     ql, qu = tail_quantiles(zc, pzc, alpha)
-    # OOS interval-score delta: corrected vs raw band on the SAME matured points (honest in-bucket check)
+    # OOS interval-score delta + coverage diagnostics: corrected vs raw band on the SAME matured points.
+    z_n = 1.645
     isc_raw = isc_adj = 0.0
+    cov_raw = cov_adj = 0
     for m in matured:
         sig = m["sigmaRaw"]; mu = m["muRaw"]; y = m["y"]
-        loR = mu + (-1.645) * sig; hiR = mu + (1.645) * sig
+        loR = mu - z_n * sig; hiR = mu + z_n * sig
         muA = mu + bias; sigA = sig * scl
         loA = muA + ql * sigA; hiA = muA + qu * sigA
         isc_raw += interval_score(y, loR, hiR, alpha)
         isc_adj += interval_score(y, loA, hiA, alpha)
+        cov_raw += 1 if loR <= y <= hiR else 0
+        cov_adj += 1 if loA <= y <= hiA else 0
     isc_delta = (isc_raw - isc_adj)   # positive => corrected band is better (lower score)
     # stability: bias estimated on each half should share sign (or be ~0)
     half = len(resid) // 2
@@ -228,11 +255,37 @@ def fit_controllers(matured, sigma_raw_ref, parent_matured=None, alpha=0.10,
         b1 = _median(resid[:half]); b2 = _median(resid[half:])
         stable = (b1 == 0 or b2 == 0 or (b1 > 0) == (b2 > 0))
     active = gate(ne, ne_par, isc_delta, stable, min_local, min_parent)
-    return {"active": active, "nEff": round(ne, 2), "nEffParent": (None if ne_par == float("inf") else round(ne_par, 2)),
+    mt = len(matured)
+    return {"active": active, "nEff": round(ne, 2), "nRaw": mt,
+            "nEffParent": (None if ne_par == float("inf") else round(ne_par, 2)),
             "biasAdj": round(bias, 6), "scaleAdj": round(scl, 4),
             "qLower": round(ql, 4), "qUpper": round(qu, 4),
             "iscDelta": round(isc_delta, 4), "stable": stable,
+            "coverageRaw": round(cov_raw / mt, 3) if mt else None,
+            "coverageAdj": round(cov_adj / mt, 3) if mt else None,
+            "target": round(1.0 - alpha, 3),
             "reason": ("ok" if active else "gated: n_eff/benefit/stability not met")}
+
+
+def fit_from_samples(samples, alpha=0.10, sigma_ref=None, min_local=MIN_LOCAL_NEFF, min_parent=MIN_PARENT_NEFF):
+    """Convenience entry point for already-MATURED (mu_raw, sigma_raw, y) triples (e.g. a no-lookahead
+    walk-forward). Builds matured records with a Gaussian z-band and fits the controllers. Returns the same
+    controller dict as fit_controllers (active=False when gates fail)."""
+    z = 1.645
+    matured = []
+    for tup in samples:
+        try:
+            mu, sig, y = float(tup[0]), max(float(tup[1]), 1e-12), float(tup[2])
+        except Exception:
+            continue
+        if mu != mu or sig != sig or y != y:
+            continue
+        matured.append({"muRaw": mu, "sigmaRaw": sig, "y": y, "residual": y - mu, "z": (y - mu) / sig,
+                        "lower": mu - z * sig, "upper": mu + z * sig})
+    if not matured:
+        return {"active": False, "nEff": 0, "nRaw": 0, "reason": "no samples"}
+    sref = sigma_ref if sigma_ref is not None else (sum(m["sigmaRaw"] for m in matured) / len(matured))
+    return fit_controllers(matured, sigma_raw_ref=sref, alpha=alpha, min_local=min_local, min_parent=min_parent)
 
 
 def apply_controllers(mu_raw, sigma_raw, ctrl, alpha=0.10):

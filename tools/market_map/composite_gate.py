@@ -38,6 +38,38 @@ def composite_series(ic_history, weights):
     return out
 
 
+def _avg_pairwise_corr(series_list):
+    """Average pairwise Pearson correlation across the tried variants' IC series (aligned on the shortest
+    common overlap). Used to estimate EFFECTIVE independent trials: highly-correlated variants are not
+    independent search directions, so the raw trial count overstates the multiplicity. Returns None if
+    fewer than two usable series."""
+    s = [x for x in series_list if x and len(x) >= 3]
+    if len(s) < 2:
+        return None
+    m = min(len(x) for x in s)
+    s = [list(x[-m:]) for x in s]
+
+    def _corr(a, b):
+        ma = sum(a) / len(a); mb = sum(b) / len(b)
+        num = sum((ai - ma) * (bi - mb) for ai, bi in zip(a, b))
+        da = math.sqrt(sum((ai - ma) ** 2 for ai in a)); db = math.sqrt(sum((bi - mb) ** 2 for bi in b))
+        return (num / (da * db)) if da > 0 and db > 0 else 0.0
+
+    cs = [_corr(s[i], s[j]) for i in range(len(s)) for j in range(i + 1, len(s))]
+    return (sum(cs) / len(cs)) if cs else None
+
+
+def effective_trials(n_raw, series_list):
+    """Effective independent trial count: n_eff = N / (1 + (N-1)·rho_bar), the classic
+    correlation-deflated count. With rho_bar→0 (independent variants) n_eff≈N; with rho_bar→1 (redundant
+    variants) n_eff→1. Returned for transparency; the DSR gate stays on the conservative RAW count."""
+    rho = _avg_pairwise_corr(series_list)
+    if rho is None or n_raw <= 1:
+        return (float(max(1, int(n_raw))), rho)
+    rb = max(0.0, min(1.0, rho))
+    return (max(1.0, n_raw / (1.0 + (n_raw - 1) * rb)), rho)
+
+
 def sharpe(series, periods_per_year):
     """Annualized Sharpe of a per-rebalance series. periods_per_year ties the cadence to a year."""
     n = len(series)
@@ -99,6 +131,10 @@ def gate(ic_history, weights, *, horizon, n_trials, breadth=1.0,
     # to the conservative 1.0 prior (and if so, why)? The board can flag a provisional DSR accordingly.
     disp_status = ("measured" if sr_disp is not None
                    else ("insufficient_trials" if len(trial_series) < 2 else "fallback_prior"))
+    # EFFECTIVE independent trials (audit fix): correlated variants are not independent search directions,
+    # so the raw count overstates multiplicity. Reported for transparency; DSR keeps the conservative RAW
+    # count so the gate never gets WEAKER from a correlation estimate on partial data.
+    n_eff_trials, trial_corr = effective_trials(int(n_trials), trial_series)
     d = fe.deflated_sharpe(sr_raw, n_obs, skew=skew, kurt=kurt, n_trials=int(n_trials), sr_trials_std=sr_trials_std)
     dsr = d.get("dsr")
     passed = bool(dsr is not None and dsr >= dsr_hurdle and breadth >= min_breadth)
@@ -117,4 +153,6 @@ def gate(ic_history, weights, *, horizon, n_trials, breadth=1.0,
             "srTrialsStd": (round(sr_trials_std, 4) if sr_disp is not None else None),
             "dispersionStatus": disp_status,   # measured | fallback_prior | insufficient_trials
             "dsrProvisional": (disp_status != "measured"),
+            "nEffTrials": round(n_eff_trials, 1),                                  # correlation-deflated trial count
+            "trialCorr": (round(trial_corr, 3) if trial_corr is not None else None),
             "dsrHurdle": dsr_hurdle, "reason": reason}

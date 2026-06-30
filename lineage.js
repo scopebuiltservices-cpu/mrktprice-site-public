@@ -234,8 +234,12 @@
       coverage:r3(k/mt), wilsonLo:r3(w[0]), wilsonHi:r3(w[1]),
       coverageGaussian:r3(covG/mt), coverageSym:r3(covS/mt),
       qLo:r4(qLo), qHi:r4(qHi), target:r3(1-alpha),
-      crps:r6(_mean(crps)), intervalScore:r6(_mean(isc)), widthMean:r6(_mean(widths)),
+      // crps/pit score the BASE Gaussian predictive N(muN,sigN); intervalScore/coverage score the
+      // PUBLISHED conformal band. *Gaussian keys make that explicit; unsuffixed are back-compat aliases.
+      crps:r6(_mean(crps)), crpsGaussian:r6(_mean(crps)), intervalScore:r6(_mean(isc)), widthMean:r6(_mean(widths)),
       pitKS:ks.D!=null?r3(ks.D):null, pitUniformP:ks.p!=null?r3(ks.p):null,
+      pitGaussianKS:ks.D!=null?r3(ks.D):null, pitGaussianUniformP:ks.p!=null?r3(ks.p):null,
+      scoredObject:{crps:"gaussianCenterline", pit:"gaussianCenterline", interval:"conformalBand"},
       dkw:dk!=null?r4(dk):null, byRegime:byReg,
       // schema-promised fields, now genuinely emitted (1:1 with lineage.py)
       conformalPad:r4(qSym-z),

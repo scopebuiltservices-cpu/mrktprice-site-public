@@ -671,10 +671,18 @@ def calibrate_horizon(returns: Sequence[float], n_steps: int,
         "coverage": round(k / mt, 3), "wilsonLo": round(wlo, 3), "wilsonHi": round(whi, 3),
         "coverageGaussian": round(covG / mt, 3), "coverageSym": round(covS / mt, 3),
         "qLo": round(qLo, 4), "qHi": round(qHi, 4), "target": round(1 - alpha, 3),
-        "crps": round(_mean(crps_l), 6), "intervalScore": round(_mean(isc_l), 6),
+        # SCORING OBJECTS ARE DISTINCT (audit fix): crps + pit score the BASE Gaussian predictive
+        # N(mu_n, sig_n); intervalScore + coverage score the PUBLISHED conformal band. The *Gaussian keys
+        # make that explicit; the unsuffixed crps/pitKS/pitUniformP are back-compat aliases of the Gaussian
+        # metrics, and scoredObject states which object each metric evaluates.
+        "crps": round(_mean(crps_l), 6), "crpsGaussian": round(_mean(crps_l), 6),
+        "intervalScore": round(_mean(isc_l), 6),
         "widthMean": round(_mean(widths), 6),
         "pitKS": (round(ks["D"], 3) if ks["D"] is not None else None),
         "pitUniformP": (round(ks["p"], 3) if ks["p"] is not None else None),
+        "pitGaussianKS": (round(ks["D"], 3) if ks["D"] is not None else None),
+        "pitGaussianUniformP": (round(ks["p"], 3) if ks["p"] is not None else None),
+        "scoredObject": {"crps": "gaussianCenterline", "pit": "gaussianCenterline", "interval": "conformalBand"},
         "dkw": (round(dkw_band(mt), 4)),
         "byRegime": by_reg,
         # schema-promised fields, now genuinely emitted: conformalPad = extra σ the (1-alpha) conformal band

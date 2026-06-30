@@ -617,12 +617,32 @@ def calibrate_horizon(returns: Sequence[float], n_steps: int,
     qLo = e_sorted[min(ne, max(1, math.floor((alpha / 2.0) * (ne + 1)))) - 1]
     ea_sorted = sorted(abs(x) for x in e_sorted)
     qSym = ea_sorted[min(ne, max(1, math.ceil((1.0 - alpha) * (ne + 1)))) - 1]
-    covA = covS = covG = 0
+    # REGIME-CONDITIONED conformal: SEPARATE lower/upper finite-sample quantiles per regime, computed from
+    # that regime's OWN calibration residuals (not just the pooled set), so coverage can be conditioned by
+    # regime rather than only sliced afterward. Falls back to the pooled qLo/qHi where a regime is too thin.
+    MIN_REG_CAL = 20
+    reg_e: Dict[int, List[float]] = {}
+    for s in cal:
+        if s[4] is not None:
+            reg_e.setdefault(s[4], []).append((s[3] - s[1]) / s[2])
+    reg_q: Dict[int, tuple] = {}
+    for rg, es in reg_e.items():
+        if len(es) >= MIN_REG_CAL:
+            es2 = sorted(es); m = len(es2)
+            qh = es2[min(m, max(1, math.ceil((1.0 - alpha / 2.0) * (m + 1)))) - 1]
+            ql = es2[min(m, max(1, math.floor((alpha / 2.0) * (m + 1)))) - 1]
+            reg_q[rg] = (ql, qh)
+    covA = covS = covG = covRC = 0
     widths, crps_l, isc_l, pits = [], [], [], []
     reg_cov: Dict[int, List[int]] = {}
+    reg_rc: Dict[int, List[int]] = {}
     for (i, mu_n, sig_n, y, rg) in test:
         loA = mu_n + qLo * sig_n; hiA = mu_n + qHi * sig_n
         cA = 1 if loA <= y <= hiA else 0; covA += cA
+        # regime-conditioned padded interval: use the regime's own quantiles when available, else pooled
+        qlo_rc, qhi_rc = reg_q.get(rg, (qLo, qHi))
+        loRC = mu_n + qlo_rc * sig_n; hiRC = mu_n + qhi_rc * sig_n
+        cRC = 1 if loRC <= y <= hiRC else 0; covRC += cRC
         loS = mu_n - qSym * sig_n; hiS = mu_n + qSym * sig_n
         covS += 1 if loS <= y <= hiS else 0
         loG = mu_n - z * sig_n; hiG = mu_n + z * sig_n
@@ -633,12 +653,18 @@ def calibrate_horizon(returns: Sequence[float], n_steps: int,
         pits.append(norm_cdf((y - mu_n) / sig_n))
         if rg is not None:
             reg_cov.setdefault(rg, []).append(cA)
+            reg_rc.setdefault(rg, []).append(cRC)
     mt = len(test); k = covA
     wlo, whi = wilson_interval(k, mt)
     by_reg = {}
     for rg, cs in reg_cov.items():
         if len(cs) >= 15:
             by_reg[str(rg)] = {"n": len(cs), "coverage": round(sum(cs) / len(cs), 3)}
+    by_reg_conf = {}
+    for rg, (ql, qh) in reg_q.items():
+        rc = reg_rc.get(rg, [])
+        by_reg_conf[str(rg)] = {"nCal": len(reg_e[rg]), "qLo": round(ql, 4), "qHi": round(qh, 4),
+                                "coverage": (round(sum(rc) / len(rc), 3) if rc else None)}
     ks = pit_ks(pits)
     return {
         "n": mt, "nSteps": n, "nCal": len(cal), "embargo": n, "embargoGap": embargo_gap,
@@ -651,6 +677,14 @@ def calibrate_horizon(returns: Sequence[float], n_steps: int,
         "pitUniformP": (round(ks["p"], 3) if ks["p"] is not None else None),
         "dkw": (round(dkw_band(mt), 4)),
         "byRegime": by_reg,
+        # schema-promised fields, now genuinely emitted: conformalPad = extra σ the (1-alpha) conformal band
+        # adds over the naive Gaussian z-band; coveragePadded = coverage of the REGIME-CONDITIONED conformal
+        # band (regime-specific quantiles where available, pooled fallback); byRegimeConformal exposes the
+        # per-regime quantiles + their conditioned coverage.
+        "conformalPad": round(qSym - z, 4),
+        "coveragePadded": round(covRC / mt, 3),
+        "regimeConditioned": bool(reg_q),
+        "byRegimeConformal": by_reg_conf,
         "calibrated": bool(wlo <= (1 - alpha) <= whi),
     }
 

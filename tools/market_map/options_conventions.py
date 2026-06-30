@@ -20,7 +20,7 @@ CONVENTIONS = {
     "theta_scaling": "per_year",      # greeks() returns dV/dt in price-per-year (divide by 365 for per-day)
     "vega_scaling": "per_1.00_vol",   # vega is dV/dsigma per 1.00 (=100 vol pts); /100 for per-vol-point
     "rho_scaling": "per_1.00_rate",   # rho per 1.00 (=100bp*100); /10000 for per-1bp
-    "rate_curve": "UST_par_then_SOFR",# official risk-free: Treasury par curve, SOFR/OIS fallback
+    "rate_curve": "UST_zero_curve",   # official risk-free: US Treasury par yields bootstrapped to a zero curve (no SOFR/OIS path)
     "dividend": "continuous_yield_q", # q as continuous yield; discrete-cash schedule overrides when known
     "exercise_style_default": "american",  # standard OCC-cleared single-name equity options are American
     "index_exercise_style": "european",    # cash-settled index options are European

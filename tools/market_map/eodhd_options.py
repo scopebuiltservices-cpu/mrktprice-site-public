@@ -15,7 +15,7 @@ from options_gex import compute_gex
 import black_scholes as _bs
 import options_analytics as _oa
 import chain_quality as _cq
-import rate_curve as _rc
+import rate_accessor as _ra
 try: import bs_record as _rec
 except Exception: _rec = None
 
@@ -24,16 +24,9 @@ _Q = float(os.environ.get("MRKT_DIV_YIELD", "0.0"))
 _BASE = "https://eodhd.com/api/mp/unicornbay/options/eod"
 _LOOKBACK_DAYS = int(os.environ.get("EODHD_OPT_LOOKBACK_DAYS", "10"))  # bound history volume
 _MAX_PAGES = int(os.environ.get("EODHD_OPT_MAX_PAGES", "8"))           # 1000 rows/page
-_CURVE = None
-def _rate(days):
-    """Per-maturity risk-free from the curve (live FRED if MRKT_FETCH_CURVE=1, else static)."""
-    global _CURVE
-    try:
-        if _CURVE is None:
-            _CURVE = _rc.Curve(_rc.fetch_curve()) if os.environ.get("MRKT_FETCH_CURVE")=="1" else _rc.default_curve()
-        return _CURVE.rate_for(max(days,1)/365.0)
-    except Exception:
-        return _R
+
+# Canonical per-maturity risk-free accessor (single source of truth in rate_accessor).
+_rate = _ra.rate_for_days
 
 def _f(x):
     try:

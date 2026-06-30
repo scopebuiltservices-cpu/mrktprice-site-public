@@ -55,6 +55,9 @@ node tools/check-localstorage-auth.mjs || true
 echo "==> integrity  Truncation sentinel (detects truncated py/js/json/jsonl/csv/html + data impact)"
 python3 tools/truncation_sentinel.py --root . || fail=1
 
+echo "==> contract   Schema<->payload drift (advisory; declared-vs-emitted, on committed marketmap.json if present)"
+if [ -f marketmap.json ]; then python3 tools/market_map/contract_drift.py marketmap.json || true; else echo "    (no marketmap.json in tree — drift logic is gated by test_contract_drift.py)"; fi
+
 if [ "$fail" -ne 0 ]; then
   echo ""
   echo "RESULT: FAIL - one or more gates above failed."

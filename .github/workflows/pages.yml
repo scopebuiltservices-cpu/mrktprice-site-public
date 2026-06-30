@@ -212,6 +212,13 @@ jobs:
             [ -f alpha_calib.json ] && { python tools/verify_artifact.py guard alpha_calib.json --min-bytes 20 --ends-with '}' || echo "::warning::alpha_calib.json guard"; }
             # Forensics layer: a sha256/byte/tail manifest of the promoted set (retained in the run log).
             mkdir -p .build && python tools/verify_artifact.py manifest marketmap.json cik.json xsection.json alpha_calib.json --out .build/artifact-manifest.json 2>/dev/null || true
+            # P2/P3 PROVENANCE + CONTRACT: stamp the honest "what this does not prove" block, surface any
+            # schema<->payload contract drift (advisory so a thin-universe day can't block the deploy; the
+            # planted-data test_contract_drift.py hard-gates the logic in CI), and append an IMMUTABLE
+            # provenance entry keyed by code SHA + per-artifact content hash so any board row is traceable.
+            python tools/market_map/limitations.py --map marketmap.json || echo "::warning::limitations stamp skipped"
+            python tools/market_map/contract_drift.py marketmap.json || echo "::warning::marketmap.json contract drift (declared-vs-emitted) — see annotations"
+            CALIB_RUN_ID="${{ github.run_id }}" python tools/market_map/model_registry.py --root . --out model_registry.jsonl || echo "::warning::model_registry skipped"
           else
             echo "::error::Real Market Map build FAILED - refusing to publish synthetic data"; exit 1
           fi
@@ -221,7 +228,7 @@ jobs:
         run: |
           git config user.name  "mrktprice-bot"
           git config user.email "bot@mrktprice.com"
-          git add -A marketmap.json xsection.json universe.json events.json sec_events.json fmp_health.json projlearn.json hist/ monitoring/latest.json data/alpha_log.jsonl data/ff_factors.csv data/profile.json data/universe_seed.json data/fundamentals.json data/estimates.json data/actions.json data/float.json tools/market_map/est_history.jsonl tools/market_map/factor_snapshots.jsonl tools/market_map/factor_ic.jsonl tools/market_map/trig_snap.jsonl tools/market_map/trig_out.jsonl tools/market_map/drift_ref.json tools/market_map/drift_store.jsonl tools/market_map/trial_ledger.jsonl tools/market_map/health_log.jsonl 2>/dev/null || true
+          git add -A marketmap.json xsection.json universe.json events.json sec_events.json fmp_health.json projlearn.json model_registry.jsonl hist/ monitoring/latest.json data/alpha_log.jsonl data/ff_factors.csv data/profile.json data/universe_seed.json data/fundamentals.json data/estimates.json data/actions.json data/float.json tools/market_map/est_history.jsonl tools/market_map/factor_snapshots.jsonl tools/market_map/factor_ic.jsonl tools/market_map/trig_snap.jsonl tools/market_map/trig_out.jsonl tools/market_map/drift_ref.json tools/market_map/drift_store.jsonl tools/market_map/trial_ledger.jsonl tools/market_map/health_log.jsonl 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "::notice::no data changes to commit"
           else

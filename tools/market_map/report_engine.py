@@ -171,6 +171,10 @@ def company_report(mm, ticker):
         "ebitda": ebitda_block(n),
         "calendar": calendar_block(n, mm.get("_macroEvents") if isinstance(mm, dict) else None),
         "sensitivities": sensitivities_block(n, _MM.compute(mm.get("macroSeries")) if isinstance(mm, dict) else None),
+        "quarterly": quarterly_block(n),
+        "multiples": multiples_block(n),
+        "volRange": vol_range_block(n),
+        "volumeTriggers": volume_triggers_block(n),
         "verdict": _verdict(n),
     }
 
@@ -334,4 +338,81 @@ def _earnings_density(eq):
             names.append({"t": n.get("t"), "date": nq[0].isoformat()})
     names.sort(key=lambda x: x["date"])
     return {"next14d": len(names), "names": names[:12]}
+
+
+# ---------------- quarterly history, multiples, vol/range, volume triggers (real n.* fields) ----------------
+def quarterly_block(n):
+    """The full list of quarterly reports the history supports: expected (estimate) vs actual reported EPS +
+    surprise %, plus the next (upcoming) expected quarter and forward consensus. From n['earn']."""
+    e = n.get("earn") or {}
+    qs = e.get("q") or []
+    rows = []
+    for q in qs:
+        est, act = _num(q.get("e"), None), _num(q.get("a"), None)
+        rows.append({"label": "Q%s %s" % (q.get("q"), q.get("y")), "date": str(q.get("d") or "")[:10],
+                     "estEPS": est, "actualEPS": act, "surprisePct": _num(q.get("s"), None),
+                     "beat": (act is not None and est is not None and act >= est)})
+    rows.sort(key=lambda r: r["date"])
+    nxt = e.get("next") or {}
+    next_q = {"label": "Q%s %s" % (nxt.get("q"), nxt.get("y")), "date": str(nxt.get("d") or "")[:10],
+              "estEPS": _num(nxt.get("e"), None)} if nxt.get("d") else None
+    graded = [r for r in rows if r["actualEPS"] is not None and r["estEPS"] is not None]
+    beats = sum(1 for r in graded if r["beat"])
+    cons = e.get("estCons") or {}
+    return {"history": rows, "nReports": len(graded),
+            "beatRate": round(100.0 * beats / len(graded), 0) if graded else None,
+            "avgSurprisePct": round(sum(r["surprisePct"] for r in graded if r["surprisePct"] is not None) / max(1, len(graded)), 1) if graded else None,
+            "nextExpected": next_q,
+            "fwdConsensus": {"eps": _num(cons.get("eps"), None), "period": cons.get("period"), "rev": _num(cons.get("rev"), None)} if cons else None}
+
+
+def multiples_block(n):
+    """Valuation multiples for the unique company: trailing/forward P/E, PEG, EV/EBITDA vs sector, FCF yield,
+    DCF fair value + gap, analyst target range + upside, and the build's own valuation verdict. From n['val'] etc."""
+    v = n.get("val") or {}
+    pt = n.get("ptgt") or {}
+    return {
+        "pe": _num(v.get("pe"), None), "fpe": _num(v.get("fpe"), None), "peg": _num(v.get("peg"), None),
+        "evEbitda": _num(v.get("evb"), None), "peSector": _num(v.get("peSec"), None), "evSector": _num(v.get("evSec"), None),
+        "epsGrowth": _num(v.get("epsg"), None), "revGrowth": _num(v.get("revg"), None), "fcfYieldPct": _num(n.get("fcfY"), None),
+        "dcfFair": _num(n.get("dcf"), None), "dcfGapPct": (round(_num(n.get("dcfGap")) * 100.0, 1) if n.get("dcfGap") is not None else None),
+        "target": {"low": _num(pt.get("low"), None), "mid": _num(pt.get("tgt"), None), "high": _num(pt.get("high"), None)},
+        "targetUpsidePct": (round(_num(n.get("tgtUpside")) * 100.0, 1) if n.get("tgtUpside") is not None else None),
+        "verdict": v.get("overall"), "verdictWhy": v.get("reason"),
+    }
+
+
+def vol_range_block(n):
+    """Calculated volatility + trading range for the unique company + its history: realized / implied /
+    Parkinson vol, ATR, variance-ratio regime, jump ratio, OU half-life, EMA21 displacement, and the trading
+    range from options walls (support/resistance) + analyst target band. From n['vol','ivol','pvol','atr',...]."""
+    opt = n.get("opt") or {}
+    pt = n.get("ptgt") or {}
+    vr = _num(n.get("vr"), None)
+    regime = n.get("regime") or ("trending" if (vr is not None and vr >= 1.15) else ("mean-reverting" if (vr is not None and vr <= 0.85) else "random-walk"))
+    return {
+        "realizedVolPct": _num(n.get("vol"), None), "impliedVolPct": _num(n.get("ivol"), None),
+        "parkinsonVolPct": _num(n.get("pvol"), None), "atr": _num(n.get("atr"), None),
+        "varianceRatio": vr, "regime": regime, "jumpRatio": _num(n.get("jump"), None), "halfLifeDays": _num(n.get("hl"), None),
+        "ema21DistPct": _num(n.get("ema21d"), None), "ema21Sigma": _num(n.get("ema21sig"), None), "ema21SlopePct": _num(n.get("ema21sl"), None),
+        "rangeOptions": {"support": _num(opt.get("pw"), None), "flip": _num(opt.get("gex"), None), "resistance": _num(opt.get("cw"), None)},
+        "rangeAnalyst": {"low": _num(pt.get("low"), None), "mid": _num(pt.get("tgt"), None), "high": _num(pt.get("high"), None)},
+    }
+
+
+def volume_triggers_block(n):
+    """Trigger volumes / flow signals for the unique company: money-flow net (1m/3m) + in vs out, MFI,
+    breakout trigger, beat probability, and the build's fired alert strings. From n['flow','mfi','brk','odds','alerts']."""
+    fl = n.get("flow") or {}
+    odds = n.get("odds") or {}
+    inn, out = _num(fl.get("in")), _num(fl.get("out"))
+    return {
+        "flowNet1mPct": (round(_num(fl.get("net1m")) * 100.0, 1) if fl.get("net1m") is not None else None),
+        "flowNet3mPct": (round(_num(fl.get("net3m")) * 100.0, 1) if fl.get("net3m") is not None else None),
+        "inflow": inn, "outflow": out,
+        "inflowSharePct": (round(100.0 * inn / (inn + out), 0) if (inn + out) > 0 else None),
+        "mfi": _num(n.get("mfi"), None), "breakout": bool(n.get("brk")),
+        "beatProb": (round(_num(odds.get("beat")) * 100.0, 0) if odds.get("beat") is not None else None),
+        "alerts": [a for a in (n.get("alerts") or []) if isinstance(a, str)],
+    }
 

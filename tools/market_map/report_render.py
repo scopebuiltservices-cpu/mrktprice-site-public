@@ -201,6 +201,22 @@ def cal_table(rows):
     return "".join(h)
 
 
+def quarterly_table(q):
+    h = ["<table><tr><th>Quarter</th><th>Report date</th><th>Est EPS</th><th>Actual EPS</th><th>Surprise</th><th>Result</th></tr>"]
+    for r in q.get("history", []):
+        beat = r.get("beat")
+        res = "<span class='up'>beat</span>" if beat else ("<span class='dn'>miss</span>" if r.get("actualEPS") is not None else "<span class='mut'>pending</span>")
+        h.append("<tr><td><b>%s</b></td><td class='mut'>%s</td><td>%s</td><td>%s</td><td class='%s'>%s</td><td>%s</td></tr>"
+                 % (_h.escape(str(r.get("label"))), _h.escape(str(r.get("date"))), _f(r.get("estEPS"), 2), _f(r.get("actualEPS"), 2),
+                    _cls(r.get("surprisePct")), (_f(r.get("surprisePct"), 1, "%", True) if r.get("surprisePct") is not None else "\u2014"), res))
+    nx = q.get("nextExpected")
+    if nx:
+        h.append("<tr><td><b>%s</b></td><td class='mut'>%s</td><td>%s</td><td class='mut'>expected</td><td>\u2014</td><td class='mut'>upcoming</td></tr>"
+                 % (_h.escape(str(nx.get("label"))), _h.escape(str(nx.get("date"))), _f(nx.get("estEPS"), 2)))
+    h.append("</table>")
+    return "".join(h)
+
+
 def render_company(c, shell=True):
     if not c.get("found"):
         return _shell("Company", "<h1>%s</h1><p class='sub'>not in universe</p>" % _h.escape(c.get("ticker", "")))
@@ -225,6 +241,57 @@ def render_company(c, shell=True):
     for hdl in (nw.get("headwinds") or [])[:3]:
         b.append("<tr><td class='dn'>− headline</td><td class='mut' style='font-size:11px'>%s</td></tr>" % _h.escape(str(hdl)))
     b.append("</table>")
+    q = c.get("quarterly", {})
+    if q.get("history") or q.get("nextExpected"):
+        b.append("<h2>Quarterly reports \u2014 expected vs actual</h2>")
+        if q.get("nReports"):
+            b.append("<p class='sub'>%s graded reports \u00b7 beat rate %s%% \u00b7 avg surprise %s%%%s</p>"
+                     % (q.get("nReports"), _f(q.get("beatRate"), 0), _f(q.get("avgSurprisePct"), 1, "", True),
+                        (" \u00b7 fwd consensus EPS " + _f((q.get("fwdConsensus") or {}).get("eps"), 2)) if q.get("fwdConsensus") and (q.get("fwdConsensus") or {}).get("eps") is not None else ""))
+        b.append(quarterly_table(q))
+    m = c.get("multiples", {})
+    if any(m.get(k) is not None for k in ("pe", "peg", "evEbitda", "dcfFair")):
+        b.append("<h2>Multiples &amp; valuation</h2><div class='tiles'>")
+        b.append(tile("P/E (trail / fwd)", "%s / %s" % (_f(m.get("pe"), 1), _f(m.get("fpe"), 1)) + (" <span class='mut'>sec " + _f(m.get("peSector"), 1) + "</span>" if m.get("peSector") is not None else "")))
+        b.append(tile("PEG", _f(m.get("peg"), 2)))
+        b.append(tile("EV / EBITDA", _f(m.get("evEbitda"), 1) + (" <span class='mut'>sec " + _f(m.get("evSector"), 1) + "</span>" if m.get("evSector") is not None else "")))
+        b.append(tile("FCF yield", _f(m.get("fcfYieldPct"), 2, "%")))
+        if m.get("dcfFair") is not None:
+            b.append(tile("DCF fair value", _f(m.get("dcfFair"), 2) + (" <span class='mut'>gap " + _f(m.get("dcfGapPct"), 0, "%", True) + "</span>" if m.get("dcfGapPct") is not None else "")))
+        if m.get("verdict"):
+            b.append(tile("Valuation verdict", _h.escape(str(m.get("verdict")))))
+        b.append("</div>")
+        if m.get("verdictWhy"):
+            b.append("<p class='sub'>%s</p>" % _h.escape(str(m.get("verdictWhy"))[:200]))
+    vr = c.get("volRange", {})
+    if vr.get("realizedVolPct") is not None or vr.get("atr") is not None:
+        b.append("<h2>Volatility &amp; trading range</h2><div class='tiles'>")
+        b.append(tile("Realized / implied vol", "%s%% / %s%%" % (_f(vr.get("realizedVolPct"), 1), _f(vr.get("impliedVolPct"), 1))))
+        b.append(tile("Parkinson vol", _f(vr.get("parkinsonVolPct"), 1, "%")))
+        b.append(tile("ATR", _f(vr.get("atr"), 2)))
+        b.append(tile("Regime (var-ratio)", _h.escape(str(vr.get("regime") or "\u2014")) + " <span class='mut'>VR " + _f(vr.get("varianceRatio"), 2) + "</span>"))
+        b.append(tile("Jump ratio / half-life", "%s / %sd" % (_f(vr.get("jumpRatio"), 2), _f(vr.get("halfLifeDays"), 0))))
+        b.append(tile("EMA21 displacement", _f(vr.get("ema21DistPct"), 1, "%", True) + " <span class='mut'>(" + _f(vr.get("ema21Sigma"), 2, "\u03c3", True) + ")</span>", _cls(vr.get("ema21DistPct"))))
+        ro = vr.get("rangeOptions") or {}
+        if ro.get("support") is not None or ro.get("resistance") is not None:
+            b.append(tile("Options range (S / flip / R)", "%s / %s / %s" % (_f(ro.get("support"), 0), _f(ro.get("flip"), 0), _f(ro.get("resistance"), 0))))
+        ra = vr.get("rangeAnalyst") or {}
+        if ra.get("low") is not None:
+            b.append(tile("Analyst range (lo / mid / hi)", "%s / %s / %s" % (_f(ra.get("low"), 0), _f(ra.get("mid"), 0), _f(ra.get("high"), 0))))
+        b.append("</div>")
+    vt = c.get("volumeTriggers", {})
+    if vt.get("flowNet3mPct") is not None or vt.get("mfi") is not None or vt.get("alerts"):
+        b.append("<h2>Volume / flow triggers</h2><div class='tiles'>")
+        b.append(tile("Money flow 1m / 3m", "%s%% / %s%%" % (_f(vt.get("flowNet1mPct"), 1, "", True), _f(vt.get("flowNet3mPct"), 1, "", True)), _cls(vt.get("flowNet3mPct"))))
+        if vt.get("inflowSharePct") is not None:
+            b.append(tile("Inflow share", _f(vt.get("inflowSharePct"), 0, "%")))
+        b.append(tile("MFI", _f(vt.get("mfi"), 1)))
+        b.append(tile("Breakout trigger", "<span class='up'>yes</span>" if vt.get("breakout") else "<span class='mut'>no</span>"))
+        if vt.get("beatProb") is not None:
+            b.append(tile("Earnings beat prob", _f(vt.get("beatProb"), 0, "%")))
+        b.append("</div>")
+        if vt.get("alerts"):
+            b.append("<p class='sub'>triggers: " + " \u00b7 ".join(_h.escape(str(a)) for a in vt["alerts"][:6]) + "</p>")
     eb = c.get("ebitda", {})
     if eb.get("have"):
         b.append("<h2>EBITDA</h2><div class='tiles'>")

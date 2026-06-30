@@ -222,8 +222,6 @@ def test_challenger_scorecard_has_garch_and_hv_arms():
     for arm in ("model", "rw", "hv", "ewma", "garch"):
         assert arm in ch["crps"], (arm, list(ch["crps"].keys()))
     assert all(v == v and v > 0 for v in ch["crps"].values())
-        assert h["totVol"] >= 0 and h["mapVol"] >= 0
-    assert lo["horizons"]["5d"]["branching"] >= lo["horizons"]["intraday"]["branching"] - 1e-6
 
 
 def test_crps_gaussian_closed_form():

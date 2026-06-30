@@ -89,6 +89,15 @@ jobs:
             if echo "$changed" | grep -qE '^tools/market_map/|^\.rebuild$'; then need=true; fi
             if printf '%s' "${{ github.event.head_commit.message }}" | grep -q '\[rebuild\]'; then need=true; fi
           fi
+          # SELF-HEALING (FMP "never this run" root fix): even if nothing above triggered, force a rebuild
+          # when the PUBLISHED marketmap.json is stale or was built by an OLDER engine (FMP-primary price
+          # health fields absent / yfinance-primary source). This stops an engine upgrade or a stuck
+          # nightly from stranding the live site on yfinance-backup data showing "FMP Ultimate NOT pulling".
+          if [ "$need" != "true" ] && [ -f marketmap.json ]; then
+            if [ "$(python3 tools/market_map/needs_rebuild.py marketmap.json --max-stale-days 2)" = "true" ]; then
+              need=true; echo "::notice title=Self-heal::published marketmap.json is stale or old-engine — forcing an FMP-primary rebuild"
+            fi
+          fi
           echo "need=$need" >> "$GITHUB_OUTPUT"
           echo "::notice title=Rebuild decision::data rebuild needed = $need"
 

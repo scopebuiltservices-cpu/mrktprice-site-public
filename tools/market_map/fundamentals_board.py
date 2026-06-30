@@ -7,7 +7,11 @@ External-enrichment pattern (event_board.py). Merges, when present:
   - data/actions.json      (fmp_actions: trailing-12m dividend, next ex-date, last split)
 into a compact per-name block:
     n["fund"] = {pe,pb,roe,netMargin,debtEq,fcfYield,divYield,targetAvg,targetUpsidePct,rating,ratingScore,
-                 epsFwd,revFwd,surprisePct,div12m,nextExDate,lastSplit}
+                 epsFwd,revFwd,surprisePct,div12m,nextExDate,lastSplit,
+                 tbvps,bvps,intangPerSh,pTbv,tbvDiscPct,tbvFlag,pTbvFmp}   # tangible book value block
+TANGIBLE BOOK: tbvps=tangible book value/share (equity-goodwill-intangibles)/shares; bvps=total book/share;
+intangPerSh=bvps-tbvps (goodwill+intangible 'air'); pTbv=close/tbvps; tbvDiscPct=+premium/-discount to TBV;
+tbvFlag='below_tbv' (price<TBVPS, asset-backed) or 'negative_tbv' (tangible equity<0); pTbvFmp=vendor cross-check.
 targetUpsidePct uses the last committed close (hist). Absent files -> no-op. Idempotent; verified. Research only."""
 import argparse, json, os, sys
 

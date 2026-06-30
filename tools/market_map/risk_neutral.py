@@ -2,7 +2,7 @@
  - Breeden-Litzenberger implied PDF  f(K)=e^{rT} d2C/dK2  (+ prob below/above)
  - model-free implied variance (CBOE VIX replication) and the variance-risk premium
  - Bakshi-Kapadia-Madan (2003) risk-neutral skewness & kurtosis.
-Inputs are OTM option marks across strikes for one maturity. Pure stdlib."""
+Inputs are OTM option marks across strikes for one maturity. Pure stdlib (verified)."""
 import math
 
 def _otm_strip(chain, spot):

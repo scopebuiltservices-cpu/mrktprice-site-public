@@ -15,7 +15,9 @@ from bisect import bisect_left
 _FRED = {"DGS1MO": 1 / 12, "DGS3MO": 0.25, "DGS6MO": 0.5, "DGS1": 1, "DGS2": 2, "DGS3": 3, "DGS5": 5,
          "DGS7": 7, "DGS10": 10, "DGS20": 20, "DGS30": 30}
 _FALLBACK = [(1 / 12, 0.0445), (0.25, 0.0440), (0.5, 0.0430), (1, 0.0410), (2, 0.0395), (3, 0.0390),
-             (5, 0.0395), (7, 0.0405), (10, 0.0420)]
+             (5, 0.0395), (7, 0.0405), (10, 0.0420), (20, 0.0445), (30, 0.0450)]
+# ^ F3/R003 fix: fallback now covers 20y/30y so OFFLINE mode does not silently FLATTEN the long end at
+# 10y. Callers pricing beyond the covered tenor should still check ZeroCurve.extrapolated(T) (see below).
 
 
 def fetch_curve(sess=None):
@@ -109,6 +111,16 @@ class ZeroCurve:
         T = max(float(T), 1e-9)
         return -math.log(self.df(T)) / T
 
+    def covered_max(self):
+        """Longest tenor (years) with an actual pillar. Beyond this, df/rate_for FLAT-EXTRAPOLATE."""
+        return self.T[-1] if self.T else 0.0
+
+    def extrapolated(self, T):
+        """True when T is beyond the covered curve (the returned rate is a flat-extrapolation, not
+        interpolated). Callers doing long-dated (20y/30y) pricing should surface/guard on this rather
+        than silently trusting a flattened long end (audit F3)."""
+        return float(T) > (self.T[-1] if self.T else 0.0) + 1e-9
+
 
 class Curve:
     """Backward-compatible wrapper: accepts PAR-yield points, bootstraps a zero curve internally, and
@@ -123,6 +135,12 @@ class Curve:
 
     def df(self, T):
         return self._zero.df(T)
+
+    def covered_max(self):
+        return self._zero.covered_max()
+
+    def extrapolated(self, T):
+        return self._zero.extrapolated(T)
 
     def par_rate_approx(self, T):
         """The OLD front-end approximation (log(1+par_yield)); kept only for comparison/diagnostics."""

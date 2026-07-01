@@ -52,6 +52,9 @@ echo "    ok"
 echo "==> security   Web-storage auth lint (advisory until AUTH_HARDENING.md migration lands; then add --strict)"
 node tools/check-localstorage-auth.mjs || true
 
+echo "==> contracts  Method-contract linter (advisory: label overclaims + dead *0 stat factors; flip to a hard gate once a clean CI run confirms 0 ERRORs)"
+node tools/check-method-contracts.mjs || true
+
 echo "==> integrity  Truncation sentinel (detects truncated py/js/json/jsonl/csv/html + data impact)"
 python3 tools/truncation_sentinel.py --root . || fail=1
 

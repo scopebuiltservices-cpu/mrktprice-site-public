@@ -1,0 +1,37 @@
+# Dependabot — automated dependency + GitHub Actions update PRs (audit PDF1: supply-chain hardening).
+# Keeps the repo's otherwise-strong CI discipline from being undercut by quiet dependency drift, and
+# patches Actions pinned in .github/workflows. CodeQL (codeql.yml) stays as the SAST layer alongside this.
+version: 2
+updates:
+  # GitHub Actions used across the workflows (checkout, setup-python, setup-node, pages, …)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels: ["dependencies", "github-actions"]
+
+  # Node tooling (only opens PRs if a package.json / lockfile exists; harmless otherwise)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    labels: ["dependencies", "javascript"]
+
+  # Python build/engine deps (only if a requirements*.txt / pyproject.toml is present)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    labels: ["dependencies", "python"]

@@ -156,6 +156,9 @@ jobs:
             # considerations, in the reports, and in the board number. cik.json already emitted above.
             python tools/market_map/sec_forms.py --cik cik.json --marketmap marketmap.json --out sec_events.json || echo "::warning::SEC event ingestion skipped"
             python tools/market_map/event_board.py --map marketmap.json --sec sec_events.json || echo "::warning::SEC event tilt skipped"
+            # LEVERAGE / CREDIT (keyless SEC XBRL company-facts): multi-year total debt + growth, net debt,
+            # EV/EBITDA, net-debt/EBITDA, interest coverage -> n["debt"] + a bounded credit tilt on the alpha.
+            python tools/market_map/debt_board.py --map marketmap.json --cik cik.json || echo "::warning::SEC leverage enrichment skipped"
             # REAL FLOAT (FMP /stable/shares-float, gated): the correct, much-smaller denominator for the
             # crowding short-interest % — engages the penalty on low-float, squeeze-prone names. FMP has NO
             # short interest, so the FTD numerator stays. Absent -> crowding_board falls back to mcap/price.

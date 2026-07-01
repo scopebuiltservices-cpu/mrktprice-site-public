@@ -2824,7 +2824,8 @@ function renderConeInstrument(sym,mcOverride){
       +(pp.pTouchLo!=null?pr('P(touch '+A.low.toFixed(1)+')',_pc(pp.pTouchLo)):'')
       +(pp.pFinAboveMid!=null?pr('P(finish &ge; '+A.mid.toFixed(1)+')',_pc(pp.pFinAboveMid)):'')
       +pr('E[max favorable]',_sg(pp.eMFE),'#2ecc8f')
-      +pr('E[max adverse]',_sg(pp.eMAE),'#ef5f4e')+(mc?pr('VaR/CVaR 5%',_sg(mc.var05.VaR)+' / '+_sg(mc.var05.CVaR),'#ef5f4e'):'')+(mc?pr('tail VaR 1%',_sg(mc.var01.VaR),'#ef5f4e'):'');
+      +pr('E[max adverse]',_sg(pp.eMAE),'#ef5f4e')+(mc?pr('VaR/CVaR 5%',_sg(mc.var05.VaR)+' / '+_sg(mc.var05.CVaR),'#ef5f4e'):'')+(mc?pr('tail VaR 1%',_sg(mc.var01.VaR),'#ef5f4e'):'')
+      +(function(){try{var _nd=_mmName(sym),_p=_nd&&_nd.path;if(!_p)return '';var o=pr('server path (21d, bridge-exact)','',' ');if(_p.touchUp!=null)o+=pr('P(touch hi) · server',_pc(_p.touchUp));if(_p.touchDn!=null)o+=pr('P(touch lo) · server',_pc(_p.touchDn));if(_p.pEndAboveGivenTouchUp!=null)o+=pr('P(end ≥ mean | touched hi)',_pc(_p.pEndAboveGivenTouchUp),'#7bb3f0');if(_p.mfePrice!=null&&_p.maePrice!=null)o+=pr('MFE / MAE ($)',_p.mfePrice.toFixed(2)+' / '+_p.maePrice.toFixed(2));return o;}catch(_e){return '';}})();
     var L=[];
     L.push('<span style="color:#8fb0e0">&#9644; base (statistical)</span>');
     if(ev&&ev.within&&ev.evMove)L.push('<span style="color:#f5c451">&#9644; event +'+ev.bz+'d ('+ev.date+', &plusmn;'+_pc(ev.evMove)+' typ.)</span>');

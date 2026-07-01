@@ -31,15 +31,21 @@
     if (sHt > 0) {
       var p0 = c[t], win = c.slice(t), lo0 = p0 * Math.exp(-z * sHt), hi0 = p0 * Math.exp(z * sHt);
       var mx = win[0], mn = win[0]; for (i = 0; i < win.length; i++) { if (win[i] > mx) mx = win[i]; if (win[i] < mn) mn = win[i]; }
-      var expRangePct = (hi0 - lo0) / p0 * 100, actRangePct = (mx - mn) / p0 * 100;
+      // RANGE surprise: realized close LOG-range vs the model's EXPECTED PATH range (MFE+MAE, driftless
+      // = sigma_H*sqrt(8/pi)) with a Broadie-Glasserman discrete-monitoring correction (-2*beta*sigma_step).
+      // This centres the ratio at 1 for a calibrated series; the old "close-range vs endpoint band" read ~0.47.
+      var BETA = 0.5825971579, sStep = sHt / Math.sqrt(H);
+      var expLR = Math.max(sHt * Math.sqrt(8 / Math.PI) - 2 * BETA * sStep, 1e-9);
+      var actLR = (mn > 0 && mx > 0) ? Math.log(mx / mn) : null;
+      var expRangePct = expLR * 100, actRangePct = actLR != null ? actLR * 100 : null;
       var wr = []; for (i = 1; i < win.length; i++) if (win[i] > 0 && win[i - 1] > 0) wr.push(Math.log(win[i] / win[i - 1]));
       var m = 0; for (i = 0; i < wr.length; i++) m += wr[i]; m /= (wr.length || 1);
       var v = 0; for (i = 0; i < wr.length; i++) v += (wr[i] - m) * (wr[i] - m); v = wr.length > 1 ? v / (wr.length - 1) : 0;
       var realSig = Math.sqrt(v) * Math.sqrt(H), inside = (c[c.length - 1] >= lo0 && c[c.length - 1] <= hi0);
       var vd = function (r) { return r == null ? '—' : (r > 1.25 ? 'expanded' : (r < 0.8 ? 'quiet' : 'as expected')); };
-      var rRange = expRangePct > 0 ? actRangePct / expRangePct : null, rVol = sHt > 0 ? realSig / sHt : null;
+      var rRange = (actLR != null && expLR > 0) ? actLR / expLR : null, rVol = sHt > 0 ? realSig / sHt : null;
       rows = '<div style="display:flex;gap:10px;flex-wrap:wrap;font-size:10px;margin-top:3px">' +
-        '<span>range <b style="color:var(--ink,#e6edf3)">' + actRangePct.toFixed(1) + '%</b> vs exp ' + expRangePct.toFixed(1) + '% <i style="color:var(--muted,#8b98a5)">(' + vd(rRange) + ')</i></span>' +
+        '<span title="Realized close log-range vs expected PATH range (MFE+MAE, discrete-corrected)">range <b style="color:var(--ink,#e6edf3)">' + (actRangePct == null ? '—' : actRangePct.toFixed(1) + '%') + '</b> vs exp ' + expRangePct.toFixed(1) + '% <i style="color:var(--muted,#8b98a5)">(' + vd(rRange) + ')</i></span>' +
         '<span>σ <b style="color:var(--ink,#e6edf3)">' + (realSig * 100).toFixed(1) + '%</b> vs exp ' + (sHt * 100).toFixed(1) + '% <i style="color:var(--muted,#8b98a5)">(' + vd(rVol) + ')</i></span>' +
         '<span>close <b style="color:' + (inside ? '#2ecc8f' : '#ef5f4e') + '">' + (inside ? 'inside' : 'breach') + '</b></span></div>';
     }

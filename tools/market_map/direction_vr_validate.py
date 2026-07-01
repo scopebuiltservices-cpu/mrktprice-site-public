@@ -78,7 +78,7 @@ def _one_sample_t(x):
     return round(t, 3), bool(abs(t) >= 1.98)
 
 
-def validate(closes, r=5, h=10, q=None, zc=ZC, min_samples=12, warm=60):
+def validate(closes, r=5, h=10, q=None, zc=ZC, min_samples=12, warm=60, debug=False):
     c = [float(x) for x in closes if x is not None and float(x) > 0]
     q = int(q or h)
     if q < 2:
@@ -92,6 +92,7 @@ def validate(closes, r=5, h=10, q=None, zc=ZC, min_samples=12, warm=60):
     pA = []
     pB = []
     pC = []
+    wins = []  # per-window audit trail (only returned when debug=True) -> proves no-lookahead in tests
     persist_follow = []  # push-follow pnl in persist windows (mechanism test)
     fade_follow = []     # push-follow pnl in fade windows
     rows = []            # per-period [A,B,C] for CSCV
@@ -115,6 +116,8 @@ def validate(closes, r=5, h=10, q=None, zc=ZC, min_samples=12, warm=60):
         b = (push * fwd) if persist else 0.0
         cc = (push * fwd) if persist else ((-push * fwd) if fade else 0.0)
         pA.append(a); pB.append(b); pC.append(cc); rows.append([a, b, cc])
+        if debug:
+            wins.append((t, push, bool(persist), bool(fade), round(a, 6)))
         if push != 0.0:
             if persist:
                 persist_follow.append(a); nPersist += 1
@@ -145,6 +148,7 @@ def validate(closes, r=5, h=10, q=None, zc=ZC, min_samples=12, warm=60):
     gate = VE.promotion_gate(dsr if dsr is not None else 0.0, pbo if pbo is not None else 1.0)
     validated = bool(edge_sharpe > 0 and mech_ok and gate["deployable"])
     verdict = "VALIDATED" if validated else "NOT VALIDATED"
+    _dbg = {"_windows": wins} if debug else {}
     note = ("VR overlay separates continuation from reversal and beats direction-alone after DSR+PBO."
             if validated else
             "No selection-adjusted edge from the VR overlay over following the push alone; treat the deck's "
@@ -157,7 +161,7 @@ def validate(closes, r=5, h=10, q=None, zc=ZC, min_samples=12, warm=60):
                           "persistPays": mech_persist, "fadeReverses": mech_fade, "significant": mech_ok},
             "dsr": (round(dsr, 4) if dsr is not None else None),
             "pbo": (round(pbo, 4) if pbo is not None else None),
-            "gate": gate, "note": note}
+            "gate": gate, "note": note, **_dbg}
 
 
 if __name__ == "__main__":

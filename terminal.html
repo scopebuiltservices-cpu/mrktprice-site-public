@@ -3154,23 +3154,44 @@ function renderIntraday(sym,j){
          (mean-reversion regime). This is the cone's job, and only its job.
    The cone never claims a direction; the intraday engine never claims persistence.
    ==========================================================================*/
+function _vrStat(closes, q){
+  // Lo-MacKinlay (1988) heteroskedasticity-ROBUST variance-ratio TEST — mirrors metrics.variance_ratio_stat.
+  // theta*(q)=sum_{j<q}[2(q-j)/q]^2·delta_j ;  z=(VR-1)/sqrt(theta*) ;  |z|>=1.64 => reject RW at ~10%.
+  var r=[],i; for(i=1;i<closes.length;i++){var a=closes[i],b=closes[i-1]; if(a>0&&b>0) r.push(Math.log(a/b));}
+  var T=r.length; if(T<q*4||q<2) return null;
+  var mu=0; for(i=0;i<T;i++) mu+=r[i]; mu/=T;
+  var dev=[]; for(i=0;i<T;i++) dev.push(r[i]-mu);
+  var s2=0; for(i=0;i<T;i++) s2+=dev[i]*dev[i]; s2/=T; if(s2<=0) return null;
+  var muq=q*mu, m=q*(T-q+1)*(1.0-q/T), sq=0,k;
+  for(i=0;i<=T-q;i++){var su=0; for(k=0;k<q;k++) su+=r[i+k]; sq+=(su-muq)*(su-muq);}
+  var vq=sq/m, vr=vq/s2, s2sq=(T*s2)*(T*s2), theta=0,j,t;
+  for(j=1;j<q;j++){var num=0; for(t=j;t<T;t++) num+=dev[t]*dev[t]*dev[t-j]*dev[t-j]; var delta=s2sq>0?num/s2sq:0, w=2.0*(q-j)/q; theta+=w*w*delta;}
+  if(theta<=0) return {vr:vr,z:null,p:null,q:q,n:T};
+  var z=(vr-1.0)/Math.sqrt(theta), p=2.0*(1.0-normCDF(Math.abs(z)));
+  return {vr:vr,z:z,p:p,q:q,n:T};
+}
+function _halfLife(closes, cap){
+  // OU mean-reversion half-life (mirrors metrics.half_life): dp_t = a + b·p_{t-1}; b<0 => ln2/(-b) days.
+  cap=cap||252; var p=[],i; for(i=0;i<closes.length;i++){var c=closes[i]; if(c>0) p.push(Math.log(c));}
+  if(p.length<25) return null;
+  var dp=[],lag=[]; for(i=1;i<p.length;i++){dp.push(p[i]-p[i-1]); lag.push(p[i-1]);}
+  var n=dp.length,mx=0,my=0; for(i=0;i<n;i++){mx+=lag[i]; my+=dp[i];} mx/=n; my/=n;
+  var sxy=0,sxx=0; for(i=0;i<n;i++){sxy+=(lag[i]-mx)*(dp[i]-my); sxx+=(lag[i]-mx)*(lag[i]-mx);}
+  if(sxx<=0) return null; var b=sxy/sxx;
+  if(!(b<0)) return null; var h=Math.log(2)/(-b);
+  return h>0?Math.min(h,cap):null;
+}
 function _vrPersist(closes, H){
   var c=[],i; for(i=0;i<closes.length;i++){var x=+closes[i]; if(x>0)c.push(x);}
   if(c.length<40) return null;
-  var r=[]; for(i=1;i<c.length;i++) r.push(Math.log(c[i]/c[i-1]));
   var q=Math.min(H, Math.max(2, (c.length/4)|0));          // same q as cone_eval.sig_champion
-  if(r.length < q*4) return null;
-  var m=0; for(i=0;i<r.length;i++) m+=r[i]; m/=r.length;
-  var v1=0; for(i=0;i<r.length;i++) v1+=(r[i]-m)*(r[i]-m); v1/=r.length;
-  if(v1<=0) return null;
-  var s=0,k; for(k=q-1;k<r.length;k++){var su=0; for(i=0;i<q;i++) su+=r[k-i]; s+=(su-q*m)*(su-q*m);}
-  s/=(r.length-q+1);
-  var vr=s/(q*v1);                                          // VR(q) = var(sum q)/(q·var(1))
+  var st=_vrStat(c,q); if(!st) return null;
+  var vr=st.vr, z=st.z, sig=(z!=null && Math.abs(z)>=1.6449), hl=_halfLife(c,252);
   var lab,dir,col,read;
-  if(vr>=1.15){lab='PERSIST';dir='trending';col='#2ecc8f';read='a confirmed push tends to CONTINUE (momentum regime, VR&gt;1)';}
-  else if(vr<=0.85){lab='FADE';dir='mean-reverting';col='#ef5f4e';read='a confirmed push tends to REVERSE (mean-reversion regime, VR&lt;1)';}
-  else{lab='RANDOM WALK';dir='neutral';col='#e0c14a';read='no strong persist/fade edge — a push is ~a coin-flip on continuation';}
-  return {vr:vr,q:q,label:lab,dir:dir,color:col,read:read};
+  if(sig && vr>1){lab='PERSIST';dir='trending';col='#2ecc8f';read='a confirmed push tends to CONTINUE — VR&gt;1, significant (z '+z.toFixed(1)+')';}
+  else if(sig && vr<1){lab='FADE';dir='mean-reverting';col='#ef5f4e';read='a confirmed push tends to REVERSE — VR&lt;1, significant'+(hl?', ~'+hl.toFixed(0)+'-day half-life':'');}
+  else{lab='RANDOM WALK';dir='neutral';col='#e0c14a';read='VR not statistically different from 1 (z '+(z!=null?z.toFixed(1):'—')+') — no reliable persist/fade edge';}
+  return {vr:vr,z:z,p:st.p,q:q,halfLife:hl,sig:sig,label:lab,dir:dir,color:col,read:read};
 }
 function _intraConfirm(sym){
   if(!(MRKT_TOKEN||MRKT_CODE)) return {status:'nosignin'};
@@ -3178,8 +3199,9 @@ function _intraConfirm(sym){
   var dk='mrkt.intra.'+sym+'.'+(new Date().toISOString().slice(0,10)),b=[];
   try{b=JSON.parse(localStorage.getItem(dk)||'[]');}catch(_e){}
   if(!b.length) return {status:'warming',consecutive:0,K:3};
+  var lc=null,ci; for(ci=b.length-1;ci>=0;ci--){if(b[ci].conf!=null){lc=b[ci].conf;break;}}   // latest next-bar hit-rate = intraday-scale persistence
   var p=intradayProjection(b,{tauV:2.0,tauS:0.0010,K:3,h:8,z:1});
-  return {status:(p.triggered?'confirmed':'accumulating'),consecutive:p.consecutive,K:p.K,trend:p.trend,triggered:!!p.triggered,price:p.Pnow};
+  return {status:(p.triggered?'confirmed':'accumulating'),consecutive:p.consecutive,K:p.K,trend:p.trend,triggered:!!p.triggered,price:p.Pnow,conf:lc};
 }
 function renderDirDeck(){
   var host=document.getElementById('dirDeck'); if(!host) return;
@@ -3195,22 +3217,22 @@ function renderDirDeck(){
     var up=it.trend>=0, shown=(it.consecutive>0);
     iVal=shown?(up?'▲ UP':'▼ DOWN'):'— forming';
     iCol=shown?(up?'#2ecc8f':'#ef5f4e'):'var(--muted,#8a93a0)';
-    iSub=it.consecutive+' / '+it.K+' consecutive 15-min confirms';
+    iSub=it.consecutive+' / '+it.K+' consecutive 15-min confirms'+(it.conf!=null?' · next-bar '+(it.conf*100).toFixed(0)+'%':'');
     if(it.triggered) iBadge='<span style="font-size:8px;font-weight:800;color:#0a0d12;background:#2ecc8f;padding:1px 6px;border-radius:5px;margin-left:6px;vertical-align:2px">CONFIRMED</span>';
   }
-  // --- cone persistence tile ---
+  // --- cone persistence tile (significance-gated Lo-MacKinlay VR) ---
   var cVal,cCol,cSub;
   if(!vp){cVal='—';cCol='var(--faint,#646e7c)';cSub='need ~40+ daily closes for a VR read';}
-  else{cVal=vp.label+' <span style="font-size:12px;font-weight:600;color:var(--muted,#8a93a0)">VR '+vp.vr.toFixed(2)+'</span>';cCol=vp.color;cSub=vp.read;}
-  // --- synthesis: direction × persistence ---
+  else{cVal=vp.label+' <span style="font-size:11px;font-weight:600;color:var(--muted,#8a93a0)">VR '+vp.vr.toFixed(2)+(vp.z!=null?' · z '+vp.z.toFixed(1):'')+'</span>';cCol=vp.color;cSub=vp.read;}
+  // --- synthesis: direction × persistence (only assert a regime when VR is significant) ---
   var verdict='';
   if(it.triggered && vp){
     var u2=it.trend>=0, d2=(u2?'UP':'DOWN');
-    if(vp.label==='PERSIST') verdict='Confirmed '+d2+' push + cone PERSIST → continuation favored toward the cone’s '+(u2?'upper':'lower')+' band.';
-    else if(vp.label==='FADE') verdict='Confirmed '+d2+' push + cone FADE → mean-reversion risk; the push may not hold.';
-    else verdict='Confirmed '+d2+' push + cone RANDOM WALK → continuation is roughly a coin-flip.';
+    if(vp.sig && vp.vr>1) verdict='Confirmed '+d2+' push + significant PERSIST → continuation favored toward the cone’s '+(u2?'upper':'lower')+' band.';
+    else if(vp.sig && vp.vr<1) verdict='Confirmed '+d2+' push + significant FADE → mean-reversion risk'+(vp.halfLife?' (~'+vp.halfLife.toFixed(0)+'-day half-life)':'')+'; the push may not hold.';
+    else verdict='Confirmed '+d2+' push, but VR is not significant → no reliable persist/fade read; judge the push on its own merits.';
   } else if(vp){
-    verdict='No intraday confirmation yet · cone persistence stands ready (VR '+vp.vr.toFixed(2)+' · '+vp.label+').';
+    verdict='No intraday confirmation yet · cone persistence: '+vp.label+(vp.z!=null?' (z '+vp.z.toFixed(1)+')':'')+'.';
   }
   var tile=function(hd,val,col,sub,badge,tip){
     return '<div title="'+String(tip||'').replace(/"/g,'&quot;')+'" style="flex:1;min-width:134px;background:linear-gradient(160deg,var(--panel2,#19212e),var(--panel,#111721));border:1px solid var(--line,#27313f);border-left:3px solid '+col+';border-radius:9px;padding:7px 9px">'
@@ -3224,7 +3246,7 @@ function renderDirDeck(){
       +tile('Cone persistence · VR', cVal, cCol, cSub, '', 'The cone tells you whether a confirmed push is likely to persist (VR>1) or fade (VR<1).')
     +'</div>'
     +(verdict?'<div style="font-size:9px;color:var(--ink,#eef3f8);margin-top:4px;padding:4px 7px;background:rgba(255,255,255,.03);border:1px solid var(--line,#27313f);border-radius:7px">'+verdict+'</div>':'')
-    +'<div style="font-size:8px;color:var(--faint,#646e7c);margin-top:3px;line-height:1.4">Intraday-confirmed direction comes from the separate intraday engine (consecutive 15-min confirms), <b>not the cone</b>; the cone tells you whether a confirmed push is likely to <b style="color:#2ecc8f">persist (VR&gt;1)</b> or <b style="color:#ef5f4e">fade (VR&lt;1)</b>.</div>';
+    +'<div style="font-size:8px;color:var(--faint,#646e7c);margin-top:3px;line-height:1.4">Intraday-confirmed direction comes from the separate intraday engine (consecutive 15-min confirms), <b>not the cone</b>; the cone tells you whether a confirmed push is likely to <b style="color:#2ecc8f">persist (VR&gt;1)</b> or <b style="color:#ef5f4e">fade (VR&lt;1)</b>. <span style="opacity:.85">Persist/fade shows only when the Lo-MacKinlay VR is statistically significant (|z|&ge;1.64, multi-day scale); the intraday tile’s <b>next-bar&nbsp;%</b> is the intraday-scale persistence.</span></div>';
 }
 var _intraTimer=null,_intraSym=null;
 function intradayTick(){

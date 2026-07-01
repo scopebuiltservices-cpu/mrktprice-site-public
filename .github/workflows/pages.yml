@@ -246,7 +246,7 @@ jobs:
             echo "published $(git rev-parse --short HEAD)"
           fi
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
 
       - name: Rebuild reports index + stage site
         run: |

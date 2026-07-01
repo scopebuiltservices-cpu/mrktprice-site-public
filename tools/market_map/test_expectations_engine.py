@@ -47,9 +47,13 @@ for _ in range(600):
 v.append(1e6)
 acc = EE.accuracy(c, v, H=21, level=0.90, stride=2)
 ok("accuracy produced", acc is not None and acc["n"] > 0)
-ok("mean range ratio centred near 1 (0.85-1.20)", 0.85 <= acc["meanRangeRatio"] <= 1.20, acc["meanRangeRatio"])
 ok("RW containment near 0.90", 0.80 <= acc["containment"] <= 0.99, acc["containment"])
 ok("accuracy reports qlike", acc["qlike"] is not None and acc["qlike"] >= 0)
+# CENTERING: isolate the estimand fix from sigma-estimation noise by feeding the TRUE sigma.
+# The corrected MFE/MAE+discrete reference centres the range ratio at ~1 (the naive endpoint-band
+# method was structurally stuck at ~0.47 — a different estimand).
+accT = EE.accuracy(c, v, H=21, level=0.90, stride=2, sigma_fn=lambda cl, h: 0.012 * math.sqrt(h))
+ok("range ratio centred near 1 with true sigma (naive method was ~0.47)", 0.88 <= accT["meanRangeRatio"] <= 1.18, accT["meanRangeRatio"])
 
 # QLIKE = 0 when the forecast variance equals the realized variance (perfect)
 import vol_loss

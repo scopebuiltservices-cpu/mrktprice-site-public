@@ -32,6 +32,10 @@ const ALLOW = {
   },
   'variance_ratio': {
     'engine_ref.py': 'Lo-MacKinlay VR on RETURNS mirroring engine.js for the golden-fixture parity; metrics.variance_ratio is VR on CLOSES (different input domain)',
+    'volterm_engine.py': 'RAW variance ratio on RETURNS (Var(q-sum)/(q*Var(1))) for the vol term-structure; metrics.variance_ratio is on CLOSES (different input domain)',
+  },
+  'ewma_vol': {
+    'volterm_engine.py': 'seedable per-period EWMA variance recursion (seed= param, un-annualized) for the vol term-structure; metrics.ewma_vol is the annualized RiskMetrics vol',
   },
   'winsorize': {
     'data_quality.py': 'pre-fit hardening winsorize with a min-sample (>=5) floor for the IC/regression path; metrics.winsorize preserves None positions for the cross-section',

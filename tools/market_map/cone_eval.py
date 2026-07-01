@@ -122,14 +122,15 @@ DEFAULT_SOURCES = {"sqrt_time": sig_sqrt_time, "champion": sig_champion,
                    "ewma": sig_ewma, "arbiter": sig_arbiter}
 
 
-def backtest(closes, H=21, level=0.90, min_train=60, sources=None):
-    """Walk-forward coverage backtest. Returns {source: metrics}, plus 'recommend' + 'n'."""
+def backtest(closes, H=21, level=0.90, min_train=60, sources=None, stride=1):
+    """Walk-forward coverage backtest. Returns {source: metrics}, plus 'recommend' + 'n'.
+    stride>1 subsamples decision times (cheaper in CI; coverage estimate is unbiased, just fewer points)."""
     c = [float(x) for x in closes if x is not None and float(x) > 0]
     sources = sources or DEFAULT_SOURCES
     z = _norm_ppf((1.0 + level) / 2.0)
     alpha = 1.0 - level
     acc = {k: {"hit": 0, "n": 0, "wsum": 0.0, "isum": 0.0} for k in sources}
-    for t in range(min_train, len(c) - H):
+    for t in range(min_train, len(c) - H, max(1, int(stride))):
         hist = c[:t + 1]
         r_real = math.log(c[t + H] / c[t])
         for name, fn in sources.items():

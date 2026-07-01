@@ -74,6 +74,18 @@ def blended_sigma_daily(rets, window=20, lam=0.94, w_ewma=0.5):
     return w_ewma * ew + (1.0 - w_ewma) * simple
 
 
+# ---- 4-way convex blend (Validation Report): opt-in HV+EWMA+GARCH+RV upgrade ----
+def blended_sigma_daily4(rets, weights=None, gamma=0.0, **kw):
+    """Report's convex blend  sigma^2 = w·HV^2 + u·EWMA^2 + v·GARCH^2 + m·RV^2  (weights sum to 1,
+    Bates-Granger optimal, leakage-free), with the studentization scale floor gamma. Delegates to
+    blend_sigma.py. This is OPT-IN: the 2-way blended_sigma_daily above is left byte-identical so the
+    golden fixture and the default project() path stay reproducible. Returns just the sigma scalar
+    (call blend_sigma.blended_sigma_daily4 directly for the component/weight detail)."""
+    from blend_sigma import blended_sigma_daily4 as _b4
+    sig, _detail = _b4(rets, weights=weights, gamma=gamma, **kw)
+    return sig
+
+
 # ---- Variance-ratio-corrected horizon vol (replaces naive sqrt-time) ----
 def horizon_sigma(closes, H, sigma_d):
     if H <= 1:

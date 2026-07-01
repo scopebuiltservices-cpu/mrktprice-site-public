@@ -1014,7 +1014,7 @@ def real_universe():
     try: import data_quality as _dq
     except Exception: _dq=None
     import requests as _rqp
-    _PSESS=_rqp.Session(); _PSESS.headers.update({"User-Agent":UA})
+    _PSESS=_rqp.Session(); _PSESS.headers.update(UA)   # UA is already {"User-Agent": ...}; do NOT re-wrap (was InvalidHeader -> forced yfinance/seed fallback)
     YF_ON=(os.environ.get("MRKT_YF_ENABLED","1").strip().lower() not in ("0","false","off","no"))
     yf=None
     if YF_ON:

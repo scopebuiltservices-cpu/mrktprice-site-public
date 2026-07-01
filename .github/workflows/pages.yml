@@ -168,6 +168,10 @@ jobs:
             # EXPECTED-vs-ACTUAL: turn the cone half-width into a labeled prediction band + score it against
             # realized price range / volatility / volume -> n["expA"] (forward band, last reconciliation, accuracy).
             python tools/market_map/expect_board.py --map marketmap.json --hist hist || echo "::warning::expected-vs-actual enrichment skipped"
+            # DIRECTION x VR VALIDATION: walk-forward, DSR+PBO-gated test of whether the persist/fade VR
+            # overlay actually beats following the push alone -> n["dirVR"]. The Direction-Deck synthesis line
+            # only claims an edge when this reads VALIDATED; otherwise it softens to a directional read.
+            python tools/market_map/dirvr_board.py --map marketmap.json --hist hist || echo "::warning::direction-VR validation skipped"
             # REAL FLOAT (FMP /stable/shares-float, gated): the correct, much-smaller denominator for the
             # crowding short-interest % — engages the penalty on low-float, squeeze-prone names. FMP has NO
             # short interest, so the FTD numerator stays. Absent -> crowding_board falls back to mcap/price.

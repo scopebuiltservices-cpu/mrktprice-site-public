@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Methodology &amp; Trust — MrktPrice</title>
+<meta name="description" content="How MrktPrice builds its forecasts: data sources, point-in-time discipline, calibration honesty, a claim-strength rubric, and an explicit statement of what the research does and does not prove. Research/education only — not investment advice.">
+<link rel="canonical" href="https://mrktprice.com/methodology.html">
+<meta property="og:title" content="Methodology &amp; Trust — MrktPrice">
+<meta property="og:description" content="Data sources, point-in-time methodology, calibration honesty, and what this research does not prove.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://mrktprice.com/methodology.html">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"AboutPage","name":"MrktPrice Methodology & Trust",
+ "url":"https://mrktprice.com/methodology.html","isFamilyFriendly":true,
+ "publisher":{"@type":"Organization","name":"MrktPrice"},
+ "description":"Data sources, point-in-time methodology, conformal calibration honesty, claim-strength rubric, and explicit limitations. Research/education only."}
+</script>
+<style>
+  :root{--bg:#0b0e13;--panel:#111721;--panel2:#0f141b;--line:#1e2733;--ink:#e7ecf3;--muted:#8a93a3;--faint:#646e7c;
+        --brand:#6aa3ff;--accent:#39b6ff;--pass:#2ecc8f;--caution:#e0a13c;--fail:#ef5f4e;--gold:#e8c14a}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:860px;margin:0 auto;padding:28px 20px 64px}
+  a{color:var(--brand);text-decoration:none}a:hover{text-decoration:underline}
+  header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:8px}
+  .logo{font-weight:800;font-size:20px;letter-spacing:.2px}.logo b{color:var(--brand)}
+  nav{margin-left:auto;font-size:13px}nav a{color:var(--muted);margin-left:14px}
+  h1{font-size:26px;margin:22px 0 4px}h2{font-size:18px;margin:30px 0 8px;color:var(--ink)}
+  .lede{color:var(--muted);font-size:15px;margin:4px 0 8px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:12px 0}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin:8px 0}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600}
+  code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:12.5px;color:#cfe1ff}
+  .tag{display:inline-block;font-size:11px;font-weight:700;border:1px solid;border-radius:5px;padding:1px 6px;white-space:nowrap}
+  .t-proxy{color:var(--caution);border-color:var(--caution)}.t-heur{color:#9ab4e0;border-color:#9ab4e0}
+  .t-inf{color:var(--accent);border-color:var(--accent)}.t-val{color:var(--pass);border-color:var(--pass)}
+  .t-rel{color:var(--gold);border-color:var(--gold)}
+  ul{margin:6px 0 6px 2px;padding-left:18px}li{margin:4px 0}
+  .warn{background:rgba(239,95,78,.08);border:1px solid rgba(239,95,78,.35);border-radius:9px;padding:12px 14px;color:#f3c7c0;font-size:13.5px}
+  footer{margin-top:40px;border-top:1px solid var(--line);padding-top:14px;color:var(--faint);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="logo"><b>Mrkt</b>Price&trade;</span>
+    <nav><a href="index.html">Home</a><a href="terminal.html">Terminal</a><a href="reports/">News</a><a href="pricing.html">Pricing</a></nav>
+  </header>
+
+  <h1>Methodology &amp; Trust</h1>
+  <p class="lede">MrktPrice is a market <b>research and education</b> terminal. This page states plainly how the
+  numbers are produced, how confident you should be in each kind of claim, and — just as important — what the
+  research <b>does not</b> prove. It is <b>not investment advice</b>.</p>
+
+  <div class="warn"><b>Not advice.</b> Nothing here is a recommendation to buy, sell, or hold any security.
+  Forecasts are statistical descriptions of historical behavior, not predictions of the future. Data may be
+  delayed, revised, or inaccurate. You are responsible for your own decisions.</div>
+
+  <h2>Where the data comes from</h2>
+  <table>
+    <tr><th>Layer</th><th>Primary source</th><th>Fallback</th></tr>
+    <tr><td>Prices / returns</td><td>Financial Modeling Prep (FMP Ultimate), end-of-day OHLCV</td><td>Stooq / yfinance</td></tr>
+    <tr><td>Risk-free &amp; real-rate curve</td><td>US Treasury constant-maturity yields via FRED (keyless CSV), bootstrapped to a zero/discount curve</td><td>Static recent curve</td></tr>
+    <tr><td>Fundamentals (P/E, P/B, tangible book, ROE)</td><td>FMP bulk TTM ratios &amp; key-metrics</td><td>SEC EDGAR (GAAP)</td></tr>
+    <tr><td>Estimates / earnings calendar</td><td>FMP analyst consensus + earnings dates</td><td>—</td></tr>
+    <tr><td>Institutional flow (13F) / insider &amp; corporate events</td><td>SEC EDGAR bulk datasets (keyless)</td><td>—</td></tr>
+    <tr><td>Commodities / FX / macro</td><td>FMP + FRED</td><td>Keyless FRED</td></tr>
+  </table>
+  <p class="lede">Every published build carries a <code>dataHealth</code> block and per-source timestamps, and is
+  stamped in an append-only <code>model_registry.jsonl</code> keyed by the exact engine commit + a content hash of
+  each artifact — so any figure on the board traces back to a specific build. When a live feed fails, the site
+  serves the last good artifact and says so on the banner rather than silently showing stale data.</p>
+
+  <h2>Point-in-time discipline</h2>
+  <p>Anything fed into the no-lookahead forecast ledger and information-coefficient estimates is gated so a
+  value is only used once it was actually <i>available</i> at the decision time (filing lags applied). Current-vintage
+  TTM/consensus fundamentals shown on the board are labeled as such and are <b>not</b> point-in-time — they are
+  a present-day snapshot for context, not a backtest input.</p>
+
+  <h2>Forecasts &amp; calibration — the honest version</h2>
+  <ul>
+    <li>The projection cone is a <b>calibrated reference range</b>, not a point forecast. Its bands are widened by
+      split-conformal calibration on <b>matured</b> (already-resolved) forecast residuals, with purge/embargo to
+      avoid leakage.</li>
+    <li>The coverage guarantee we claim is <b>marginal at the horizon level</b> — historically, the band contained
+      the outcome about as often as its target. Where sample permits we also report <b>regime-conditioned</b>
+      coverage, but the headline guarantee is marginal, not a per-regime promise.</li>
+    <li>Distribution scores (CRPS, PIT) describe the <b>Gaussian base</b> predictive; the interval score and
+      coverage describe the <b>published conformal band</b>. These are labeled distinctly so the two objects are
+      never conflated.</li>
+    <li>Any ranked "edge" is deflated for multiple testing (deflated Sharpe) and, where the trial dispersion can't
+      be measured, is flagged <b>provisional</b>. Backtested edge is in-sample evidence, not a promise of future edge.</li>
+  </ul>
+
+  <h2>How strong is each claim?</h2>
+  <p class="lede">Every number on the terminal falls into one of these tiers. We try to label loudly and never let
+  a strong word stand in for weak math.</p>
+  <table>
+    <tr><th>Tier</th><th>Meaning</th></tr>
+    <tr><td><span class="tag t-proxy">proxy</span></td><td>a hand-built stand-in for a quantity we did not estimate (e.g. the 5/10/30 real-rate level/slope/curvature <b>proxy</b> — not an estimated Nelson-Siegel/Diebold-Li model).</td></tr>
+    <tr><td><span class="tag t-heur">heuristic</span></td><td>a rule-of-thumb signal without a formal inferential guarantee.</td></tr>
+    <tr><td><span class="tag t-inf">inferential</span></td><td>backed by a stated test/interval with explicit assumptions — HAC (Newey-West) t-stats, conformal coverage, deflated Sharpe.</td></tr>
+    <tr><td><span class="tag t-val">valuation-grade</span></td><td>priced under explicit conventions (zero-curve discount factors, day-count) — used for option/pricing math.</td></tr>
+    <tr><td><span class="tag t-rel">audited-release</span></td><td>passed the full gate ladder (schema + invariants + drift + calibration + multiple-testing) and is provenance-stamped.</td></tr>
+  </table>
+
+  <h2>What this does <u>not</u> prove</h2>
+  <ul>
+    <li>Forecasts are <b>statistical, not advice</b>. Calibrated intervals state how often outcomes have landed inside the band historically; they do not promise the next move.</li>
+    <li>Pooled skill is <b>upward-biased by survivorship</b>: the universe is current constituents; delisted names are absent, so historical hit-rates overstate a live, point-in-time strategy.</li>
+    <li>Macro/factor betas are <b>associational, not causal</b> — they describe co-movement, not a mechanism, and can break in a regime change.</li>
+    <li>Cross-language (Python/JavaScript) parity proves the two implementations <b>agree</b>; it does not prove the shared model is correct.</li>
+    <li>Numbers can be <b>stale or degraded</b>. Check the freshness banner and per-source timestamps before trusting a row.</li>
+  </ul>
+
+  <h2>Update cadence</h2>
+  <p>The market map rebuilds on a nightly schedule plus an intraday 3pm-ET refresh, and self-heals: if the
+  published data is stale or was produced by an older engine, the next run forces a fresh rebuild. Health probes
+  run every few hours independently of the full build.</p>
+
+  <h2>Privacy &amp; access</h2>
+  <p>Protected pages require an access code / session. We are migrating session handling to <b>HttpOnly cookies</b>
+  so credentials are never readable by page scripts. We use only essential cookies for the session; any analytics
+  are consent-gated. See the terminal footer for the current data-freshness state.</p>
+
+  <footer>
+    &copy; 2026 MrktPrice&trade; / Marc Jones. Research/education only — <b>not investment advice</b>. Data may be
+    delayed or inaccurate. Proprietary &amp; Confidential.
+  </footer>
+</div>
+</body>
+</html>

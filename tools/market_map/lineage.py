@@ -693,7 +693,12 @@ def calibrate_horizon(returns: Sequence[float], n_steps: int,
         "coveragePadded": round(covRC / mt, 3),
         "regimeConditioned": bool(reg_q),
         "byRegimeConformal": by_reg_conf,
+        # 'calibrated' has TWO defensible meanings (audit F11): the schema means |coverage-target|<=0.05
+        # (a tolerance test), the code historically means "the Wilson CI contains the target". We now emit
+        # BOTH under distinct names; 'calibrated' stays the Wilson meaning for back-compat.
         "calibrated": bool(wlo <= (1 - alpha) <= whi),
+        "calibratedWilson": bool(wlo <= (1 - alpha) <= whi),
+        "calibratedTolerance": bool(abs((k / mt) - (1 - alpha)) <= 0.05),
     }
 
 
@@ -978,6 +983,7 @@ def challenger_scorecard(returns: Sequence[float], n_steps: int, iv_annual: Opti
         gate, reason = "research-only", "no CRPS edge over a driftless random walk"
     return {"crps": means, "winner": winner, "coverage": round(cov, 3),
             "wilsonLo": round(wlo, 3), "wilsonHi": round(whi, 3), "calibrated": calibrated,
+            "calibratedWilson": calibrated, "calibratedTolerance": bool(abs(cov - (1 - alpha)) <= 0.05),
             "beatsRW": beats_rw, "gate": gate, "reason": reason, "n": m}
 
 

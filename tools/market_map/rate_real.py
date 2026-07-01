@@ -109,6 +109,26 @@ def classify(d, tmin=2.0):
     return "rate-agnostic"
 
 
+def classify_parts(d, tmin=2.0):
+    """Structured companion to classify() that SEPARATES direction from statistical confidence (audit F5/R008).
+    The single classify() string collapses to 'rate-agnostic' below the t-stat threshold, LOSING the beta sign.
+    Here betaSign is the DIRECTION of the dominant (largest |t|) factor — available even when the HAC
+    (Newey-West) t-stat is sub-threshold — while 'confident' reports whether that t-stat cleared the gate.
+    Returns {betaSign, confident, driver, tAbs} for the board to show 'lean' vs 'significant' separately."""
+    if not d:
+        return {"betaSign": "neutral", "confident": False, "driver": None, "tAbs": None}
+    cands = [("level", d.get("bL"), d.get("tL")), ("slope", d.get("bS"), d.get("tS")),
+             ("curvature", d.get("bC"), d.get("tC"))]
+    cands = [(k, b, t) for k, b, t in cands if b is not None and t is not None]
+    if not cands:
+        return {"betaSign": "neutral", "confident": False, "driver": None, "tAbs": None}
+    driver, b, t = max(cands, key=lambda x: abs(x[2]))
+    sign = {"level": ("rate-down" if b < 0 else "rate-up"),
+            "slope": ("steepener" if b > 0 else "flattener"),
+            "curvature": "belly"}[driver]
+    return {"betaSign": sign, "confident": bool(abs(t) >= tmin), "driver": driver, "tAbs": round(abs(t), 2)}
+
+
 def _valid_curve(hist):
     """Reject an implausible/short curve so a bad pull can't poison the rate layer. Treasury/FRED real
     constant-maturity yields are reported in PERCENT; a sane band is [-4, 9] %. Need >=30 aligned points."""
@@ -297,7 +317,7 @@ def attach_duration_betas(names, hist, mkt_ticker="SPY", is_etf=None, tmin=2.0):
         rk = rmkt[-L:] if rmkt else [0.0] * L
         d = duration_betas(rets[-L:], rk, dL[-L:], dS[-L:], dC[-L:])
         if not d: continue
-        d["class"] = classify(d, tmin); n["rate"] = d; cnt += 1
+        d["class"] = classify(d, tmin); d.update(classify_parts(d, tmin)); n["rate"] = d; cnt += 1
     return cnt
 
 

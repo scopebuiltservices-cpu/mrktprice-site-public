@@ -390,6 +390,7 @@ def sharpe(returns, rf=0.0, periods=252):
     """Annualized Sharpe of a per-period simple-return series (rf annualized)."""
     v = _clean(returns)
     if len(v) < 2: return float("nan")
+    if max(v) == min(v): return float("nan")   # constant series: zero dispersion, Sharpe undefined (guard vs float-residue stdev)
     ex = [x - rf / periods for x in v]; sd = stdev(ex)
     if not sd or sd != sd: return float("nan")
     return (sum(ex) / len(ex)) / sd * math.sqrt(periods)

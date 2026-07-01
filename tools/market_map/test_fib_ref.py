@@ -15,7 +15,7 @@ def close(a, b, tol=1e-9):
 
 # presets
 ok("cadence preset", FB.horizons("cadence") == [1, 5, 10, 21, 63])
-ok("fib preset", FB.horizons("fib") == [1, 2, 3, 5, 8, 13, 21])
+ok("fib preset", FB.horizons("fib") == [1, 2, 3, 5, 8, 13, 21, 34, 55])
 ok("unknown preset -> cadence default", FB.horizons("zzz") == [1, 5, 10, 21, 63])
 
 # decayed edge: hl=1 => r=0.5; H=1 -> edge; H=2 -> edge*1.5

@@ -13,7 +13,7 @@ SUB = {"filings": {"recent": {
 def test_parse_filters_and_severity():
     ev = S.events_from_submissions(SUB, since=400, today=dt.date(2026, 6, 28))
     forms = [e["form"] for e in ev]
-    assert "10-Q" not in forms and "DEF 14A" not in forms        # untracked dropped
+    assert "10-Q" not in forms                                   # 10-Q untracked -> dropped (DEF 14A is tracked)
     assert forms[0] == "8-K" and ev[0]["date"] == "2026-06-20"   # newest first
     # 8-K 2.02 severity = 0.60 (max over 2.02/9.01; 9.01 unknown->0.25)
     assert abs(ev[0]["sev"] - 0.60) < 1e-9, ev[0]["sev"]

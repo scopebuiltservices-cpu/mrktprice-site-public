@@ -52,9 +52,11 @@ ok("conformal band present when >=8 residuals", clo[0] == clo[0] and chi[0] == c
 ok("conformal reflects negative residuals (hi<center)", chi[0] < 2.0, chi[0])
 ok("conformal lo below hi", clo[0] < chi[0])
 
-# 7) decision rule acts on the bound, not the point
-d = ie.decision(2.0, [2.05], [1.99], 0, cost=0.0)
-ok("positive upper-bound edge -> tradable long", d["tradable"] and d["side"] == "long", d)
+# 7) conservative decision rule acts on the UNFAVORABLE bound, not the point (#437)
+d = ie.decision(2.0, [2.10], [2.02], 0, cost=0.0)          # even the lower bound (2.02) clears price+cost
+ok("lower bound clears cost -> tradable long", d["tradable"] and d["side"] == "long", d)
+dstr = ie.decision(2.0, [2.05], [1.99], 0, cost=0.0)       # band straddles price -> no conservative edge
+ok("band straddling price -> not tradable (no false positive)", not dstr["tradable"], dstr)
 d2 = ie.decision(2.0, [2.001], [1.999], 0, cost=0.01)
 ok("edge below cost -> not tradable (conditional)", not d2["tradable"], d2)
 

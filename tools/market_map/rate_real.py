@@ -14,7 +14,7 @@ import os, math
 
 
 def real_curve_proxy_lsc(y5, y10, y30):
-    """Three-point real-yield level/slope/curvature PROXY (NOT Diebold-Li / Nelson-Siegel).
+    """Three-point real-yield level/slope/curvature PROXY (NOT a dynamic factor-model curve / Nelson-Siegel).
     L=(y5+y10+y30)/3, S=y30-y5, C=2*y10-y5-y30. A linear-combination descriptor of curve state."""
     return {"L": (y5 + y10 + y30) / 3.0, "S": y30 - y5, "C": 2.0 * y10 - y5 - y30}
 

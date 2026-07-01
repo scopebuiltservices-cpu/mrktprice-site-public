@@ -39,9 +39,9 @@ def expect_for(closes, vols, H=21, level=0.90):
         if sHt and sHt > 0:
             win = c[t:]
             rets = [math.log(win[i] / win[i - 1]) for i in range(1, len(win)) if win[i] > 0 and win[i - 1] > 0]
-            ev = (sum(vols[max(0, t - 20):t]) / max(1, len(vols[max(0, t - 20):t]))) if len(vols) > t else None
+            base = EE.vol_baseline(vols[max(0, t - 60):t]) if len(vols) > t else None
             wv = vols[t:] if len(vols) > t else []
-            last = EE.reconcile(c[t], sHt, level, win, rets, wv, ev, c[-1])
+            last = EE.reconcile(c[t], sHt, level, win, rets, wv, base, c[-1])
     acc = EE.accuracy(c, vols, H=H, level=level)
     return {"band": band, "last": last, "accuracy": acc, "H": H, "level": level}
 

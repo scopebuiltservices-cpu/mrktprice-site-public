@@ -1,5 +1,5 @@
-"""Network-free test for expect_board.expect_for: forward band + last reconciliation + accuracy;
-thin-history gating; ETF skip."""
+"""Network-free test for expect_board.expect_for: forward band + last reconciliation (corrected
+estimands: MFE/MAE range, QLIKE vol, log-z volume) + walk-forward accuracy; gating; ETF skip."""
 import math
 import os
 import random
@@ -27,18 +27,21 @@ v.append(1e6)
 
 blk = B.expect_for(c, v, H=21, level=0.90)
 ok("block produced", blk is not None)
-ok("forward band is a labeled prediction interval", blk["band"]["kind"] == "prediction interval" and blk["band"]["level"] == 0.90)
+ok("forward band labeled + level", blk["band"]["kind"] == "prediction interval" and blk["band"]["level"] == 0.90)
 ok("band half-width % present", blk["band"]["halfWidthPct"] > 0)
 ok("last reconciliation present", blk["last"] is not None)
-ok("last has range/vol/volume/containment", all(k in blk["last"] for k in ("range", "vol", "volume", "containment")))
-ok("accuracy has containment + mean ratios", blk["accuracy"] and blk["accuracy"]["containment"] is not None and blk["accuracy"]["meanRangeRatio"] is not None)
+ok("last.range has ratio + verdict", "ratio" in blk["last"]["range"] and "verdict" in blk["last"]["range"])
+ok("last.vol has qlike", "qlike" in blk["last"]["vol"])
+ok("last.volume has z + verdict", "z" in blk["last"]["volume"] and "verdict" in blk["last"]["volume"])
+ok("accuracy has containment + meanRangeRatio + qlike", blk["accuracy"] and blk["accuracy"]["containment"] is not None
+   and blk["accuracy"]["meanRangeRatio"] is not None and blk["accuracy"]["qlike"] is not None)
+ok("range ratio centred near 1 (0.8-1.25)", 0.8 <= blk["accuracy"]["meanRangeRatio"] <= 1.25, blk["accuracy"]["meanRangeRatio"])
+ok("qlike >= 0", blk["accuracy"]["qlike"] >= 0)
 ok("H/level echoed", blk["H"] == 21 and blk["level"] == 0.90)
 
-# idempotence
 b2 = B.expect_for(c, v, H=21, level=0.90)
 ok("idempotent band", b2["band"]["hi"] == blk["band"]["hi"])
 
-# gating
 ok("thin history -> None", B.expect_for(c[:40], v[:40]) is None)
 ok("no volume still works (range/vol only)", B.expect_for(c, [], H=21) is not None)
 ok("ETF skipped", B._is_equity({"t": "SPY", "etf": True}) is False)

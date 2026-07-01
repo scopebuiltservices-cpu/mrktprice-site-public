@@ -22,6 +22,32 @@
   function bt(c, H, lv, fn) { var z = ppf((1 + lv) / 2), al = 1 - lv, hit = 0, n = 0, ws = 0, is = 0, t; for (t = 60; t < c.length - H; t += 3) { var h = c.slice(0, t + 1), sH = fn(h, H); if (!(sH > 0)) continue; var rr = Math.log(c[t + H] / c[t]), lo = -z * sH, hi = z * sH; hit += (rr >= lo && rr <= hi) ? 1 : 0; n++; ws += z * sH; var s = hi - lo; if (rr < lo) s += 2 / al * (lo - rr); else if (rr > hi) s += 2 / al * (rr - hi); is += s; } return n ? { cov: hit / n, hw: ws / n, is: is / n, cal: Math.abs(hit / n - lv), n: n } : null; }
   function draw(cv, c, fn, H, lv, col) { if (!cv || !cv.getContext) return; var dpr = root.devicePixelRatio || 1, W = cv.clientWidth || 200, Hh = cv.height / dpr; cv.width = W * dpr; cv.style.height = Hh + 'px'; var x = cv.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, Hh); var nh = Math.min(90, c.length), hs = c.slice(c.length - nh), P0 = hs[hs.length - 1], z = ppf((1 + lv) / 2), lo = [], hi = [], k, i; for (k = 1; k <= H; k++) { var sH = fn(c, k) || 0; lo.push(P0 * Math.exp(-z * sH)); hi.push(P0 * Math.exp(z * sH)); } var mn = 1 / 0, mx = -1 / 0; for (i = 0; i < hs.length; i++) { mn = Math.min(mn, hs[i]); mx = Math.max(mx, hs[i]); } mn = Math.min(mn, lo[lo.length - 1]); mx = Math.max(mx, hi[hi.length - 1]); var pd = (mx - mn) * 0.08; mn -= pd; mx += pd; var gw = W - 8, gh = Hh - 10, tt = nh + H; function X(j) { return 4 + j / (tt - 1) * gw; } function Y(p) { return 5 + (1 - (p - mn) / (mx - mn)) * gh; } x.beginPath(); x.moveTo(X(nh - 1), Y(P0)); for (i = 0; i < hi.length; i++) x.lineTo(X(nh + i), Y(hi[i])); for (i = lo.length - 1; i >= 0; i--) x.lineTo(X(nh + i), Y(lo[i])); x.closePath(); x.fillStyle = col; x.globalAlpha = 0.16; x.fill(); x.globalAlpha = 1; x.strokeStyle = '#c9d3de'; x.lineWidth = 1.2; x.beginPath(); for (i = 0; i < hs.length; i++) { var xx = X(i), yy = Y(hs[i]); i ? x.lineTo(xx, yy) : x.moveTo(xx, yy); } x.stroke(); x.fillStyle = col; x.beginPath(); x.arc(X(nh - 1), Y(P0), 2.5, 0, 7); x.fill(); }
 
+  function _expTile(c, H, lv) {
+    var fn = SRC.champion, sH = fn(c, H);
+    if (!(sH > 0) || c.length < H + 40) return '';
+    var z = ppf((1 + lv) / 2), P0 = c[c.length - 1];
+    var lo = P0 * Math.exp(-z * sH), hi = P0 * Math.exp(z * sH), hwPct = z * sH * 100, i;
+    var t = c.length - H - 1, sHt = fn(c.slice(0, t + 1), H), rows = '';
+    if (sHt > 0) {
+      var p0 = c[t], win = c.slice(t), lo0 = p0 * Math.exp(-z * sHt), hi0 = p0 * Math.exp(z * sHt);
+      var mx = win[0], mn = win[0]; for (i = 0; i < win.length; i++) { if (win[i] > mx) mx = win[i]; if (win[i] < mn) mn = win[i]; }
+      var expRangePct = (hi0 - lo0) / p0 * 100, actRangePct = (mx - mn) / p0 * 100;
+      var wr = []; for (i = 1; i < win.length; i++) if (win[i] > 0 && win[i - 1] > 0) wr.push(Math.log(win[i] / win[i - 1]));
+      var m = 0; for (i = 0; i < wr.length; i++) m += wr[i]; m /= (wr.length || 1);
+      var v = 0; for (i = 0; i < wr.length; i++) v += (wr[i] - m) * (wr[i] - m); v = wr.length > 1 ? v / (wr.length - 1) : 0;
+      var realSig = Math.sqrt(v) * Math.sqrt(H), inside = (c[c.length - 1] >= lo0 && c[c.length - 1] <= hi0);
+      var vd = function (r) { return r == null ? '—' : (r > 1.25 ? 'expanded' : (r < 0.8 ? 'quiet' : 'as expected')); };
+      var rRange = expRangePct > 0 ? actRangePct / expRangePct : null, rVol = sHt > 0 ? realSig / sHt : null;
+      rows = '<div style="display:flex;gap:10px;flex-wrap:wrap;font-size:10px;margin-top:3px">' +
+        '<span>range <b style="color:var(--ink,#e6edf3)">' + actRangePct.toFixed(1) + '%</b> vs exp ' + expRangePct.toFixed(1) + '% <i style="color:var(--muted,#8b98a5)">(' + vd(rRange) + ')</i></span>' +
+        '<span>σ <b style="color:var(--ink,#e6edf3)">' + (realSig * 100).toFixed(1) + '%</b> vs exp ' + (sHt * 100).toFixed(1) + '% <i style="color:var(--muted,#8b98a5)">(' + vd(rVol) + ')</i></span>' +
+        '<span>close <b style="color:' + (inside ? '#2ecc8f' : '#ef5f4e') + '">' + (inside ? 'inside' : 'breach') + '</b></span></div>';
+    }
+    return '<div style="border-top:1px solid var(--line,#232a36);margin-top:8px;padding-top:6px">' +
+      '<div style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint,#646e7c)" title="Labeled prediction interval from the champion cone half-width; convert log-space ±z·σ_H to price.">Expected range (' + (lv * 100) + '% prediction band): ' + lo.toFixed(2) + ' – ' + hi.toFixed(2) + ' (±' + hwPct.toFixed(1) + '%)</div>' +
+      '<div style="font-size:9px;color:var(--faint,#646e7c);margin-top:1px">Last completed ' + H + 'd — expected vs actual:</div>' + rows + '</div>';
+  }
+
   function render(el, closes, coneEval, opts) {
     if (!el) return;
     opts = opts || {};
@@ -31,7 +57,9 @@
     var rec = coneEval && coneEval.recommend;
     var b = {}; ['sqrt_time', 'champion', 'arbiter'].forEach(function (k) { b[k] = bt(c, H, lv, SRC[k]); });
     var recBadge = rec ? '<span style="font-size:9px;font-weight:700;color:#0a0d12;background:' + (COLORS[rec] || '#c9d3de') + ';padding:1px 6px;border-radius:5px">server pick: ' + (LABEL[rec] || rec) + '</span>' : '';
-    var head = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint,#646e7c)">Cone σ-source coverage (H=' + H + ', ' + (lv * 100) + '%)</span>' + recBadge + '</div>';
+    var tip = 'Prediction-interval coverage backtest. Each source draws a ±z·σ band from history; the % is how often the realized ' + H + '-day return actually landed inside it. Lower interval score = better calibrated AND sharper. Server pick = lowest interval score within 5% of the target. VR<1 = mean-reverting (narrower than √t, fades); VR>1 = trending (wider, persists). Dispersion, not a directional forecast — research only.';
+    var head = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span title="' + tip + '" style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint,#646e7c);cursor:help;border-bottom:1px dotted var(--faint,#646e7c)">Cone σ-source coverage (H=' + H + ', ' + (lv * 100) + '%) ⓘ</span>' + recBadge + '</div>';
+    var eTile = _expTile(c, H, lv);
     var grid = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">';
     ['sqrt_time', 'champion', 'arbiter'].forEach(function (k) {
       var m = b[k], on = (k === rec);
@@ -42,7 +70,7 @@
         '</div>';
     });
     grid += '</div>';
-    el.innerHTML = head + grid;
+    el.innerHTML = head + grid + eTile;
     var cvs = el.querySelectorAll('canvas._clc');
     Array.prototype.forEach.call(cvs, function (cv) { var k = cv.getAttribute('data-src'); draw(cv, c, SRC[k], H, lv, COLORS[k]); });
   }

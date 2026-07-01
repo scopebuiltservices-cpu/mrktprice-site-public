@@ -165,6 +165,9 @@ jobs:
             # sources (sqrt-time / champion / ewma / arbiter) -> n["coneEval"].recommend, so the eventual
             # cone-sigma swap is an evidence-backed, one-line flip rather than a leap of faith.
             python tools/market_map/coneeval_board.py --map marketmap.json --hist hist || echo "::warning::cone-eval enrichment skipped"
+            # EXPECTED-vs-ACTUAL: turn the cone half-width into a labeled prediction band + score it against
+            # realized price range / volatility / volume -> n["expA"] (forward band, last reconciliation, accuracy).
+            python tools/market_map/expect_board.py --map marketmap.json --hist hist || echo "::warning::expected-vs-actual enrichment skipped"
             # REAL FLOAT (FMP /stable/shares-float, gated): the correct, much-smaller denominator for the
             # crowding short-interest % — engages the penalty on low-float, squeeze-prone names. FMP has NO
             # short interest, so the FTD numerator stays. Absent -> crowding_board falls back to mcap/price.

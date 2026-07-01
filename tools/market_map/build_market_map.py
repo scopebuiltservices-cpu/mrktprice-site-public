@@ -382,6 +382,13 @@ def build(names,mkt,ff,macro=None):
             au=(Bhi-sp)/a if (a==a and a>0) else None; ad=(sp-Blo)/a if (a==a and a>0) else None
             n["touch"]={"up":{"d":round(au,2) if au is not None else None,"p":round(prob_touch(sp,Bhi,sdl,21),2) if sdl==sdl else None},
                         "dn":{"d":round(ad,2) if ad is not None else None,"p":round(prob_touch(sp,Blo,sdl,21),2) if sdl==sdl else None}}
+            # PATH PANEL: MFE/MAE + touch odds + P(end>=63d-mean | touched the 63d high) over 21d, via the
+            # bridge-exact path_probability engine. Defensive: any failure leaves n["path"]=None; build continues.
+            try:
+                from path_probability import path_report as _preport
+                n["path"]=_preport(sp, sdl, 21, barrier_up=Bhi, barrier_dn=Blo, level=mean63, drift_daily=0.0) if (sdl==sdl and sdl>0) else None
+            except Exception:
+                n["path"]=None
             # ODDS LADDER: forward first-passage probabilities over a 21-day horizon (model-implied, driftless)
             def _pt(B): return round(prob_touch(sp,B,sdl,21),2) if (sdl==sdl and sdl>0) else None
             pHi=_pt(Bhi); pLo=_pt(Blo)

@@ -27,6 +27,8 @@ import math
 
 from metrics import _clean, _logret, ewma_vol, stdev, variance_ratio
 from anti_deviation import interval_score
+from dm_test import diebold_mariano
+import vol_loss
 
 METHODS = ("sqrt_gauss", "hv_gauss", "ewma_gauss", "garch_gauss",
            "conformal_sym", "conformal_stud_sym", "conformal_stud_asym")
@@ -80,6 +82,8 @@ def bakeoff(closes, H: int, alpha: float = 0.10, min_train: int = 120, min_cal: 
     N = len(c)
     z = _ppf(1 - alpha / 2.0)
     agg = {m: _agg() for m in METHODS}
+    series = {m: [] for m in METHODS}      # per-step (t, interval_score) for DM significance testing
+    volpairs = {m: [] for m in ("sqrt_gauss", "hv_gauss", "ewma_gauss", "garch_gauss")}  # (sigmaH^2, realized^2)
     # calibration buffers (leakage-free): raw H-step residuals + studentized residuals with issue-time scale
     raw_buf, stud_buf = [], []
     pending = []           # (maturity_index, raw_resid, sigma_issue)
@@ -150,10 +154,17 @@ def bakeoff(closes, H: int, alpha: float = 0.10, min_train: int = 120, min_cal: 
 
         for m, (lo, hi) in bands.items():
             a = agg[m]
+            iscv = interval_score(realized, lo, hi, alpha)
             a["n"] += 1
             a["cov"] += 1 if (lo <= realized <= hi) else 0
             a["width"] += (hi - lo)
-            a["isc"] += interval_score(realized, lo, hi, alpha)
+            a["isc"] += iscv
+            series[m].append((t, iscv))
+        r2 = realized * realized                       # 1-sample realized variance proxy (QLIKE is proxy-robust)
+        volpairs["sqrt_gauss"].append((sig_sqrt * sig_sqrt, r2))
+        volpairs["hv_gauss"].append((sig_hv * sig_hv, r2))
+        volpairs["ewma_gauss"].append((sig_ewma * sig_ewma, r2))
+        volpairs["garch_gauss"].append((sig_garch * sig_garch, r2))
 
         pending.append((t + H, realized, sig_stud))
         t += 1
@@ -165,10 +176,43 @@ def bakeoff(closes, H: int, alpha: float = 0.10, min_train: int = 120, min_cal: 
                           "avgWidth": round(a["width"] / a["n"], 6),
                           "meanIntervalScore": round(a["isc"] / a["n"], 6)}
     ranked = sorted(methods.items(), key=lambda kv: kv[1]["meanIntervalScore"])
+    best = ranked[0][0] if ranked else None
+
+    # DM significance: does the lowest-interval-score method SIGNIFICANTLY beat each other method?
+    # (a lower mean is not a real difference until Diebold-Mariano says so). A=best, B=other on the
+    # aligned per-step interval-score series -> meanDiff<0 & significant means best genuinely wins.
+    dm_vs_best = {}
+    if best:
+        bser = dict(series[best])
+        for m in methods:
+            if m == best:
+                continue
+            oser = dict(series[m])
+            common = sorted(set(bser) & set(oser))
+            if len(common) >= 8:
+                r = diebold_mariano([bser[t] for t in common], [oser[t] for t in common], h=H)
+                if r.get("ok"):
+                    dm_vs_best[m] = {"DMstar": r["DMstar"], "pValue": r["pValue"],
+                                     "bestBeats": bool(r["significant"] and r["meanDiff"] < 0)}
+
+    # variance-forecast scorecard (QLIKE proxy-robust) for the parametric vol arms vs realized r^2
+    vol_score = {}
+    for m, pairs in volpairs.items():
+        if len(pairs) >= 10 and m in methods:
+            vs = vol_loss.score_vol([p[0] for p in pairs], [p[1] for p in pairs])
+            vol_score[m] = {"qlike": (round(vs["qlike"], 6) if vs["qlike"] is not None else None),
+                            "mse": (round(vs["mse"], 12) if vs["mse"] is not None else None), "n": vs["n"]}
+    vol_ranked = sorted((m for m in vol_score if vol_score[m]["qlike"] is not None),
+                        key=lambda m: vol_score[m]["qlike"])
+
     return {"H": H, "alpha": alpha, "nominal": round(1 - alpha, 4),
             "methods": methods,
             "ranking": [m for m, _ in ranked],
-            "best": (ranked[0][0] if ranked else None)}
+            "best": best,
+            "dmVsBest": dm_vs_best,
+            "bestSignificantlyBeats": [m for m, d in dm_vs_best.items() if d["bestBeats"]],
+            "volScore": vol_score,
+            "volArmByQlike": vol_ranked}
 
 
 def run_bakeoff_multi(closes, horizons=(1, 5, 10, 21, 63), alpha: float = 0.10, **kw) -> dict:

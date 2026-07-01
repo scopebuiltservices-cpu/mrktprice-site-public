@@ -62,17 +62,19 @@ def _stats(pnl, h):
             "sharpe": round(sr, 4), "sharpeAnn": round(ann, 3), "skew": round(sk, 3), "kurt": round(ku, 3)}
 
 
-def _welch_t(a, b):
-    """Welch two-sample t on mean(a) vs mean(b). Returns (t, significant@~|t|>=1.98)."""
-    if len(a) < 3 or len(b) < 3:
+def _one_sample_t(x):
+    """One-sample t of mean(x) vs 0. Returns (t, |t|>=1.98). Full-sample VR is a NAME-LEVEL trend/
+    mean-reversion tendency (it cannot track fast regime switches), so the honest mechanism test is
+    directional per regime: in persist windows following the push should pay (mean>0); in fade windows
+    it should lose (mean<0). A single name usually lives in one regime, so we test each side on its own."""
+    if len(x) < 3:
         return None, False
-    ma, mb = sum(a) / len(a), sum(b) / len(b)
-    va = sum((x - ma) ** 2 for x in a) / (len(a) - 1)
-    vb = sum((x - mb) ** 2 for x in b) / (len(b) - 1)
-    se = math.sqrt(va / len(a) + vb / len(b))
+    m = sum(x) / len(x)
+    v = sum((y - m) ** 2 for y in x) / (len(x) - 1)
+    se = math.sqrt(v / len(x))
     if se <= 0:
         return None, False
-    t = (ma - mb) / se
+    t = m / se
     return round(t, 3), bool(abs(t) >= 1.98)
 
 
@@ -124,10 +126,14 @@ def validate(closes, r=5, h=10, q=None, zc=ZC, min_samples=12, warm=60):
         return {"verdict": "INSUFFICIENT", "reason": "only %d non-overlapping windows" % n,
                 "r": r, "h": h, "q": q, "n": n}
     A = _stats(pA, h); B = _stats(pB, h); C = _stats(pC, h)
-    # mechanism test: does following the push do better in persist than in fade?
-    tstat, mech_sig = _welch_t(persist_follow, fade_follow)
+    # directional mechanism tests: push-follow should PAY in persist (>0) and LOSE in fade (<0)
+    tP, sigP = _one_sample_t(persist_follow)
+    tF, sigF = _one_sample_t(fade_follow)
     mean_persist = round(sum(persist_follow) / len(persist_follow), 6) if persist_follow else None
     mean_fade = round(sum(fade_follow) / len(fade_follow), 6) if fade_follow else None
+    mech_persist = bool(sigP and mean_persist is not None and mean_persist > 0)   # push continues in persist
+    mech_fade = bool(sigF and mean_fade is not None and mean_fade < 0)            # push reverses in fade
+    mech_ok = mech_persist or mech_fade
     # best overlay by risk-adjusted return
     best = "B" if B["sharpe"] >= C["sharpe"] else "C"
     bestS = B if best == "B" else C
@@ -137,7 +143,7 @@ def validate(closes, r=5, h=10, q=None, zc=ZC, min_samples=12, warm=60):
     dsr = rank_engine.deflated_sharpe(bestS["sharpe"], bestS["n"], skew=bestS["skew"], kurt=bestS["kurt"], n_trials=3)
     pbo = VE.pbo_cscv(rows, S=6) if n >= 6 else None
     gate = VE.promotion_gate(dsr if dsr is not None else 0.0, pbo if pbo is not None else 1.0)
-    validated = bool(edge_sharpe > 0 and mech_sig and gate["deployable"])
+    validated = bool(edge_sharpe > 0 and mech_ok and gate["deployable"])
     verdict = "VALIDATED" if validated else "NOT VALIDATED"
     note = ("VR overlay separates continuation from reversal and beats direction-alone after DSR+PBO."
             if validated else
@@ -147,7 +153,8 @@ def validate(closes, r=5, h=10, q=None, zc=ZC, min_samples=12, warm=60):
             "strategies": {"A_baseline": A, "B_persistGate": B, "C_persistFade": C},
             "best": best, "edgeSharpe": edge_sharpe, "edgeMean": edge_mean,
             "mechanism": {"meanPersistFollow": mean_persist, "meanFadeFollow": mean_fade,
-                          "nPersist": nPersist, "nFade": nFade, "t": tstat, "significant": mech_sig},
+                          "nPersist": nPersist, "nFade": nFade, "tPersist": tP, "tFade": tF,
+                          "persistPays": mech_persist, "fadeReverses": mech_fade, "significant": mech_ok},
             "dsr": (round(dsr, 4) if dsr is not None else None),
             "pbo": (round(pbo, 4) if pbo is not None else None),
             "gate": gate, "note": note}

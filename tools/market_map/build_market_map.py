@@ -389,6 +389,14 @@ def build(names,mkt,ff,macro=None):
                 n["path"]=_preport(sp, sdl, 21, barrier_up=Bhi, barrier_dn=Blo, level=mean63, drift_daily=0.0) if (sdl==sdl and sdl>0) else None
             except Exception:
                 n["path"]=None
+            # KOLMOGOROV DUAL GATE: is the recent return law stationary vs the reference window? When it
+            # FAILS (regime shift), the forward path/cone odds above are unreliable. Defensive -> None.
+            try:
+                from kolmogorov_gate import dual_gate as _kgate
+                _kr=[math.log(cl[i]/cl[i-1]) for i in range(1,len(cl)) if cl[i]>0 and cl[i-1]>0]
+                n["kgate"]=_kgate(_kr) if len(_kr)>=90 else None
+            except Exception:
+                n["kgate"]=None
             # ODDS LADDER: forward first-passage probabilities over a 21-day horizon (model-implied, driftless)
             def _pt(B): return round(prob_touch(sp,B,sdl,21),2) if (sdl==sdl and sdl>0) else None
             pHi=_pt(Bhi); pLo=_pt(Blo)

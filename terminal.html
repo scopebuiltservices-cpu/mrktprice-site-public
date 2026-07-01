@@ -2167,7 +2167,7 @@ function load(sym,s){const c=s.closes,d=s.dates,vol=s.volumes||c.map(()=>0);cons
  const ret=n=>c.length>n?((c[c.length-1]/c[c.length-1-n]-1)*100).toFixed(1)+'%':'—';
  document.getElementById('trail').innerHTML=`<tr><td>1W</td><td class=r>${ret(5)}</td></tr><tr><td>1M</td><td class=r>${ret(21)}</td></tr><tr><td>3M</td><td class=r>${ret(63)}</td></tr><tr><td>Realized σ</td><td class=r>${(rvAnn*100).toFixed(0)}%</td></tr>`;
  if(!document.getElementById('mid').value||document.getElementById('mid').dataset.sym!==sym){document.getElementById('mid').value=last.toFixed(2);document.getElementById('low').value=(last*.90).toFixed(2);document.getElementById('high').value=(last*1.10).toFixed(2);document.getElementById('mid').dataset.sym=sym;}
- redraw();drawCone();buildCadence(sym,c,d);try{buildQLedger(sym,c,d);}catch(_e){}try{renderHARQ();}catch(_hq){}}
+ redraw();drawCone();buildCadence(sym,c,d);try{buildQLedger(sym,c,d);}catch(_e){}try{renderHARQ();}catch(_hq){}try{renderDirDeck();}catch(_dd){}}
 function redraw(){if(!CUR.c)return;const P0=CUR.last,mid=+document.getElementById('mid').value,low=+document.getElementById('low').value,high=+document.getElementById('high').value,H=+document.getElementById('hz').value,cf=(+document.getElementById('cf').value)/100,lev=document.getElementById('lev').checked;
  const vs=document.getElementById('volsrc').value;let sig=vs==='regime'?CUR.curRms:(vs==='garch'?CUR.garch.annVol/Math.sqrt(252):0.6*CUR.garch.annVol/Math.sqrt(252)+0.4*CUR.rvDaily);
  const _harqOn=!!(document.getElementById('tHARQ')&&document.getElementById('tHARQ').checked&&CUR.harq&&CUR.harq.volDaily>0);var _harqK=1;

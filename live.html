@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><script>/*mrkt-gate*/(function(){try{var ok=localStorage.getItem('mrkt.token')||localStorage.getItem('mrkt.ok')||localStorage.getItem('mrkt.code');if(!ok)location.replace('login.html');}catch(e){location.replace('login.html');}})();</script><meta charset="utf-8"/>
+<!DOCTYPE html><html lang="en"><head><script>/*mrkt-gate*/(function(){try{var ok=localStorage.getItem('mrkt.token')||localStorage.getItem('mrkt.ok')||localStorage.getItem('mrkt.code')||(document.cookie.indexOf('mrkt_ui=')>=0);if(!ok)location.replace('login.html');}catch(e){location.replace('login.html');}})();</script><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>MrktPrice — OpportunityTracker™ (OPT) Market Terminal</title>
 <style>
@@ -1732,7 +1732,7 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
  function mergeLatest(cached,rows){var d=cached.dates.slice(),c=cached.closes.slice(),v=cached.volumes.slice();var last=d.length?d[d.length-1]:'';
    rows.forEach(function(r){var dt=r[0];if(dt>last){d.push(dt);c.push(+r[1]);v.push(+r[2]||0);}else if(dt===last){c[c.length-1]=+r[1];v[v.length-1]=+r[2]||0;}});
    return{dates:d.slice(-CAP),closes:c.slice(-CAP),volumes:v.slice(-CAP)};}
- function fetchJSON(url){return fetch(url,{headers:_hdrs()}).then(function(r){if(r.status===401){needAuth('signin');throw new Error('sign in required');}if(r.status===402){needAuth('subscribe');throw new Error('subscription required');}if(!r.ok)return r.json().then(function(j){throw new Error(j.detail||('HTTP '+r.status));});return r.json();});}
+ function fetchJSON(url){return fetch(url,{headers:_hdrs(),credentials:'include'}).then(function(r){if(r.status===401){needAuth('signin');throw new Error('sign in required');}if(r.status===402){needAuth('subscribe');throw new Error('subscription required');}if(!r.ok)return r.json().then(function(j){throw new Error(j.detail||('HTTP '+r.status));});return r.json();});}
  function apiFetch(t,select){
    fetchJSON(MRKT_API+'/history?ticker='+encodeURIComponent(t)+'&rows=2520').then(function(j){
       if(!j.rows||!j.rows.length)throw new Error('no data');var s=splitRows(j.rows);

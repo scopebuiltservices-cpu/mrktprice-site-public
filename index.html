@@ -74,6 +74,9 @@ label.cl{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(
     var c=($('code').value||'').trim();
     if(!c){msg('Enter your access code to continue.','err');$('code').focus();return;}
     try{localStorage.setItem('mrkt.code',c);localStorage.removeItem('mrkt.token');}catch(e){}
+    // auth migration: mint an HttpOnly session cookie if the API supports it (harmless 404 until deployed;
+    // once live, the cookie is the credential and the localStorage write above can be removed in Phase 2).
+    try{var _a=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:8000':'https://mrktprice-data.onrender.com';fetch(_a+'/auth/session',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:c})}).catch(function(){});}catch(e){}
     msg('Welcome — opening your terminal…','ok');
     setTimeout(function(){location.href='terminal.html';},320);
   }

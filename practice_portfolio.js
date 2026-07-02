@@ -24,13 +24,19 @@
   // ---------- session equity curve (total book value over the session) ----------
   var LS_EQ = 'mrkt.practice.eq.';
   function _eqKey() { return LS_EQ + (new Date().toISOString().slice(0, 10)); }
-  function recordEquity(total) {
+  function recordEquity(total, bench) {
     var k = _eqKey(), buf = _ls(k, []), now = Date.now();
     if (total > 0 && (!buf.length || buf[buf.length - 1][0] < now - SAMPLE_MS)) {
-      buf.push([now, Math.round(total * 100) / 100]); if (buf.length > MAXPX) buf = buf.slice(-MAXPX); _save(k, buf);
+      buf.push([now, Math.round(total * 100) / 100, (bench != null && bench > 0) ? Math.round(bench * 1e4) / 1e4 : null]);
+      if (buf.length > MAXPX) buf = buf.slice(-MAXPX); _save(k, buf);
     }
     return buf;
   }
+  // ---------- realized P&L trade ledger ----------
+  var LS_TRADES = 'mrkt.practice.trades.v1';
+  function trades() { return _ls(LS_TRADES, []); }
+  function addTrade(tr) { var t = trades(); t.push(tr); if (t.length > 500) t = t.slice(-500); _save(LS_TRADES, t); }
+  function realizedTotal() { return trades().reduce(function (a, t) { return a + (t.pnl || 0); }, 0); }
   function sparkline(vals, w, h) {
     if (!vals || vals.length < 2) return '<span style="font-size:9px;color:var(--faint,#646e7c)">accumulating…</span>';
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), rng = (hi - lo) || 1, n = vals.length;
@@ -40,6 +46,26 @@
     return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="display:block">'
       + '<line x1="0" y1="' + yb + '" x2="' + w + '" y2="' + yb + '" stroke="var(--line,#2a2f3a)" stroke-width="1" stroke-dasharray="2,2"/>'
       + '<polyline points="' + pts + '" fill="none" stroke="' + col + '" stroke-width="1.6"/></svg>';
+  }
+  // dual-line: book value (solid) + benchmark normalised to book at its first sample (dashed grey)
+  function equitySpark(eq, w, h) {
+    if (!eq || eq.length < 2) return '<span style="font-size:9px;color:var(--faint,#646e7c)">accumulating…</span>';
+    var evals = eq.map(function (p) { return p[1]; }), n = eq.length, i;
+    var bIdx = -1; for (i = 0; i < n; i++) { if (eq[i][2] != null && eq[i][2] > 0) { bIdx = i; break; } }
+    var bvals = null;
+    if (bIdx >= 0) { var e0 = evals[bIdx], b0 = eq[bIdx][2]; bvals = eq.map(function (p) { return (p[2] != null && p[2] > 0) ? e0 * (p[2] / b0) : null; }); }
+    var all = evals.slice(); if (bvals) bvals.forEach(function (v) { if (v != null) all.push(v); });
+    var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all), rng = (hi - lo) || 1;
+    function poly(vals, col, dash) {
+      var pts = []; for (var j = 0; j < vals.length; j++) { if (vals[j] == null) continue; pts.push(((j / (n - 1)) * w).toFixed(1) + ',' + (h - ((vals[j] - lo) / rng) * h).toFixed(1)); }
+      if (pts.length < 2) return '';
+      return '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + col + '" stroke-width="1.6"' + (dash ? ' stroke-dasharray="3,2"' : '') + '/>';
+    }
+    var up = evals[n - 1] >= evals[0], eqcol = up ? '#2ecc8f' : '#ef5f4e';
+    var yb = (h - ((evals[0] - lo) / rng) * h).toFixed(1);
+    return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="display:block">'
+      + '<line x1="0" y1="' + yb + '" x2="' + w + '" y2="' + yb + '" stroke="var(--line,#2a2f3a)" stroke-width="1" stroke-dasharray="2,2"/>'
+      + (bvals ? poly(bvals, '#8a93a0', true) : '') + poly(evals, eqcol, false) + '</svg>';
   }
   // backfill a cost basis for any holding missing one (uses last close) so P&L is always complete
   function migrateCost() {
@@ -188,11 +214,20 @@
     var totCost = rows.reduce(function (a, r) { return a + (r.costBasis || 0); }, 0);
     var totPnl = rows.reduce(function (a, r) { return a + (r.pnl != null ? r.pnl : 0); }, 0);
     var totPnlPct = (totCost > 0) ? (totPnl / totCost * 100) : null;
-    // session equity curve
-    var eq = rows.length ? recordEquity(total) : _ls(_eqKey(), []);
+    // session equity curve + benchmark (SPY) overlay
+    var BENCH = 'SPY', bspot = spot(BENCH), benchPx = bspot ? bspot.price : null;
+    var eq = rows.length ? recordEquity(total, benchPx) : _ls(_eqKey(), []);
     var eqVals = eq.map(function (p) { return p[1]; });
     var eqStart = eqVals.length ? eqVals[0] : null, eqLo = eqVals.length ? Math.min.apply(null, eqVals) : null, eqHi = eqVals.length ? Math.max.apply(null, eqVals) : null;
     var eqPct = (eqStart > 0) ? (total / eqStart - 1) * 100 : null;
+    // relative performance vs benchmark over the shared window (anchored at first bench sample)
+    var relPct = null, _bi = -1; for (var _k = 0; _k < eq.length; _k++) { if (eq[_k][2] != null && eq[_k][2] > 0) { _bi = _k; break; } }
+    if (_bi >= 0 && eq.length - 1 > _bi && eq[eq.length - 1][2] != null && eq[_bi][1] > 0) {
+      var bookRet = eq[eq.length - 1][1] / eq[_bi][1] - 1, benchRet = eq[eq.length - 1][2] / eq[_bi][2] - 1;
+      relPct = (bookRet - benchRet) * 100;
+    }
+    // realized P&L (from the trade ledger)
+    var realized = realizedTotal(), nTrades = trades().length;
     function _tile(lab, big, sub, col) { return '<div style="flex:1;min-width:158px;background:var(--panel,#10141b);border:1px solid var(--line,#2a2f3a);border-radius:9px;padding:8px 10px"><div style="font-size:8px;letter-spacing:.5px;text-transform:uppercase;color:var(--faint,#646e7c)">' + lab + '</div><div style="font-size:18px;font-weight:800;line-height:1.1;margin-top:2px;color:' + (col || 'var(--ink,#eef3f8)') + '">' + big + '</div><div style="font-size:9px;color:var(--muted,#8a93a0);margin-top:3px">' + sub + '</div></div>'; }
 
     var css = 'background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:10px;padding:10px 12px';
@@ -203,9 +238,13 @@
 
     // tiles: session equity-curve sparkline + unrealized P&L + day change
     if (rows.length) {
+      var relStr = (relPct != null) ? ' · <span style="color:' + (relPct >= 0 ? '#2ecc8f' : '#ef5f4e') + '">' + (relPct >= 0 ? '+' : '') + relPct.toFixed(2) + '% vs ' + BENCH + '</span>' : '';
+      var legend = (relPct != null) ? '<div style="font-size:8px;color:var(--faint,#646e7c);margin-top:1px"><span style="color:#2ecc8f">▬</span> book · <span style="color:#8a93a0">╌</span> ' + BENCH + '</div>' : '';
+      var bookSub = equitySpark(eq, 150, 30) + '<span style="display:inline-block;margin-top:2px">session ' + pctSpan(eqPct) + relStr + '</span>' + legend;
       h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 2px">'
-        + _tile('Book value · session', fmtMoney(total), sparkline(eqVals, 150, 30) + '<span style="display:inline-block;margin-top:2px">session ' + pctSpan(eqPct) + (eqLo != null ? ' · lo ' + fmtMoney(eqLo) + ' · hi ' + fmtMoney(eqHi) : '') + '</span>')
+        + _tile('Book value · session', fmtMoney(total), bookSub)
         + _tile('Unrealized P&amp;L', (totPnl >= 0 ? '+' : '-') + fmtMoney(Math.abs(totPnl)), 'vs cost ' + fmtMoney(totCost) + ' · ' + pctSpan(totPnlPct), totPnl >= 0 ? '#2ecc8f' : '#ef5f4e')
+        + _tile('Realized P&amp;L', (realized >= 0 ? '+' : '-') + fmtMoney(Math.abs(realized)), (nTrades ? (nTrades + ' closed trade' + (nTrades === 1 ? '' : 's')) : 'no closed trades yet') + ' · booked gains', nTrades ? (realized >= 0 ? '#2ecc8f' : '#ef5f4e') : 'var(--muted,#8a93a0)')
         + _tile('Day change', (totDay == null ? '—' : (totDay >= 0 ? '+' : '') + totDay.toFixed(2) + '%'), 'book move today · ' + (liveOn ? 'live' : 'last close'), totDay == null ? 'var(--ink,#eef3f8)' : (totDay >= 0 ? '#2ecc8f' : '#ef5f4e'))
         + '</div>';
     }
@@ -243,7 +282,7 @@
           + '<td>' + pctSpan(r.m5) + '</td>'
           + '<td>' + pctSpan(r.m15) + '</td>'
           + '<td style="text-align:left;padding-left:8px">' + reg + '</td>'
-          + '<td><span class="ppDel" data-sym="' + r.sym + '" title="remove" style="cursor:pointer;color:var(--faint,#646e7c);padding:0 4px">×</span></td></tr>';
+          + '<td style="white-space:nowrap"><span class="ppSell" data-sym="' + r.sym + '" title="record a sale — realizes P&L into the ledger" style="cursor:pointer;color:#39b6ff;font-size:10px;padding:0 4px">sell</span><span class="ppDel" data-sym="' + r.sym + '" title="remove (no P&L booked)" style="cursor:pointer;color:var(--faint,#646e7c);padding:0 4px">×</span></td></tr>';
       });
       h += '</table></div>';
 
@@ -256,6 +295,20 @@
         });
         h += '</div>';
       }
+    }
+    // realized-P&L trade log (shows even with no current holdings)
+    var _tr = trades();
+    if (_tr.length) {
+      h += '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:10px;color:var(--muted,#8a93a0);letter-spacing:.04em;text-transform:uppercase">Trade log — realized P&amp;L (' + _tr.length + ')</summary><div style="margin-top:5px">';
+      _tr.slice().reverse().slice(0, 25).forEach(function (t) {
+        var d = new Date(t.ts), ds = d.toISOString().slice(0, 10) + ' ' + d.toISOString().slice(11, 16);
+        h += '<div style="display:flex;gap:8px;justify-content:space-between;font-size:10px;border-top:1px solid var(--line,#2a2f3a);padding:2px 0">'
+          + '<span style="color:var(--faint,#646e7c)">' + ds + '</span>'
+          + '<span style="color:var(--muted,#8a93a0)">sold <b style="color:var(--ink,#eef3f8)">' + t.shares + '</b> ' + t.sym + ' @ ' + t.price.toFixed(2) + ' <span style="color:var(--faint,#646e7c)">(cost ' + t.cost.toFixed(2) + ')</span></span>'
+          + '<span style="font-weight:700;color:' + (t.pnl >= 0 ? '#2ecc8f' : '#ef5f4e') + '">' + (t.pnl >= 0 ? '+' : '-') + '$' + Math.abs(t.pnl).toFixed(2) + '</span></div>';
+      });
+      h += '<div style="font-size:9px;color:var(--faint,#646e7c);margin-top:4px">Realized total: <b style="color:' + (realized >= 0 ? '#2ecc8f' : '#ef5f4e') + '">' + (realized >= 0 ? '+' : '-') + '$' + Math.abs(realized).toFixed(2) + '</b> across ' + _tr.length + ' sale' + (_tr.length === 1 ? '' : 's') + ' · <span class="ppClearTr" style="cursor:pointer;color:#39b6ff">clear log</span></div>';
+      h += '</div></details>';
     }
     // education (always available)
     h += '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:10px;color:var(--muted,#8a93a0);letter-spacing:.04em;text-transform:uppercase">Portfolio management — principles</summary><div style="margin-top:5px">';
@@ -282,6 +335,21 @@
       document.getElementById('ppSym').value = ''; document.getElementById('ppSh').value = ''; document.getElementById('ppCost').value = '';
       poll(); render();
     };
+    Array.prototype.forEach.call(_mount.querySelectorAll('.ppSell'), function (el) {
+      el.onclick = function () {
+        var s = el.getAttribute('data-sym'); var h = holdings(); var ex = h.filter(function (x) { return x.t === s; })[0]; if (!ex) return;
+        var sp = spot(s); if (!sp) { window.alert('No price available for ' + s + ' right now — try again during/after a data refresh.'); return; }
+        var maxSh = ex.shares;
+        var ans = window.prompt('Sell how many shares of ' + s + ' at ' + sp.price.toFixed(2) + '?  (max ' + maxSh + ')', String(maxSh));
+        if (ans == null) return; var q = parseFloat(ans); if (!(q > 0)) return; q = Math.min(q, maxSh);
+        var cost = (ex.cost > 0) ? ex.cost : sp.price;
+        addTrade({ ts: Date.now(), sym: s, side: 'sell', shares: q, price: Math.round(sp.price * 1e4) / 1e4, cost: Math.round(cost * 1e4) / 1e4, pnl: Math.round(q * (sp.price - cost) * 100) / 100, src: sp.src });
+        var rem = maxSh - q; if (rem > 1e-9) { ex.shares = rem; } else { h = h.filter(function (x) { return x.t !== s; }); }
+        setHoldings(h); render();
+      };
+    });
+    var clr = _mount.querySelector('.ppClearTr');
+    if (clr) clr.onclick = function () { if (window.confirm('Clear the realized-P&L trade log? This cannot be undone.')) { _save(LS_TRADES, []); render(); } };
     Array.prototype.forEach.call(_mount.querySelectorAll('.ppDel'), function (el) {
       el.onclick = function () { var s = el.getAttribute('data-sym'); setHoldings(holdings().filter(function (x) { return x.t !== s; })); render(); };
     });

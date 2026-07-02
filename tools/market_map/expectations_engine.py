@@ -176,8 +176,14 @@ def reconcile(price0, sigma_H, level, win_closes, win_rets, win_vols, vol_base, 
     }
 
 
-def _champion_sigma(closes, H):
-    """VR-corrected horizon vol sigma_d*sqrt(H*VR) (the current cone champion)."""
+def _champion_sigma(closes, H, highs=None, lows=None):
+    """VR-corrected horizon vol sigma_d*sqrt(H*VR) (the current cone champion).
+
+    When intraday HIGH/LOW are supplied, the per-day sigma is a reliability blend of the close-to-close
+    estimate with the PARKINSON range estimator (sqrt((1/(4 ln2 N)) sum ln(H/L)^2)), which is ~5x more
+    efficient than close-to-close, so it de-noises the level while the VR term keeps the persistence
+    correction. With no H/L the result is bit-for-bit identical to the close-to-close champion (the JS
+    parity golden and all prior behavior are preserved)."""
     c = [x for x in closes if x and x > 0]
     if len(c) < 30:
         return None
@@ -187,19 +193,28 @@ def _champion_sigma(closes, H):
     sd = math.sqrt(v)
     if sd <= 0:
         return None
+    # range-aware daily sigma blend (Parkinson is ~5x more efficient); pure additive — inert without H/L
+    sd_use = sd
+    if highs is not None and lows is not None:
+        try:
+            pk = metrics.parkinson_vol(highs, lows, n=min(len(c), max(20, H)))
+        except Exception:
+            pk = None
+        if pk and pk > 0:
+            sd_use = math.sqrt(0.7 * pk * pk + 0.3 * sd * sd)   # weight the efficient estimator, keep some C2C
     q = min(H, max(2, len(c) // 4))
     if len(r) < q * 4:
-        return sd * math.sqrt(H)
+        return sd_use * math.sqrt(H)
     v1 = sum((x - m) ** 2 for x in r) / len(r)
     if v1 <= 0:
-        return sd * math.sqrt(H)
+        return sd_use * math.sqrt(H)
     s = 0.0
     for k in range(q - 1, len(r)):
         su = sum(r[k - i] for i in range(q))
         s += (su - q * m) ** 2
     s /= (len(r) - q + 1)
     vr = s / (q * v1)
-    return sd * math.sqrt(H * (vr if vr > 0 else 1.0))
+    return sd_use * math.sqrt(H * (vr if vr > 0 else 1.0))
 
 
 def accuracy(closes, vols, H=21, level=0.90, sigma_fn=None, min_train=60, stride=3):

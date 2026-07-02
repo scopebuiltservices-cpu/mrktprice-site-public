@@ -39,6 +39,7 @@ class PriceSource:
         # bounding total wasted time to ~_yf_break x 10s instead of N x 10s.
         self._yf_fail = 0
         self._yf_break = 5
+        self._cache = {}                          # {sym: result} warmed by prefetch(); serves get_cached()
 
     def get(self, sym, min_rows=10):
         """FMP Ultimate first; yfinance fallback when enabled. dict(cl,hi,lo,vo,src) or None."""
@@ -74,6 +75,38 @@ class PriceSource:
                 self.health["yfTripped"] = True
         self.health["miss"] += 1
         return None
+
+    def prefetch(self, symbols, workers=6):
+        """Warm the price cache CONCURRENTLY so the serial per-name build loop hits cache instead of making
+        ~700 sequential network calls (the root cause of the ~20-min timeout that froze publishes). Each
+        symbol still runs the normal FMP-primary -> yfinance path incl. the circuit breaker; a bounded worker
+        pool keeps request bursts modest. Health counters are diagnostic (not lock-guarded) so under
+        concurrency they may be off by a few — acceptable. Returns cache size."""
+        import concurrent.futures as _cf
+        syms = [s for s in dict.fromkeys(symbols or []) if s]     # dedup, preserve order
+        if not syms:
+            return len(self._cache)
+        w = max(1, min(int(workers or 1), 12))
+        def _one(sym):
+            try:
+                return sym, self.get(sym)
+            except Exception:
+                return sym, None
+        with _cf.ThreadPoolExecutor(max_workers=w) as ex:
+            for sym, r in ex.map(_one, syms):
+                self._cache[sym] = r
+        return len(self._cache)
+
+    def get_cached(self, sym, min_rows=10):
+        """Cache-first accessor (build loop uses this). Serves a warmed result when it satisfies min_rows;
+        a cached None (known failure) is returned as-is to avoid re-hammering; otherwise a live get()."""
+        c = self._cache.get(sym, "\x00MISS")
+        if c != "\x00MISS":
+            if c is None or len((c.get("cl") if isinstance(c, dict) else None) or []) >= min_rows:
+                return c
+        r = self.get(sym, min_rows)
+        self._cache[sym] = r
+        return r
 
     def price_share(self):
         h = self.health

@@ -915,7 +915,7 @@ def real_universe():
     except Exception as _he:
         globals()["_FMP_HEALTH"]=None
     def _get_hist(sym, min_rows=10):
-        return _PS.get(sym, min_rows)
+        return _PS.get_cached(sym, min_rows)
     try:
         from free_financial_data.sec_client import SecClient  # optional EDGAR client (vendored in private repo only)
         sec=SecClient()
@@ -931,6 +931,14 @@ def real_universe():
     except Exception as _ue:
         sys.stderr.write("universe_fetch failed (%s); using SEED\n"%_ue); _UNIV=SEED
     sys.stderr.write("EQUITY UNIVERSE: %d names (source=%s)\n"%(len(_UNIV), "fetch" if _UNIV is not SEED else "SEED"))
+    # CONCURRENT PRICE PREFETCH: warm the whole universe in a bounded thread pool so the per-name loop below
+    # reads from cache instead of making ~700 SERIAL network calls (the root cause of the ~20-min build
+    # timeout that froze publishes). FMP-primary path + yfinance circuit breaker still apply per symbol.
+    try:
+        _pf=_PS.prefetch([u[0] for u in _UNIV], workers=int(os.environ.get("MRKT_FETCH_WORKERS","6") or 6))
+        sys.stderr.write("price prefetch: warmed %d/%d names concurrently\n"%(_pf,len(_UNIV)))
+    except Exception as _pfe:
+        sys.stderr.write("price prefetch skipped (%s)\n"%_pfe)
     for sym,nm,sec_name,code in _UNIV:        # full Nasdaq+Dow when UNIVERSE_MODE=nasdaq_full; SEED otherwise
         try:
             _ph=_get_hist(sym, min_rows=10)            # FMP Ultimate primary -> yfinance fallback

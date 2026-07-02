@@ -27,7 +27,6 @@ jobs:
         run: pip install --quiet requests
       - name: Probe FMP Ultimate endpoints
         env:
-          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
           FMP_ULTIMATE_API_KEY: ${{ secrets.FMP_ULTIMATE_API_KEY }}
         run: |
           python tools/market_map/fmp_healthcheck.py --out fmp_health.json

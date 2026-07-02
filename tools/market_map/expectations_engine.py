@@ -18,6 +18,7 @@ Per the "Econometric Chart Marks" guidance, the band carries its TYPE and LEVEL.
 verified against planted structure (centred ratios, QLIKE=0 on a perfect forecast, log-z sign).
 """
 import math
+import random
 
 import metrics
 import path_probability as PP
@@ -58,6 +59,58 @@ def expected_band(price, sigma_H, level=0.90):
     return {"lo": round(lo, 4), "hi": round(hi, 4),
             "halfWidthPct": round(z * sigma_H * 100.0, 3), "rangePct": round((hi - lo) / price * 100.0, 3),
             "level": level, "z": round(z, 4), "sigmaH": round(sigma_H, 6), "kind": "prediction interval"}
+
+
+def _qtile(sorted_arr, qq):
+    """Linear-interpolated quantile of a pre-sorted list."""
+    n = len(sorted_arr)
+    if n == 0:
+        return None
+    if n == 1:
+        return sorted_arr[0]
+    idx = qq * (n - 1)
+    lo = int(math.floor(idx)); hi = min(lo + 1, n - 1); frac = idx - lo
+    return sorted_arr[lo] * (1.0 - frac) + sorted_arr[hi] * frac
+
+
+def expected_band_boot(price, closes, level=0.90, H=21, B=1000, p=0.1, seed=12345):
+    """DEPENDENCE-AWARE endpoint prediction interval via the Politis-Romano STATIONARY BOOTSTRAP.
+
+    The parametric expected_band assumes i.i.d. Gaussian daily log-returns (endpoint = price*exp(±z*sigma_H)).
+    Real return series are autocorrelated/heteroskedastic, so that band is mis-sized. This resamples the daily
+    log-return series with geometric (mean 1/p) blocks — preserving short-range dependence — forms B horizon
+    (H-step) cumulative sums, and reads the empirical (1±level)/2 quantiles as the price band. No distributional
+    assumption; the band 'earns its width' from the series' own dependence. Deterministic (seeded), pure stdlib."""
+    if not (price and price > 0):
+        return None
+    c = [float(x) for x in (closes or []) if x is not None and float(x) > 0]
+    if len(c) < H + 30:
+        return None
+    lr = [math.log(c[i] / c[i - 1]) for i in range(1, len(c)) if c[i] > 0 and c[i - 1] > 0]
+    n = len(lr)
+    if n < H + 5:
+        return None
+    rng = random.Random(seed)
+    ends = []
+    for _b in range(int(B)):
+        s = 0.0
+        i = rng.randrange(n)
+        for _step in range(H):
+            s += lr[i]
+            i = rng.randrange(n) if rng.random() < p else (i + 1) % n   # stationary bootstrap: restart w.p. p, else advance
+        ends.append(s)
+    ends.sort()
+    a = (1.0 - level) / 2.0
+    loln = _qtile(ends, a); hiln = _qtile(ends, 1.0 - a)
+    if loln is None or hiln is None:
+        return None
+    lo = price * math.exp(loln); hi = price * math.exp(hiln)
+    med = _qtile(ends, 0.5)
+    return {"lo": round(lo, 4), "hi": round(hi, 4),
+            "halfWidthPct": round((math.log(hi / lo) / 2.0) * 100.0, 3) if lo > 0 else None,
+            "rangePct": round((hi - lo) / price * 100.0, 3),
+            "medDriftPct": round((math.exp(med) - 1.0) * 100.0, 3) if med is not None else None,
+            "level": level, "H": H, "B": int(B), "p": p, "kind": "stationary-bootstrap prediction interval"}
 
 
 def expected_log_range(sigma_H, H, drift_H=0.0):

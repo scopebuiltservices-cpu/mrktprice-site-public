@@ -32,6 +32,7 @@ def expect_for(closes, vols, H=21, level=0.90):
     if not sH or sH <= 0:
         return None
     band = EE.expected_band(c[-1], sH, level)
+    bandBoot = EE.expected_band_boot(c[-1], c, level=level, H=H)   # dependence-aware (stationary bootstrap) endpoint PI
     last = None
     if len(c) >= H + 40:
         t = len(c) - H - 1
@@ -44,7 +45,7 @@ def expect_for(closes, vols, H=21, level=0.90):
             last = EE.reconcile(c[t], sHt, level, win, rets, wv, base, c[-1])
     acc = EE.accuracy(c, vols, H=H, level=level)
     proj = EE.path_projection(c, vols, H=H)  # dispersion+persistence -> % on the expected path + top price/vol
-    return {"band": band, "last": last, "accuracy": acc, "proj": proj, "H": H, "level": level}
+    return {"band": band, "bandBoot": bandBoot, "last": last, "accuracy": acc, "proj": proj, "H": H, "level": level}
 
 
 def _load_hist(hist_dir, ticker):

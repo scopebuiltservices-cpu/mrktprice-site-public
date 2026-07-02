@@ -3260,6 +3260,17 @@ function renderDirDeck(){
   var cVal,cCol,cSub;
   if(!vp){cVal='—';cCol='var(--faint,#646e7c)';cSub='need ~40+ daily closes for a VR read';}
   else{cVal=vp.label+' <span style="font-size:11px;font-weight:600;color:var(--muted,#8a93a0)">VR '+vp.vr.toFixed(2)+(vp.z!=null?' · z '+vp.z.toFixed(1):'')+'</span>';cCol=vp.color;cSub=vp.read;}
+  // --- expected path tile: % on the path + expected TOP price/volume before theta (dispersion x persistence) ---
+  var pp=null; try{pp=_pathProj();}catch(_pe){}
+  var pVal,pCol,pSub;
+  if(!pp){pVal='—';pCol='var(--faint,#646e7c)';pSub='need ~60+ daily closes';}
+  else if(pp.smart){
+    pVal=pp.pct.toFixed(0)+'% '+(pp.dir>0?'▲':'▼'); pCol=(pp.dir>0?'#2ecc8f':'#ef5f4e');
+    pSub='peak ~$'+pp.peakPrice.toFixed(2)+' ('+(pp.peakPct>=0?'+':'')+pp.peakPct.toFixed(1)+'%) · ~'+pp.ttp.toFixed(0)+'d'+(pp.topMult?' · top vol '+pp.topMult.toFixed(1)+'×':'');
+  } else {
+    pVal=pp.pct.toFixed(0)+'%'; pCol='var(--muted,#8a93a0)';
+    pSub='no significant drift — expected path is ~a coin-flip';
+  }
   // server-side, selection-adjusted verdict (dirvr_board): does the persist/fade overlay actually BEAT
   // following the direction alone? walk-forward + DSR + PBO. The synthesis only CLAIMS an edge when proven.
   var dvr=null; try{var _mm=window.MMAP&&window.MMAP.names; if(_mm){for(var _di=0;_di<_mm.length;_di++){if((_mm[_di].t||'').toUpperCase()===(CUR.sym||'').toUpperCase()){dvr=_mm[_di].dirVR;break;}}}}catch(_de){}
@@ -3285,6 +3296,7 @@ function renderDirDeck(){
     +'<div style="display:flex;gap:6px">'
       +tile('Intraday direction · 15-min engine', iVal, iCol, iSub, iBadge, 'Intraday-confirmed direction comes from the separate intraday engine (consecutive 15-min confirms), not the cone.')
       +tile('Cone persistence · VR', cVal, cCol, cSub, '', 'The cone tells you whether a confirmed push is likely to persist (VR>1) or fade (VR<1).')
+      +tile('Expected path · H=21d', pVal, pCol, pSub, '', 'Probability the move finishes in the expected direction = Φ(drift/σ_H), with drift bounded by the measured variance-ratio persistence. Peak = expected Maximum Favorable Excursion (top price), timed before the OU half-life (θ). Top volume = median × the historical volume-elasticity to move size. Shown where statistically warranted.')
     +'</div>'
     +(verdict?'<div style="font-size:9px;color:var(--ink,#eef3f8);margin-top:4px;padding:4px 7px;background:rgba(255,255,255,.03);border:1px solid var(--line,#27313f);border-radius:7px">'+verdict+'</div>':'')
     +'<div style="font-size:8px;color:var(--faint,#646e7c);margin-top:3px;line-height:1.4">Intraday-confirmed direction comes from the separate intraday engine (consecutive 15-min confirms), <b>not the cone</b>; the cone tells you whether a confirmed push is likely to <b style="color:#2ecc8f">persist (VR&gt;1)</b> or <b style="color:#ef5f4e">fade (VR&lt;1)</b>. <span style="opacity:.85">Persist/fade shows only when the Lo-MacKinlay VR is statistically significant (|z|&ge;1.64, multi-day scale); the intraday tile’s <b>next-bar&nbsp;%</b> is the intraday-scale persistence.</span></div>'

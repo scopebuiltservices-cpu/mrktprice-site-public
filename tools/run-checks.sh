@@ -24,7 +24,7 @@ for t in $(find tools -name 'test_*.py' | sort); do
 done
 
 echo "==> 3/6  Node unit tests (auto-discovered)"
-for t in $(find tools -name 'test_*.mjs' | sort); do
+for t in $(find . -path ./.git -prune -o -path ./node_modules -prune -o -name 'test_*.mjs' -print | sort); do
   echo "    - $t"
   node "$t" || { echo "   TEST FAIL: $t"; fail=1; }
 done

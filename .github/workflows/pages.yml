@@ -120,6 +120,10 @@ jobs:
           MARKETAUX_API_KEY: ${{ secrets.MARKETAUX_API_KEY }}
           MRKT_FETCH_CURVE: "1"
           RUSSELL_LIMIT: "120"
+          # Universe cap: S&P 500 + Dow are always kept; the remainder is filled with the top Nasdaq
+          # names by market cap up to this ceiling. Keeps the FMP price+enrichment fetch inside the
+          # 20-min job budget (the full Nasdaq Composite ~2,669 names overran it and blocked publish).
+          UNIVERSE_LIMIT: "1200"
         run: |
           python -m pip install --quiet --upgrade pip
           pip install --quiet -r tools/market_map/requirements.txt

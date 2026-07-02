@@ -21,11 +21,8 @@ BULK = {
 
 
 def _key():
-    for k in ("FMP_ULTIMATE_API_KEY", "FMP_API_KEY", "FMP_UTIMATE_API_KEY"):
-        v = os.environ.get(k, "").strip()
-        if v:
-            return v
-    return ""
+    v = os.environ.get("FMP_ULTIMATE_API_KEY", "").strip()
+    return v if v else ""
 
 
 def _num(x):

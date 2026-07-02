@@ -27,7 +27,7 @@ def get(url):
 def n(x): return len(x) if isinstance(x, list) else 0
 K = key(); core_ok = True
 print("=" * 64); print("MrktPrice universe data-source smoke test"); print("=" * 64)
-print("FMP key present:", bool(K), "(env FMP_API_KEY / FMP_ULTIMATE_API_KEY)")
+print("FMP key present:", bool(K), "(env FMP_ULTIMATE_API_KEY)")
 if K:
     for label, stable_ep, v3_ep, need in [
         ("S&P 500 constituents", "sp500-constituent", "sp500_constituent", True),

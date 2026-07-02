@@ -8,8 +8,7 @@
                                 driver series + the raw curve/commodity series for the output block
 
 Design rules:
-  - KEY: reads FMP_API_KEY, falling back to FMP_ULTIMATE_API_KEY / FMP_UTIMATE_API_KEY (matches the
-    GitHub Actions secret mapping) so whichever name the Ultimate secret carries is picked up.
+  - KEY: reads FMP_ULTIMATE_API_KEY (matches the GitHub Actions secret mapping).
   - FAIL-SOFT: any error -> None / {} so the caller can fall back to yfinance/stooq (labeled).
   - LABEL: every series is tagged source="FMP Ultimate" for the UI / splash provenance.
 Research only; not investment advice.
@@ -33,11 +32,8 @@ _DRIVER_SYMS = {"OIL":"CLUSD","BRENT":"BZUSD","NATGAS":"NGUSD","GOLD":"GCUSD","S
 
 
 def _key():
-    for k in ("FMP_ULTIMATE_API_KEY", "FMP_API_KEY", "FMP_UTIMATE_API_KEY"):
-        v = os.environ.get(k, "").strip()
-        if v:
-            return v
-    return ""
+    v = os.environ.get("FMP_ULTIMATE_API_KEY", "").strip()
+    return v if v else ""
 
 
 def have_key():
@@ -528,7 +524,7 @@ def probe_eod(symbol="AAPL", sess=None):
     key = _key()
     if not key:
         return {"ok": False, "reason": "missing",
-                "message": "no FMP key in env (FMP_API_KEY / FMP_ULTIMATE_API_KEY / FMP_UTIMATE_API_KEY)", "status": None}
+                "message": "no FMP key in env (FMP_ULTIMATE_API_KEY)", "status": None}
     try:
         import requests
     except Exception as e:
@@ -567,7 +563,7 @@ __all__ = ["eod_history", "eod_ohlcv", "treasury_curve", "commodities_list", "co
 if __name__ == "__main__":
     import sys, json
     if not have_key():
-        sys.stderr.write("fmp_history: no FMP key in env (FMP_API_KEY / FMP_ULTIMATE_API_KEY)\n"); sys.exit(1)
+        sys.stderr.write("fmp_history: no FMP key in env (FMP_ULTIMATE_API_KEY)\n"); sys.exit(1)
     cur = treasury_curve()
     sys.stderr.write("treasury asof=%s 10Y=%s 2s10s=%s\n" % (
         (cur or {}).get("asof"), (cur or {}).get("tenors", {}).get("10Y"),

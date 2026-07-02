@@ -1,4 +1,4 @@
-"""Gated Financial Modeling Prep connector. Runs only when FMP_API_KEY is set; returns a price +
+"""Gated Financial Modeling Prep connector. Runs only when FMP_ULTIMATE_API_KEY is set; returns a price +
 valuation dict (trailing/forward P/E, PEG, EV/EBITDA, EPS growth) for one ticker. Research only.
 
 SMARTER KEY HANDLING (2026): probe_key() makes ONE classified validation call up front so the
@@ -14,11 +14,8 @@ def _key():
     """Read the FMP key, accepting whichever name the Ultimate secret carries (matches fmp_history +
     the GitHub Actions secret mapping). Without this, a secret named FMP_ULTIMATE_API_KEY would power
     prices/macro but silently disable the valuation/premium connector."""
-    for k in ("FMP_ULTIMATE_API_KEY", "FMP_API_KEY", "FMP_UTIMATE_API_KEY"):
-        v = os.environ.get(k, "").strip()
-        if v:
-            return v
-    return ""
+    v = os.environ.get("FMP_ULTIMATE_API_KEY", "").strip()
+    return v if v else ""
 
 def _num(x):
     try:
@@ -77,7 +74,7 @@ def probe_key(sess=None, ticker="AAPL"):
     and report exactly WHY so the fix is unambiguous."""
     key=_key()
     if not key:
-        return {"ok":False,"reason":"missing","message":"FMP_API_KEY env var not set","base":None}
+        return {"ok":False,"reason":"missing","message":"FMP_ULTIMATE_API_KEY env var not set","base":None}
     try:
         import requests
     except Exception as e:
@@ -246,7 +243,7 @@ def fetch_premium(ticker, sess=None, lim=None):
 __all__=["fetch","probe_key","classify","parse_val","fetch_premium"]
 
 if __name__=="__main__":
-    # Self-test: `FMP_API_KEY=xxx python fmp_connector.py`  ->  one-line verdict on the key.
+    # Self-test: `FMP_ULTIMATE_API_KEY=xxx python fmp_connector.py`  ->  one-line verdict on the key.
     import sys
     p=probe_key()
     tag="VALID ✓" if p.get("ok") else "NOT USABLE ✗"

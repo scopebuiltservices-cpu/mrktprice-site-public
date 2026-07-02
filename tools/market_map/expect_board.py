@@ -21,6 +21,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import expectations_engine as EE
+import contracts as C   # typed HorizonSpec/TargetBasis so every record is stamped with its horizon + target space
 
 
 def expect_for(closes, vols, H=21, level=0.90, highs=None, lows=None):
@@ -45,7 +46,10 @@ def expect_for(closes, vols, H=21, level=0.90, highs=None, lows=None):
             last = EE.reconcile(c[t], sHt, level, win, rets, wv, base, c[-1])
     acc = EE.accuracy(c, vols, H=H, level=level)
     proj = EE.path_projection(c, vols, H=H, highs=highs, lows=lows)  # dispersion+persistence -> % on the expected path + top price/vol
-    return {"band": band, "bandBoot": bandBoot, "last": last, "accuracy": acc, "proj": proj, "H": H, "level": level}
+    _hs = C.HorizonSpec(h=int(H), unit="day", label_type="close", session_minutes=390)
+    _tb = C.TOTAL_RETURN   # log-return on the total-return series — the space these bands/cones live in
+    return {"band": band, "bandBoot": bandBoot, "last": last, "accuracy": acc, "proj": proj, "H": H, "level": level,
+            "contract": {"horizon": _hs.key(), "targetSpace": _tb.target_space, "priceBasis": _tb.price_basis}}
 
 
 def _load_hist(hist_dir, ticker):

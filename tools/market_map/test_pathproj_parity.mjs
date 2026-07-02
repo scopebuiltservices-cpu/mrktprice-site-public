@@ -31,6 +31,15 @@ for (const cse of gold.cases) {
   ok(`[${cse.kind}] timeToPeakD matches`, near(g.timeToPeakD, js.timeToPeakD, 0.1), `${g.timeToPeakD} vs ${js.timeToPeakD}`);
   ok(`[${cse.kind}] topVolMult matches`, (g.topVolMult == null && js.topVolMult == null) || near(g.topVolMult, js.topVolMult, 0.03), `${g.topVolMult} vs ${js.topVolMult}`);
   ok(`[${cse.kind}] halfLife matches`, (g.halfLife == null && js.halfLife == null) || near(g.halfLife, js.halfLife, 0.2), `${g.halfLife} vs ${js.halfLife}`);
+  // Chow-Denning multiple-VR parity
+  const gm = cse.vrMulti, jm = PP.vrMulti(cse.closes);
+  ok(`[${cse.kind}] vrMulti both produced`, (gm == null) === (jm == null));
+  if (gm && jm) {
+    ok(`[${cse.kind}] vrMulti mv matches`, near(gm.mv, jm.mv, 0.02), `${gm.mv} vs ${jm.mv}`);
+    ok(`[${cse.kind}] vrMulti pJoint matches`, near(gm.pJoint, jm.pJoint, 0.01), `${gm.pJoint} vs ${jm.pJoint}`);
+    ok(`[${cse.kind}] vrMulti qStar/m match`, gm.qStar === jm.qStar && gm.m === jm.m, `${gm.qStar}/${gm.m} vs ${jm.qStar}/${jm.m}`);
+    ok(`[${cse.kind}] vrMulti pJoint >= pointwise (more conservative)`, jm.pJoint >= (1 - (2 * PP.ncdf(jm.mv) - 1)) - 1e-9);
+  }
 }
 
 console.log(fail ? '\nSOME pathproj parity checks FAILED' : '\nALL pathproj parity checks PASS');

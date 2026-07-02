@@ -14,7 +14,7 @@ import math
 __all__ = ["winsorize", "zscores", "ann_vol", "beta", "pearson", "_var", "_resid_on", "partial_corr",
            "_betacf", "_betai", "_t_two_sided_p", "ols_betas", "cluster_order", "money_flow", "MACROF",
            "_ok", "mfi", "atr", "zstd", "lasso_cd", "macro_fit", "ema_series", "daily_logvol", "_logret",
-           "half_life", "variance_ratio", "variance_ratio_stat", "parkinson_vol", "jump_ratio", "_phi", "prob_touch",
+           "half_life", "variance_ratio", "variance_ratio_stat", "variance_ratio_multi", "parkinson_vol", "jump_ratio", "_phi", "prob_touch",
            "contradiction", "_Q75", "median_touch_days", "_dvol", "regime_flip_prob", "calibrate_touch",
            # canonical risk/return library (previously missing or duplicated across modules):
            "mean", "stdev", "sharpe", "downside_dev", "sortino", "max_drawdown", "calmar", "cagr",
@@ -284,6 +284,30 @@ def variance_ratio_stat(closes, q=5):
     z = (vr - 1.0) / math.sqrt(theta)
     p = 2.0 * (1.0 - 0.5 * (1.0 + math.erf(abs(z) / math.sqrt(2.0))))
     return {"vr": round(vr, 3), "z": round(z, 2), "p": round(p, 4), "q": q, "n": T}
+
+def variance_ratio_multi(closes, qs=(2, 5, 10, 21)):
+    """Chow-Denning (1993) MULTIPLE variance-ratio test. Computes the Lo-MacKinlay heteroskedasticity-robust
+    z*(q) at each horizon q in qs, then forms the joint statistic MV = max_q |z*(q)|. Under the random-walk
+    null at ALL horizons the individual z* are asymptotically N(0,1); the conservative (Sidak / independence)
+    joint p-value — an upper bound for the Studentized-Maximum-Modulus critical region Chow-Denning use — is
+        p_joint = 1 - (2*Phi(MV) - 1)**m,   m = number of horizons.
+    This controls the family-wise error rate when several horizons are examined and the most persuasive is
+    chosen, instead of an inflated pointwise test. Direction is read at the DOMINANT horizon (max |z|).
+    Returns {mv, pJoint, m, qStar, vrStar, zStar, per:[{q,vr,z}]} or None. Verified against planted structure."""
+    per = []
+    for q in qs:
+        st = variance_ratio_stat(closes, q)
+        if st and st.get("z") is not None:
+            per.append({"q": int(q), "vr": st["vr"], "z": st["z"]})
+    if not per:
+        return None
+    star = max(per, key=lambda d: abs(d["z"]))
+    mv = abs(star["z"]); m = len(per)
+    phi = 0.5 * (1.0 + math.erf(mv / math.sqrt(2.0)))          # Phi(|MV|)
+    p_joint = 1.0 - (2.0 * phi - 1.0) ** m
+    return {"mv": round(mv, 3), "pJoint": round(p_joint, 4), "m": m,
+            "qStar": int(star["q"]), "vrStar": star["vr"], "zStar": star["z"], "per": per}
+
 
 def parkinson_vol(highs, lows, n=21):
     """P3-19 Parkinson range volatility (daily): sqrt( (1/(4 ln2 N)) * sum ln(H/L)^2 ). More efficient than close-to-close."""

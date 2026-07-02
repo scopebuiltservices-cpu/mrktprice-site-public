@@ -3224,13 +3224,18 @@ function _vrPersist(closes, H){
   var c=[],i; for(i=0;i<closes.length;i++){var x=+closes[i]; if(x>0)c.push(x);}
   if(c.length<40) return null;
   var q=Math.min(H, Math.max(2, (c.length/4)|0));          // same q as cone_eval.sig_champion
-  var st=_vrStat(c,q); if(!st) return null;
-  var vr=st.vr, z=st.z, sig=(z!=null && Math.abs(z)>=1.6449), hl=_halfLife(c,252);
+  var hl=_halfLife(c,252), vr, z, sig, qUsed=q, pJoint=null, mH=null, joint=false;
+  // PREFER the Chow-Denning MULTIPLE-horizon test (parity-locked module) — it controls the family-wise
+  // error across {2,5,10,21}d, so a persuasive single horizon can't manufacture a regime label.
+  var vm=null; try{ if(window.PathProj&&window.PathProj.vrMulti) vm=window.PathProj.vrMulti(c); }catch(_e){}
+  if(vm){ vr=vm.vrStar; z=vm.zStar; qUsed=vm.qStar; pJoint=vm.pJoint; mH=vm.m; joint=true; sig=(pJoint<=0.10); }
+  else { var st=_vrStat(c,q); if(!st) return null; vr=st.vr; z=st.z; sig=(z!=null && Math.abs(z)>=1.6449); }  // single-q fallback
+  var sTag=joint?(' (joint p '+pJoint.toFixed(3)+' across '+mH+' horizons, dominant '+qUsed+'d)'):(z!=null?' (z '+z.toFixed(1)+')':'');
   var lab,dir,col,read;
-  if(sig && vr>1){lab='PERSIST';dir='trending';col='#2ecc8f';read='a confirmed push tends to CONTINUE — VR&gt;1, significant (z '+z.toFixed(1)+')';}
-  else if(sig && vr<1){lab='FADE';dir='mean-reverting';col='#ef5f4e';read='a confirmed push tends to REVERSE — VR&lt;1, significant'+(hl?', ~'+hl.toFixed(0)+'-day half-life':'');}
-  else{lab='RANDOM WALK';dir='neutral';col='#e0c14a';read='VR not statistically different from 1 (z '+(z!=null?z.toFixed(1):'—')+') — no reliable persist/fade edge';}
-  return {vr:vr,z:z,p:st.p,q:q,halfLife:hl,sig:sig,label:lab,dir:dir,color:col,read:read};
+  if(sig && vr>1){lab='PERSIST';dir='trending';col='#2ecc8f';read='a confirmed push tends to CONTINUE — VR&gt;1, significant'+sTag;}
+  else if(sig && vr<1){lab='FADE';dir='mean-reverting';col='#ef5f4e';read='a confirmed push tends to REVERSE — VR&lt;1, significant'+sTag+(hl?', ~'+hl.toFixed(0)+'-day half-life':'');}
+  else{lab='RANDOM WALK';dir='neutral';col='#e0c14a';read='VR not statistically different from 1'+sTag+' — no reliable persist/fade edge';}
+  return {vr:vr,z:z,p:null,q:qUsed,halfLife:hl,sig:sig,label:lab,dir:dir,color:col,read:read,pJoint:pJoint,mHorizons:mH,joint:joint};
 }
 function _intraConfirm(sym){
   if(!(MRKT_TOKEN||MRKT_CODE)) return {status:'nosignin'};

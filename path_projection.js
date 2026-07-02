@@ -38,6 +38,18 @@
     return { vr: vr, z: z, p: p, q: q, n: T };
   }
 
+  // metrics.variance_ratio_multi — Chow-Denning (1993) MULTIPLE variance-ratio test (joint FWER control)
+  function vrMulti(closes, qs) {
+    qs = qs || [2, 5, 10, 21];
+    var per = [], i;
+    for (i = 0; i < qs.length; i++) { var st = vrStat(closes, qs[i]); if (st && st.z != null) per.push({ q: (qs[i] | 0), vr: st.vr, z: st.z }); }
+    if (!per.length) return null;
+    var star = per[0]; for (i = 1; i < per.length; i++) if (Math.abs(per[i].z) > Math.abs(star.z)) star = per[i];
+    var mv = Math.abs(star.z), m = per.length, phi = ncdf(mv), pJoint = 1 - Math.pow(2 * phi - 1, m);
+    return { mv: Math.round(mv * 1000) / 1000, pJoint: Math.round(pJoint * 1e4) / 1e4, m: m,
+             qStar: (star.q | 0), vrStar: star.vr, zStar: star.z, per: per };
+  }
+
   // metrics.half_life — OU mean-reversion half-life (dp on lagged log-price)
   function halfLife(closes, cap) {
     cap = cap || 252; var p = [], i;
@@ -136,7 +148,7 @@
     };
   }
 
-  var API = { project: project, championSigma: championSigma, vrStat: vrStat, halfLife: halfLife, mfe: mfe, touchUp: touchUp, olsSlope: olsSlope, ncdf: ncdf };
+  var API = { project: project, championSigma: championSigma, vrStat: vrStat, vrMulti: vrMulti, halfLife: halfLife, mfe: mfe, touchUp: touchUp, olsSlope: olsSlope, ncdf: ncdf };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   if (typeof window !== 'undefined') window.PathProj = API;
 })();

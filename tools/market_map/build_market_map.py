@@ -880,10 +880,10 @@ def real_universe():
         else:
             _sys.stderr.write("::warning title=FMP price path::probe FAILED [%s] HTTP %s: %s — every name will fall back to yfinance backup. Fix: %s\n"%(
                 _FPP.get("reason"), _FPP.get("status"),(_FPP.get("message") or "")[:120],
-                {"invalid_key":"rotate FMP_API_KEY (key invalid/expired)",
+                {"invalid_key":"rotate FMP_ULTIMATE_API_KEY (key invalid/expired)",
                  "plan_or_endpoint":"key valid but plan lacks the historical-EOD endpoint — upgrade/contact FMP",
                  "rate_limited":"FMP rate/bandwidth limit — lower UNIVERSE_LIMIT or retry off-peak",
-                 "missing":"set the FMP_API_KEY (or FMP_ULTIMATE_API_KEY) repo secret"}.get(_FPP.get("reason"),"check key + plan")))
+                 "missing":"set the FMP_ULTIMATE_API_KEY repo secret"}.get(_FPP.get("reason"),"check key + plan")))
     except Exception as _pe:
         globals()["_FMP_PRICE_PROBE"]={"ok":False,"reason":"probe_error","message":str(_pe)[:160],"status":None}
     # ROBUST multi-endpoint probe (all FMP Ultimate endpoints) -> a single plain-English ACTION the site
@@ -908,7 +908,7 @@ def real_universe():
     try:
         import universe_fetch as _uf
         _umode=os.environ.get("UNIVERSE_MODE","all")   # S&P 500 + full Nasdaq + Dow 30 + Russell 2000 union
-        _UNIV=_uf.fetch_universe(mode=_umode, key=(os.environ.get("FMP_ULTIMATE_API_KEY") or os.environ.get("FMP_API_KEY") or os.environ.get("FMP_UTIMATE_API_KEY")), session=_PSESS) or SEED
+        _UNIV=_uf.fetch_universe(mode=_umode, key=os.environ.get("FMP_ULTIMATE_API_KEY"), session=_PSESS) or SEED
     except Exception as _ue:
         sys.stderr.write("universe_fetch failed (%s); using SEED\n"%_ue); _UNIV=SEED
     sys.stderr.write("EQUITY UNIVERSE: %d names (source=%s)\n"%(len(_UNIV), "fetch" if _UNIV is not SEED else "SEED"))
@@ -1215,7 +1215,7 @@ def real_universe():
             except Exception as e:
                 if len(_errs)<8: _errs.append("ALPACA %s: %s"%(n["t"], str(e)[:80]))
             _gcap+=1
-    _kf=bool((_os.environ.get("FMP_ULTIMATE_API_KEY") or _os.environ.get("FMP_API_KEY") or "").strip()); _ke=bool(_os.environ.get("EODHD_API_KEY","").strip())
+    _kf=bool((_os.environ.get("FMP_ULTIMATE_API_KEY") or "").strip()); _ke=bool(_os.environ.get("EODHD_API_KEY","").strip())
     _ka=bool(_os.environ.get("ALPACA_API_KEY_ID","").strip() and _os.environ.get("ALPACA_API_SECRET_KEY","").strip())
     _sys.stderr.write("ENRICH: FMP key=%s tried=%d ok=%d err=%d | EODHD key=%s tried=%d gex=%d err=%d | ALPACA key=%s bs=%d\n"%(_kf,_fmp_try,_fmp_ok,_fmp_err,_ke,_eod_try,_eod_ok,_eod_err,_ka,_alp_ok))
     _sys.stderr.write("FMP PREMIUM: earnings=%d dcf=%d priceTarget=%d estConsensus=%d (Ultimate)\n"%(_earn_ok,_dcf_ok,_ptgt_ok,_est_ok))
@@ -1223,13 +1223,13 @@ def real_universe():
     if _kf and not _fmp_live:
         _r=_fmp_probe.get("reason"); _m=_fmp_probe.get("message") or ""
         if _r=="invalid_key":
-            _sys.stderr.write("::warning::FMP_API_KEY is INVALID - FMP says: %s | FIX: replace the FMP_API_KEY secret with a key that passes /stable/quote?symbol=AAPL\n"%_m)
+            _sys.stderr.write("::warning::FMP_ULTIMATE_API_KEY is INVALID - FMP says: %s | FIX: replace the FMP_ULTIMATE_API_KEY secret with a key that passes /stable/quote?symbol=AAPL\n"%_m)
         elif _r=="rate_limited":
             _sys.stderr.write("::warning::FMP rate/bandwidth limit: %s | valuations skipped this run, auto-retries next run\n"%_m)
         elif _r=="plan_or_endpoint":
             _sys.stderr.write("::warning::FMP plan/endpoint issue: %s | /stable quote+ratios-ttm+analyst-estimates may not be in your tier\n"%_m)
         elif _r=="missing":
-            _sys.stderr.write("::notice::FMP_API_KEY not set - valuation layer disabled\n")
+            _sys.stderr.write("::notice::FMP_ULTIMATE_API_KEY not set - valuation layer disabled\n")
         else:
             _sys.stderr.write("::warning::FMP key probe failed (%s): %s\n"%(_r,_m))
     elif _kf and _fmp_try and _fmp_ok==0:

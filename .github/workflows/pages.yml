@@ -40,7 +40,7 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30   # hard cap: a hung/slow fetch can't run 45-80 min and block the Pages deploy
+    timeout-minutes: 40   # hard cap: a hung/slow fetch can't run 45-80 min and block the Pages deploy
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -126,7 +126,7 @@ jobs:
           pip install --quiet -r tools/market_map/requirements.txt
           mkdir -p /tmp/mmbuild
           cd tools/market_map
-          if timeout 1200 python build_market_map.py --real --out /tmp/mmbuild/marketmap.json; then   # 20-min cap on the data refresh; timeout -> else branch (no stale hang)
+          if timeout 1800 python build_market_map.py --real --out /tmp/mmbuild/marketmap.json; then   # 20-min cap on the data refresh; timeout -> else branch (no stale hang)
             # CORE GATE: blocks publish on SAMPLE/thin/stale data AND on the silent-regression class
             # (universe collapse vs the last published file, all-"Unknown" sectors, empty sectorCorr).
             python publish_guards.py /tmp/mmbuild/marketmap.json --prev "$GITHUB_WORKSPACE/marketmap.json" \

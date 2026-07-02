@@ -19,6 +19,7 @@ verified against planted structure (centred ratios, QLIKE=0 on a perfect forecas
 """
 import math
 
+import metrics
 import path_probability as PP
 import vol_loss
 
@@ -178,3 +179,87 @@ def accuracy(closes, vols, H=21, level=0.90, sigma_fn=None, min_train=60, stride
             "meanRangeRatio": round(rr / nrr, 3) if nrr else None,
             "qlike": round(vol_loss.qlike(fvars, rvars), 5) if fvars else None,
             "elevVolShare": round(volz_hi / nvz, 3) if nvz else None}
+
+
+def _ols_slope(xs, ys):
+    n = len(xs)
+    if n < 5:
+        return None
+    mx = sum(xs) / n; my = sum(ys) / n
+    sxy = sum((xs[i] - mx) * (ys[i] - my) for i in range(n))
+    sxx = sum((xs[i] - mx) ** 2 for i in range(n))
+    return (sxy / sxx) if sxx > 0 else None
+
+
+def path_projection(closes, vols=None, H=21, r=5):
+    """Fuse the band's DISPERSION (sigma_H) and PERSISTENCE (Lo-MacKinlay VR) into a decision-ready read:
+
+      pathPct     : % probability the horizon move finishes in the EXPECTED direction = Phi(|drift|/sigma_H).
+                    Drift is CONDITIONAL on the recent push and bounded by measured persistence
+                    (|drift| <= 0.5*sigma_H, scaled by |VR-1|), so pathPct stays in a realistic ~50-69% band
+                    and never over-claims. Persist -> continue the push; fade -> revert; RW -> ~50%.
+      peak        : expected TOP price = Maximum-Favorable-Excursion of the path in the expected direction
+                    (path_probability.expected_max_favorable with drift), and days-to-peak CAPPED at the OU
+                    half-life so the peak is timed BEFORE mean reversion (theta) erodes it.
+      topVolume   : expected volume AT that peak = median volume x historical volume-elasticity to move size
+                    (OLS of log-volume on standardized |return|), shown only 'where smart' (elasticity>0).
+
+    'smart' is True only when VR is statistically significant (|z|>=1.6449); otherwise the directional peak
+    claim is suppressed (the path is ~a coin-flip). Keyless, pure stdlib, verified against planted structure.
+    """
+    c = [float(x) for x in (closes or []) if x is not None and float(x) > 0]
+    if len(c) < 60:
+        return None
+    lr = [math.log(c[i] / c[i - 1]) for i in range(1, len(c)) if c[i] > 0 and c[i - 1] > 0]
+    if len(lr) < 40:
+        return None
+    mu = sum(lr) / len(lr)
+    sd_d = math.sqrt(sum((x - mu) ** 2 for x in lr) / (len(lr) - 1))
+    if sd_d <= 0:
+        return None
+    sH = _champion_sigma(c, H)
+    if not sH or sH <= 0:
+        return None
+    q = min(H, max(2, len(c) // 4))
+    vs = metrics.variance_ratio_stat(c, q)
+    vr = vs["vr"] if vs else 1.0
+    z = vs["z"] if vs else None
+    sig = bool(z is not None and abs(z) >= 1.6449)
+    hl = metrics.half_life(c)
+    tail = sum(lr[-r:])
+    push = 1.0 if tail > 0 else (-1.0 if tail < 0 else 1.0)
+    if sig and vr > 1:
+        dir_exp = push; kappa = min(0.5, vr - 1.0)          # persist -> continue the push
+    elif sig and vr < 1:
+        dir_exp = -push; kappa = min(0.5, 1.0 - vr)         # fade -> revert against the push
+    else:
+        dir_exp = push; kappa = 0.0                          # random walk -> ~50/50
+    drift_H = dir_exp * kappa * sH
+    p_dir = PP._ncdf(abs(drift_H) / sH)                      # Phi(|drift|/sigma_H) toward dir_exp
+    exc = PP.expected_max_favorable(sH, abs(drift_H))        # expected TOP excursion (with drift)
+    P0 = c[-1]
+    peak_log = dir_exp * exc
+    peak_price = P0 * math.exp(peak_log)
+    ttp = max(1.0, min(float(H), hl)) if (hl is not None and vr < 1) else float(H)
+    top_vol = vol_mult = None; vol_ok = False
+    if vols:
+        v = [float(x) for x in vols if x is not None and float(x) > 0]
+        if len(v) >= 40 and len(v) >= len(lr):
+            av = [abs(x) / sd_d for x in lr]                 # standardized |return|
+            lv = [math.log(x) for x in v[-len(lr):]]         # aligned log-volume
+            beta = _ols_slope(av, lv)
+            medv = sorted(v)[len(v) // 2]
+            if beta is not None and beta > 0:
+                peak_daily = (abs(peak_log) / ttp) / sd_d    # standardized per-day move at peak pace
+                vol_mult = max(1.0, min(math.exp(beta * peak_daily), 8.0))
+                top_vol = medv * vol_mult; vol_ok = True
+    return {
+        "sigmaH": round(sH, 6), "driftH": round(drift_H, 6), "dir": int(dir_exp),
+        "pathPct": round(100.0 * p_dir, 1), "pathDir": ("up" if dir_exp > 0 else "down"),
+        "vr": round(vr, 3), "z": (round(z, 2) if z is not None else None), "halfLife": (round(hl, 1) if hl else None),
+        "peakPrice": round(peak_price, 4), "peakPct": round((math.exp(peak_log) - 1.0) * 100.0, 2),
+        "peakLogExc": round(exc, 6), "timeToPeakD": round(ttp, 1),
+        "topVolume": (round(top_vol) if top_vol else None), "topVolMult": (round(vol_mult, 2) if vol_mult else None),
+        "volElastOK": vol_ok, "smart": sig,
+        "note": ("Peak/top shown because persistence is significant (VR z=%.1f)." % z) if sig
+                else "VR not significant -> directional peak suppressed; path is ~a coin-flip."}

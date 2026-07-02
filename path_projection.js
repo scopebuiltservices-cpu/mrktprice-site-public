@@ -92,11 +92,11 @@
     var q = Math.min(H, Math.max(2, (c.length / 4) | 0));
     if (r.length < q * 4) return sdUse * Math.sqrt(H);
     var v1 = 0; for (i = 0; i < r.length; i++) v1 += (r[i] - m) * (r[i] - m); v1 /= r.length;
-    if (v1 <= 0) return sd * Math.sqrt(H);
+    if (v1 <= 0) return sdUse * Math.sqrt(H);
     var s = 0, k; for (k = q - 1; k < r.length; k++) { var su = 0; for (i = 0; i < q; i++) su += r[k - i]; s += (su - q * m) * (su - q * m); }
     s /= (r.length - q + 1);
     var vr = s / (q * v1);
-    return sd * Math.sqrt(H * (vr > 0 ? vr : 1.0));
+    return sdUse * Math.sqrt(H * (vr > 0 ? vr : 1.0));
   }
 
   // path_probability.touch_up + expected_max_favorable (Simpson)

@@ -42,9 +42,12 @@ def main():
     cases = []
     for kind in ("trend", "mr", "rw"):
         c, v = _series(kind)
-        cases.append({"kind": kind, "closes": [round(x, 6) for x in c], "vols": [round(x, 2) for x in v],
+        cr = [round(x, 6) for x in c]
+        hi = [x * 1.01 for x in cr]; lo = [x * 0.99 for x in cr]   # deterministic H/L rule (mirrored in the mjs test)
+        cases.append({"kind": kind, "closes": cr, "vols": [round(x, 2) for x in v],
                       "proj": EE.path_projection(c, v, H=21),
-                      "vrMulti": M.variance_ratio_multi(c)})
+                      "vrMulti": M.variance_ratio_multi(c),
+                      "championHL": EE._champion_sigma(cr, 21, hi, lo)})   # range-aware (Parkinson) cone sigma, from rounded closes
     p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "pathproj_golden.json")
     json.dump({"fixture_version": 1, "H": 21, "r": 5, "cases": cases}, open(p, "w"), separators=(",", ":"))
     print("wrote", os.path.normpath(p), "with", len(cases), "cases")

@@ -78,8 +78,8 @@ def probe(get=None, key=None):
 
 # Per-reason remediation the probe prints + writes into fmp_health.json so the result is self-explaining.
 REMEDY = {
-    "invalid_key": "The FMP_API_KEY secret is wrong/expired. Copy a fresh key from financialmodelingprep.com "
-                   "(Dashboard -> API Keys) into the repo secret FMP_API_KEY, then re-run.",
+    "invalid_key": "The FMP_ULTIMATE_API_KEY secret is wrong/expired. Copy a fresh key from financialmodelingprep.com "
+                   "(Dashboard -> API Keys) into the repo secret FMP_ULTIMATE_API_KEY, then re-run.",
     "rate_limited": "Daily/throughput limit hit. Wait for the quota to reset, reduce universe size, or upgrade "
                     "the plan. The key itself is valid.",
     "plan_or_endpoint": "Your key is VALID but its PLAN does not include this endpoint. Upgrade to the plan that "

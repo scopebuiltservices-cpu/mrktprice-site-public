@@ -35,7 +35,7 @@ def t_eodhd_retry():
     print("  PASS  EODHD retries past a 429 then parses (calls=%d)"%s.calls)
 
 def t_fmp_retry():
-    os.environ["FMP_API_KEY"]="dummy"
+    os.environ["FMP_ULTIMATE_API_KEY"]="dummy"
     class S:
         def __init__(s): s.calls=0
         def get(s,u,timeout=None):

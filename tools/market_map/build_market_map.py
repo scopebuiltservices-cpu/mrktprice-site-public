@@ -939,6 +939,10 @@ def real_universe():
         sys.stderr.write("price prefetch: warmed %d/%d names concurrently\n"%(_pf,len(_UNIV)))
     except Exception as _pfe:
         sys.stderr.write("price prefetch skipped (%s)\n"%_pfe)
+    _yfInfo=[True,0]   # [enabled, consecutiveFails]: circuit breaker for the per-name yfinance get_info()/history()
+                       # SEED calls (Yahoo hangs ~10s each on CI IPs). yfinance here is only a seed FMP refreshes
+                       # downstream, so after 8 consecutive hangs we go FMP-only for the rest of the run — bounding
+                       # the ~700-name serial-Yahoo cost that could blow the 20-min budget even with prices cached.
     for sym,nm,sec_name,code in _UNIV:        # full Nasdaq+Dow when UNIVERSE_MODE=nasdaq_full; SEED otherwise
         try:
             _ph=_get_hist(sym, min_rows=10)            # FMP Ultimate primary -> yfinance fallback
@@ -947,9 +951,9 @@ def real_universe():
             wk=cl[::5]; wr=[(wk[i]/wk[i-1]-1) for i in range(1,len(wk)) if wk[i-1]]
             mcap=None; fcf=None
             valr={"pe":None,"fpe":None,"peg":None,"evb":None,"epsg":None,"revg":None}
-            if yf is not None:                          # mcap + valuation SEED from yfinance info (FMP refreshes below)
+            if yf is not None and _yfInfo[0]:           # mcap + valuation SEED from yfinance info (FMP refreshes below); circuit-broken on repeated Yahoo hangs
                 try:
-                    info=yf.Ticker(sym).get_info(); mcap=float(info.get("marketCap") or 0) or (cl[-1]*float(info.get("sharesOutstanding") or 0))
+                    info=yf.Ticker(sym).get_info(); _yfInfo[1]=0; mcap=float(info.get("marketCap") or 0) or (cl[-1]*float(info.get("sharesOutstanding") or 0))
                     fcf=info.get("freeCashflow")
                     def _fnum(x):
                         try: x=float(x); return x if (x==x and abs(x)<1e6) else None
@@ -960,7 +964,11 @@ def real_universe():
                     if (not sec_name) or sec_name in ("","Unknown","N/A"):   # backfill blank sector (keyless universe fallback) from yfinance info
                         _ys=(info.get("sector") or "").strip(); _ys=SECMAP.get(_ys, _ys)
                         if _ys: sec_name=_ys
-                except Exception: pass
+                except Exception:
+                    _yfInfo[1]+=1
+                    if _yfInfo[1]>=8:
+                        _yfInfo[0]=False
+                        sys.stderr.write("yfinance get_info circuit-broken after 8 consecutive Yahoo failures — FMP-only seed for remaining names\n")
             names.append({"t":sym,"n":nm,"sec":sec_name,"idx":membership(code),"mcap":round(mcap or 1e9),
                           "wr":[round(x,5) for x in wr],"_cl":cl,"_hi":hi,"_lo":lo,"_vol":vo,"_fcf":float(fcf) if fcf else None,"_val":valr,"_psrc":_ph["src"]})
             try: names[-1]["insider"]=fetch_insider(sym, max_filings=15)
@@ -973,7 +981,7 @@ def real_universe():
                 except Exception: pass
             # CROSS-SOURCE agreement (SAMPLED ~1/7 to bound API load): when FMP supplied the price, spot-check
             # a yfinance pull and flag provider disagreement (a skew between feeds = suspect data).
-            if _dq is not None and _ph.get("src")=="fmp" and yf is not None and (len(names)%7==0):
+            if _dq is not None and _ph.get("src")=="fmp" and yf is not None and _yfInfo[0] and (len(names)%7==0):
                 try:
                     _yh=yf.Ticker(sym).history(period="3mo",interval="1d",auto_adjust=True)
                     _yc=[float(x) for x in _yh["Close"].tolist() if float(x)==float(x) and float(x)>0]

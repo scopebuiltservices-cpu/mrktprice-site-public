@@ -11,9 +11,8 @@ STABLE = "https://financialmodelingprep.com/stable"
 V3     = "https://financialmodelingprep.com/api/v3"
 
 def _key():
-    """Read the FMP key, accepting whichever name the Ultimate secret carries (matches fmp_history +
-    the GitHub Actions secret mapping). Without this, a secret named FMP_ULTIMATE_API_KEY would power
-    prices/macro but silently disable the valuation/premium connector."""
+    """Read the FMP key from FMP_ULTIMATE_API_KEY (the sole secret name, matches fmp_history +
+    the GitHub Actions secret mapping)."""
     v = os.environ.get("FMP_ULTIMATE_API_KEY", "").strip()
     return v if v else ""
 

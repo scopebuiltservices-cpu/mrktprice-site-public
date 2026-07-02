@@ -14,10 +14,7 @@ except Exception:
 S = requests.Session(); S.headers.update({"User-Agent": "MrktPrice smoke/1.0"})
 STABLE = "https://financialmodelingprep.com/stable"; V3 = "https://financialmodelingprep.com/api/v3"
 def key():
-    for k in ("FMP_ULTIMATE_API_KEY", "FMP_API_KEY", "FMP_UTIMATE_API_KEY"):
-        v = os.environ.get(k)
-        if v: return v
-    return None
+    return os.environ.get("FMP_ULTIMATE_API_KEY") or None
 def get(url):
     try:
         r = S.get(url, timeout=30)

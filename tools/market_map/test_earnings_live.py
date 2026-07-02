@@ -7,13 +7,13 @@ year is not the calendar year — e.g. Apple's quarter that ENDS in late Septemb
 a calendar guess calls it Q3. fmp_history joins the /stable/income-statement (which carries the TRUE
 fiscalYear + period) to fix this. This test proves the live feed actually delivers that.
 
-Secret handling: the key is read from the FMP_API_KEY env var only (never a literal, never printed,
+Secret handling: the key is read from the FMP_ULTIMATE_API_KEY env var only (never a literal, never printed,
 never built into a logged URL). Without the key (local runs, fork PRs) the test SKIPS and exits 0,
 so it is safe to auto-discover in the offline suite. It runs for real in the earnings-smoke CI job,
 where the key is injected from GitHub Secrets. A transient API/plan error SKIPS (warns); only a wrong
 fiscal label FAILS.
 
-Run:  FMP_API_KEY=... python3 test_earnings_live.py
+Run:  FMP_ULTIMATE_API_KEY=... python3 test_earnings_live.py
 """
 import os, sys, datetime as dt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -31,7 +31,7 @@ def skip(msg):
     raise SystemExit(0)
 
 if not fh.have_key():
-    skip("FMP_API_KEY not set — offline/no-secret run (this is expected locally and on fork PRs).")
+    skip("FMP_ULTIMATE_API_KEY not set — offline/no-secret run (this is expected locally and on fork PRs).")
 
 # ---- Apple: fiscal year ends in late September, so the Sep/Oct-ending quarter MUST be fiscal Q4 ----
 try:

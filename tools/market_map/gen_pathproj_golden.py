@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import expectations_engine as EE
 
 
-def _series(kind, n=700):
+def _series(kind, n=180):
     # simple LCG so the fixture is language-agnostic and reproducible without importing random
     s = 12345
 

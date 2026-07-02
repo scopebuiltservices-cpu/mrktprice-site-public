@@ -73,14 +73,16 @@ def _qtile(sorted_arr, qq):
     return sorted_arr[lo] * (1.0 - frac) + sorted_arr[hi] * frac
 
 
-def expected_band_boot(price, closes, level=0.90, H=21, B=1000, p=0.1, seed=12345):
-    """DEPENDENCE-AWARE endpoint prediction interval via the Politis-Romano STATIONARY BOOTSTRAP.
+def expected_band_boot(price, closes, level=0.90, H=21, B=2000, seed=12345):
+    """DEPENDENCE-AWARE endpoint prediction interval via a CIRCULAR MOVING-BLOCK (horizon-block) bootstrap.
 
-    The parametric expected_band assumes i.i.d. Gaussian daily log-returns (endpoint = price*exp(±z*sigma_H)).
-    Real return series are autocorrelated/heteroskedastic, so that band is mis-sized. This resamples the daily
-    log-return series with geometric (mean 1/p) blocks — preserving short-range dependence — forms B horizon
-    (H-step) cumulative sums, and reads the empirical (1±level)/2 quantiles as the price band. No distributional
-    assumption; the band 'earns its width' from the series' own dependence. Deterministic (seeded), pure stdlib."""
+    The parametric expected_band assumes i.i.d. Gaussian daily log-returns (endpoint = price*exp(±z*sigma_H)),
+    so its width scales as sigma_d*sqrt(H) and ignores serial dependence. Real multi-step dispersion can differ
+    (variance ratio != 1). This resamples CONTIGUOUS H-length blocks of daily log-returns (circular), so each
+    bootstrap draw is a realized horizon path and the H-step return distribution keeps the series' own
+    multi-step dependence (momentum widens, mean-reversion narrows). The band is the empirical (1±level)/2
+    quantiles of those horizon returns applied to price. The band 'earns its width' from realized behavior; no
+    distributional assumption. Deterministic (seeded), pure stdlib."""
     if not (price and price > 0):
         return None
     c = [float(x) for x in (closes or []) if x is not None and float(x) > 0]
@@ -88,16 +90,15 @@ def expected_band_boot(price, closes, level=0.90, H=21, B=1000, p=0.1, seed=1234
         return None
     lr = [math.log(c[i] / c[i - 1]) for i in range(1, len(c)) if c[i] > 0 and c[i - 1] > 0]
     n = len(lr)
-    if n < H + 5:
+    if n < H + 20:
         return None
     rng = random.Random(seed)
     ends = []
     for _b in range(int(B)):
+        start = rng.randrange(n)                                   # circular H-length block = one realized horizon path
         s = 0.0
-        i = rng.randrange(n)
-        for _step in range(H):
-            s += lr[i]
-            i = rng.randrange(n) if rng.random() < p else (i + 1) % n   # stationary bootstrap: restart w.p. p, else advance
+        for k in range(H):
+            s += lr[(start + k) % n]
         ends.append(s)
     ends.sort()
     a = (1.0 - level) / 2.0
@@ -110,7 +111,7 @@ def expected_band_boot(price, closes, level=0.90, H=21, B=1000, p=0.1, seed=1234
             "halfWidthPct": round((math.log(hi / lo) / 2.0) * 100.0, 3) if lo > 0 else None,
             "rangePct": round((hi - lo) / price * 100.0, 3),
             "medDriftPct": round((math.exp(med) - 1.0) * 100.0, 3) if med is not None else None,
-            "level": level, "H": H, "B": int(B), "p": p, "kind": "stationary-bootstrap prediction interval"}
+            "level": level, "H": H, "B": int(B), "block": H, "kind": "moving-block bootstrap prediction interval"}
 
 
 def expected_log_range(sigma_H, H, drift_H=0.0):

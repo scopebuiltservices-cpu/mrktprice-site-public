@@ -53,18 +53,27 @@ b95 = EE.expected_band_boot(rwc[-1], rwc, level=0.95, H=H)
 ok("wider at higher level", b70 and b95 and (b95["hi"] - b95["lo"]) > (b70["hi"] - b70["lo"]),
    (b70 and b70["rangePct"], b95 and b95["rangePct"]))
 
-# empirical walk-forward containment ~ level on the i.i.d. series
-level = 0.90
-hit = 0; tot = 0
-for t in range(120, len(rwc) - H, 5):
-    bb = EE.expected_band_boot(rwc[t], rwc[:t + 1], level=level, H=H)
-    if not bb:
-        continue
-    tot += 1
-    if bb["lo"] <= rwc[t + H] <= bb["hi"]:
-        hit += 1
-cov = hit / tot if tot else 0.0
-ok("rw: walk-forward containment ~ level (0.90)", tot >= 20 and abs(cov - level) <= 0.12, "cov=%.3f n=%d" % (cov, tot))
+# empirical walk-forward containment ~ level, POOLED across seeds (single-series coverage is noisy with
+# only ~n/H independent horizons; pool to get a stable calibration read). Block-bootstrap PIs are typically
+# marginally conservative in finite samples, so allow a modest band and require monotonicity across levels.
+def pooled_cov(level, seeds=range(1, 9), n=800):
+    hit = tot = 0
+    for s in seeds:
+        cc = rw(s, n=n)
+        for t in range(150, len(cc) - H, 7):
+            bb = EE.expected_band_boot(cc[t], cc[:t + 1], level=level, H=H)
+            if not bb:
+                continue
+            tot += 1
+            if bb["lo"] <= cc[t + H] <= bb["hi"]:
+                hit += 1
+    return (hit / tot if tot else 0.0), tot
+
+c80, n80 = pooled_cov(0.80)
+c90, n90 = pooled_cov(0.90)
+c95, n95 = pooled_cov(0.95)
+ok("pooled containment ~ 0.90 (well-calibrated)", n90 >= 200 and 0.82 <= c90 <= 0.95, "cov=%.3f n=%d" % (c90, n90))
+ok("empirical coverage monotone in level", c80 < c90 < c95, "%.3f<%.3f<%.3f" % (c80, c90, c95))
 
 # dependence effect: on AR(1)+ the bootstrap half-width (log) exceeds the i.i.d. parametric z*sd*sqrt(H)
 ac = ar1(7)

@@ -40,6 +40,14 @@ for (const cse of gold.cases) {
     ok(`[${cse.kind}] vrMulti qStar/m match`, gm.qStar === jm.qStar && gm.m === jm.m, `${gm.qStar}/${gm.m} vs ${jm.qStar}/${jm.m}`);
     ok(`[${cse.kind}] vrMulti pJoint >= pointwise (more conservative)`, jm.pJoint >= (1 - (2 * PP.ncdf(jm.mv) - 1)) - 1e-9);
   }
+  // range-aware champion sigma (Parkinson H/L blend) — JS must match the Python golden decimal-for-decimal
+  // using the SAME deterministic H/L rule the generator used (hi=close*1.01, lo=close*0.99).
+  if (cse.championHL != null) {
+    const hi = cse.closes.map(x => x * 1.01), lo = cse.closes.map(x => x * 0.99);
+    const jHL = PP.championSigma(cse.closes, gold.H, hi, lo), jBase = PP.championSigma(cse.closes, gold.H);
+    ok(`[${cse.kind}] championHL parity`, near(jHL, cse.championHL, 1e-6), `${jHL} vs ${cse.championHL}`);
+    ok(`[${cse.kind}] championHL engages blend (differs from close-only)`, Math.abs(jHL - jBase) > 1e-9, `${jHL} vs ${jBase}`);
+  }
 }
 
 console.log(fail ? '\nSOME pathproj parity checks FAILED' : '\nALL pathproj parity checks PASS');

@@ -260,7 +260,7 @@ def _ols_slope(xs, ys):
     return (sxy / sxx) if sxx > 0 else None
 
 
-def path_projection(closes, vols=None, H=21, r=5):
+def path_projection(closes, vols=None, H=21, r=5, highs=None, lows=None):
     """Fuse the band's DISPERSION (sigma_H) and PERSISTENCE (Lo-MacKinlay VR) into a decision-ready read:
 
       pathPct     : % probability the horizon move finishes in the EXPECTED direction = Phi(|drift|/sigma_H).
@@ -286,7 +286,7 @@ def path_projection(closes, vols=None, H=21, r=5):
     sd_d = math.sqrt(sum((x - mu) ** 2 for x in lr) / (len(lr) - 1))
     if sd_d <= 0:
         return None
-    sH = _champion_sigma(c, H)
+    sH = _champion_sigma(c, H, highs=highs, lows=lows)
     if not sH or sH <= 0:
         return None
     q = min(H, max(2, len(c) // 4))

@@ -35,7 +35,7 @@ The single source of truth for these checks is `tools/market_map/sector_integrit
 3. If `sectored` is 0 on a *fresh* build → the seeds are missing/stale: confirm `data/universe_seed.json`
    and `data/profile.json` are committed, then re-run.
 4. If FMP is the root cause → `python tools/market_map/fmp_healthcheck.py` prints the exact reason; refresh
-   the `FMP_API_KEY` repo secret if it says the key is invalid. The grid does **not** depend on FMP.
+   the `FMP_ULTIMATE_API_KEY` repo secret if it says the key is invalid. The grid does **not** depend on FMP.
 
 ## Run all guardrail tests
 `bash tools/market_map/verify_guardrails.sh`

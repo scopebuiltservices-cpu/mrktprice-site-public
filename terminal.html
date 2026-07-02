@@ -4733,7 +4733,7 @@ sel.value=ACTIVE()[0];load(sel.value,DATA[sel.value]);updateStrip();requestAnima
        +'<div style="font-size:7.5px;color:#69727f">'+r.src+'</div></div>';}).join('');
      host.innerHTML='<div style="font-size:10px;color:var(--muted);margin:4px 0"><b style="color:var(--gold)">DATA COVERAGE</b> · '+R.n+' names · source <b style="color:'+(R.live?'#2ecc8f':'#e0a13c')+'">'+(R.src||'unknown')+'</b>'+(R.asof?' · as of '+R.asof:'')+' · factor weights <b>'+(R.fitted?'fitted (forward-IC)':'priors')+'</b> · ranking-data quality: '+verdict+' ('+(R.overall*100).toFixed(0)+'%). Each tile = % of companies actually carrying that field. Research only.</div>'
        +'<div style="display:flex;gap:5px;flex-wrap:wrap">'+tiles+'</div>'
-       +(R.overall<0.4?'<div class="note" style="font-size:9px;color:#e0a13c;margin-top:4px">Thin coverage — set FMP_API_KEY (macro+earnings) and EODHD_API_KEY (short interest/flow) as GitHub secrets so the nightly build populates these domains.</div>':'');
+       +(R.overall<0.4?'<div class="note" style="font-size:9px;color:#e0a13c;margin-top:4px">Thin coverage — set FMP_ULTIMATE_API_KEY (macro+earnings) and EODHD_API_KEY (short interest/flow) as GitHub secrets so the nightly build populates these domains.</div>':'');
    }catch(e){}
  }
  window.renderDataCoverage=render;

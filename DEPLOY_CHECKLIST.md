@@ -31,7 +31,7 @@ Drift cone + HARQ rebuild + full universe + keyless macro/flow + freshness fixes
 2. **`Build + publish MrktPrice`** (pages.yml) → regenerates `marketmap.json` + `hist/` + publishes the site.
 
 ## 3. Secrets / variables (one‑time, repo Settings → Secrets and variables → Actions)
-- **Secret `FMP_API_KEY`** — required for the full universe + prices + earnings/valuation.
+- **Secret `FMP_ULTIMATE_API_KEY`** — required for the full universe + prices + earnings/valuation.
 - Optional secrets: `FRED_API_KEY`, `EODHD_API_KEY`, `ALPACA_*` (macro/flow/short already work keyless).
 - **First rebuild only:** set a **variable `UNIVERSE_LIMIT=1200`** so the ~4–5k‑name build finishes inside the
   Action time budget. Confirm it completes green, then remove it (or raise) for the full set.

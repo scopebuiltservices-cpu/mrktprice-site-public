@@ -63,16 +63,34 @@
     return h > 0 ? Math.min(h, cap) : null;
   }
 
-  // expectations_engine._champion_sigma — sigma_d*sqrt(H*VR), RAW variance ratio (biased v1, len denom)
-  function championSigma(closes, H) {
+  // metrics.parkinson_vol(highs, lows, n) — daily range sigma; sqrt((1/(4 ln2 N)) sum ln(H/L)^2)
+  function parkinsonVol(highs, lows, n) {
+    if (!highs || !lows) return null;
+    var H2 = highs.slice(-n), L2 = lows.slice(-n), s = 0, cnt = 0, i;
+    for (i = 0; i < Math.min(H2.length, L2.length); i++) {
+      var h = +H2[i], l = +L2[i];
+      if (isFinite(h) && isFinite(l) && l > 0 && h >= l) { s += Math.log(h / l) * Math.log(h / l); cnt++; }
+    }
+    if (cnt < 5) return null;
+    return Math.sqrt(s / (4.0 * Math.log(2) * cnt));
+  }
+
+  // expectations_engine._champion_sigma — sigma_d*sqrt(H*VR), RAW variance ratio (biased v1, len denom).
+  // With intraday H/L, per-day sigma is a reliability blend with Parkinson range vol (0.7 range / 0.3 C2C).
+  function championSigma(closes, H, highs, lows) {
     var c = [], i; for (i = 0; i < closes.length; i++) if (closes[i] > 0) c.push(closes[i]);
     if (c.length < 30) return null;
     var r = []; for (i = 1; i < c.length; i++) r.push(Math.log(c[i] / c[i - 1]));
     var m = 0; for (i = 0; i < r.length; i++) m += r[i]; m /= r.length;
     var v = 0; for (i = 0; i < r.length; i++) v += (r[i] - m) * (r[i] - m); v /= (r.length - 1);
     var sd = Math.sqrt(v); if (sd <= 0) return null;
+    var sdUse = sd;
+    if (highs && lows) {
+      var pk = parkinsonVol(highs, lows, Math.min(c.length, Math.max(20, H)));
+      if (pk && pk > 0) sdUse = Math.sqrt(0.7 * pk * pk + 0.3 * sd * sd);
+    }
     var q = Math.min(H, Math.max(2, (c.length / 4) | 0));
-    if (r.length < q * 4) return sd * Math.sqrt(H);
+    if (r.length < q * 4) return sdUse * Math.sqrt(H);
     var v1 = 0; for (i = 0; i < r.length; i++) v1 += (r[i] - m) * (r[i] - m); v1 /= r.length;
     if (v1 <= 0) return sd * Math.sqrt(H);
     var s = 0, k; for (k = q - 1; k < r.length; k++) { var su = 0; for (i = 0; i < q; i++) su += r[k - i]; s += (su - q * m) * (su - q * m); }
@@ -102,7 +120,7 @@
   }
   function r6(x) { return Math.round(x * 1e6) / 1e6; }
 
-  function project(closes, vols, H, r) {
+  function project(closes, vols, H, r, highs, lows) {
     H = H || 21; r = r || 5;
     var c = [], i; for (i = 0; i < (closes || []).length; i++) { var x = +closes[i]; if (x > 0) c.push(x); }
     if (c.length < 60) return null;
@@ -110,7 +128,7 @@
     var mu = 0; for (i = 0; i < lr.length; i++) mu += lr[i]; mu /= lr.length;
     var sd_d = Math.sqrt(lr.reduce(function (a, x) { return a + (x - mu) * (x - mu); }, 0) / (lr.length - 1));
     if (sd_d <= 0) return null;
-    var sH = championSigma(c, H); if (!sH || sH <= 0) return null;
+    var sH = championSigma(c, H, highs, lows); if (!sH || sH <= 0) return null;
     var q = Math.min(H, Math.max(2, (c.length / 4) | 0));
     var vs = vrStat(c, q), vr = vs ? vs.vr : 1.0, z = vs ? vs.z : null;
     var sig = !!(z != null && Math.abs(z) >= 1.6449);

@@ -145,6 +145,14 @@
     var per = 0, fad = 0, rw = 0;
     rows.forEach(function (r) { if (r.vp) { var sig = r.vp.pJoint != null && r.vp.pJoint <= 0.10; if (sig && r.vp.vrStar > 1) per++; else if (sig && r.vp.vrStar < 1) fad++; else rw++; } });
     if (per + fad + rw > 0) recs.push(['Regime mix', per + ' name(s) in a significant <b style="color:#2ecc8f">persist</b> regime, ' + fad + ' in <b style="color:#ef5f4e">fade</b>, ' + rw + ' random-walk. Persisters reward letting winners run and adding on strength; faders reward trimming into strength and buying weakness. Trading a fader like a persister (or vice-versa) is a classic self-inflicted loss.', '#c9a24a']);
+    // P&L-aware coaching: the disposition effect
+    var wins = rows.filter(function (r) { return r.pnlPct != null && r.pnlPct > 0; });
+    var loss = rows.filter(function (r) { return r.pnlPct != null && r.pnlPct < 0; });
+    if (wins.length && loss.length) {
+      var bigWin = wins.slice().sort(function (a, b) { return b.pnlPct - a.pnlPct; })[0];
+      var bigLoss = loss.slice().sort(function (a, b) { return a.pnlPct - b.pnlPct; })[0];
+      recs.push(['Disposition effect', wins.length + ' winner(s) (best <b>' + bigWin.sym + '</b> ' + (bigWin.pnlPct >= 0 ? '+' : '') + bigWin.pnlPct.toFixed(1) + '%), ' + loss.length + ' loser(s) (worst <b>' + bigLoss.sym + '</b> ' + bigLoss.pnlPct.toFixed(1) + '%). Investors tend to sell winners too early and hold losers too long (Odean 1998). Judge each position on its <b>forward</b> regime and thesis — not on whether it is green or red in your book.', '#c9a24a']);
+    }
     return recs;
   }
 
@@ -205,7 +213,8 @@
     // add form (persistent ids so focus survives)
     h += '<div id="ppForm" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 6px">'
       + '<input id="ppSym" placeholder="ticker" style="width:90px;text-transform:uppercase;background:var(--panel,#10141b);border:1px solid var(--line,#2a2f3a);color:var(--ink,#eef3f8);border-radius:6px;padding:5px 7px;font-size:12px">'
-      + '<input id="ppSh" type="number" min="0" step="1" placeholder="shares" style="width:90px;background:var(--panel,#10141b);border:1px solid var(--line,#2a2f3a);color:var(--ink,#eef3f8);border-radius:6px;padding:5px 7px;font-size:12px">'
+      + '<input id="ppSh" type="number" min="0" step="1" placeholder="shares" style="width:82px;background:var(--panel,#10141b);border:1px solid var(--line,#2a2f3a);color:var(--ink,#eef3f8);border-radius:6px;padding:5px 7px;font-size:12px">'
+      + '<input id="ppCost" type="number" min="0" step="0.01" placeholder="avg cost (opt)" title="average cost/share; blank = use last close so P&L starts at 0" style="width:104px;background:var(--panel,#10141b);border:1px solid var(--line,#2a2f3a);color:var(--ink,#eef3f8);border-radius:6px;padding:5px 7px;font-size:12px">'
       + '<button id="ppAdd" style="background:var(--brand,#16c79a);color:#04120d;border:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>'
       + '<span style="font-size:9px;color:var(--faint,#646e7c);align-self:center">value ranks the book; 5m/15m are confirmed wall-clock momentum from the live feed</span></div>';
 
@@ -215,7 +224,7 @@
     } else {
       h += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">'
         + '<tr style="color:var(--faint,#646e7c);text-align:right;font-size:9px;letter-spacing:.04em;text-transform:uppercase">'
-        + '<th style="text-align:left;padding:3px 4px">#</th><th style="text-align:left">ticker</th><th>shares</th><th>price</th><th>value</th><th>weight</th><th>day</th><th>5m</th><th>15m</th><th style="text-align:left;padding-left:8px">regime</th><th></th></tr>';
+        + '<th style="text-align:left;padding:3px 4px">#</th><th style="text-align:left">ticker</th><th>shares</th><th>cost</th><th>price</th><th>value</th><th>P&amp;L</th><th>weight</th><th>day</th><th>5m</th><th>15m</th><th style="text-align:left;padding-left:8px">regime</th><th></th></tr>';
       rows.forEach(function (r, i) {
         var w = (total > 0 && r.value != null) ? (r.value / total * 100) : null;
         var badge = r.src === 'live' ? '<span style="color:#2ecc8f;font-size:8px"> ●</span>' : (r.src === 'close' ? '<span style="color:#8a93a0;font-size:8px"> ○</span>' : '');
@@ -224,9 +233,11 @@
         h += '<tr style="text-align:right;border-top:1px solid var(--line,#2a2f3a)">'
           + '<td style="text-align:left;padding:4px;color:var(--faint,#646e7c)">' + (i + 1) + '</td>'
           + '<td style="text-align:left;font-weight:700;color:var(--ink,#eef3f8)">' + r.sym + badge + '</td>'
-          + '<td><input class="ppShInp" data-sym="' + r.sym + '" type="number" min="0" step="1" value="' + r.shares + '" style="width:64px;text-align:right;background:transparent;border:1px solid var(--line,#2a2f3a);color:var(--ink,#eef3f8);border-radius:4px;padding:2px 4px;font-size:11px"></td>'
+          + '<td><input class="ppShInp" data-sym="' + r.sym + '" type="number" min="0" step="1" value="' + r.shares + '" style="width:60px;text-align:right;background:transparent;border:1px solid var(--line,#2a2f3a);color:var(--ink,#eef3f8);border-radius:4px;padding:2px 4px;font-size:11px"></td>'
+          + '<td><input class="ppCostInp" data-sym="' + r.sym + '" type="number" min="0" step="0.01" value="' + (r.cost != null ? r.cost : '') + '" placeholder="cost" title="average cost per share (what you paid)" style="width:60px;text-align:right;background:transparent;border:1px solid var(--line,#2a2f3a);color:var(--muted,#8a93a0);border-radius:4px;padding:2px 4px;font-size:11px"></td>'
           + '<td>' + (r.price != null ? r.price.toFixed(2) : '—') + '</td>'
           + '<td style="font-weight:700;color:var(--ink,#eef3f8)">' + fmtMoney(r.value) + '</td>'
+          + '<td>' + (r.pnl != null ? ('<span style="color:' + (r.pnl >= 0 ? '#2ecc8f' : '#ef5f4e') + '">' + (r.pnl >= 0 ? '+' : '-') + '$' + Math.abs(r.pnl).toFixed(0) + '</span> ' + pctSpan(r.pnlPct)) : '<span style="color:var(--faint,#646e7c)">—</span>') + '</td>'
           + '<td>' + (w != null ? w.toFixed(1) + '%' : '—') + '</td>'
           + '<td>' + pctSpan(r.dayPct) + '</td>'
           + '<td>' + pctSpan(r.m5) + '</td>'
@@ -261,16 +272,24 @@
     if (add) add.onclick = function () {
       var s = (document.getElementById('ppSym').value || '').trim().toUpperCase();
       var sh = parseFloat(document.getElementById('ppSh').value);
+      var cst = parseFloat(document.getElementById('ppCost').value);
       if (!s || !(sh > 0)) return;
+      var costV = (cst > 0) ? cst : (lastClose(s) || null);   // blank cost -> last close (P&L starts ~0)
       var h = holdings(); var ex = h.filter(function (x) { return x.t === s; })[0];
-      if (ex) ex.shares = sh; else h.push({ t: s, shares: sh });
-      setHoldings(h); LIVE[s] = LIVE[s] || null; poll(); render();
+      if (ex) { ex.shares = sh; if (cst > 0) ex.cost = cst; else if (!(ex.cost > 0) && costV) ex.cost = costV; }
+      else h.push(costV != null ? { t: s, shares: sh, cost: costV } : { t: s, shares: sh });
+      setHoldings(h); LIVE[s] = LIVE[s] || null;
+      document.getElementById('ppSym').value = ''; document.getElementById('ppSh').value = ''; document.getElementById('ppCost').value = '';
+      poll(); render();
     };
     Array.prototype.forEach.call(_mount.querySelectorAll('.ppDel'), function (el) {
       el.onclick = function () { var s = el.getAttribute('data-sym'); setHoldings(holdings().filter(function (x) { return x.t !== s; })); render(); };
     });
     Array.prototype.forEach.call(_mount.querySelectorAll('.ppShInp'), function (el) {
       el.onchange = function () { var s = el.getAttribute('data-sym'), v = parseFloat(el.value); var h = holdings(); var ex = h.filter(function (x) { return x.t === s; })[0]; if (ex) { if (v > 0) ex.shares = v; else h = h.filter(function (x) { return x.t !== s; }); setHoldings(h); render(); } };
+    });
+    Array.prototype.forEach.call(_mount.querySelectorAll('.ppCostInp'), function (el) {
+      el.onchange = function () { var s = el.getAttribute('data-sym'), v = parseFloat(el.value); var h = holdings(); var ex = h.filter(function (x) { return x.t === s; })[0]; if (ex && v > 0) { ex.cost = v; setHoldings(h); render(); } };
     });
   }
 

@@ -3224,15 +3224,20 @@ function renderDirDeck(){
   var cVal,cCol,cSub;
   if(!vp){cVal='—';cCol='var(--faint,#646e7c)';cSub='need ~40+ daily closes for a VR read';}
   else{cVal=vp.label+' <span style="font-size:11px;font-weight:600;color:var(--muted,#8a93a0)">VR '+vp.vr.toFixed(2)+(vp.z!=null?' · z '+vp.z.toFixed(1):'')+'</span>';cCol=vp.color;cSub=vp.read;}
-  // --- synthesis: direction × persistence (only assert a regime when VR is significant) ---
+  // server-side, selection-adjusted verdict (dirvr_board): does the persist/fade overlay actually BEAT
+  // following the direction alone? walk-forward + DSR + PBO. The synthesis only CLAIMS an edge when proven.
+  var dvr=null; try{var _mm=window.MMAP&&window.MMAP.names; if(_mm){for(var _di=0;_di<_mm.length;_di++){if((_mm[_di].t||'').toUpperCase()===(CUR.sym||'').toUpperCase()){dvr=_mm[_di].dirVR;break;}}}}catch(_de){}
+  var proven=!!(dvr&&dvr.verdict==='VALIDATED');
+  // --- synthesis: direction × persistence (assert a regime only when VR is significant AND the overlay is backtested) ---
   var verdict='';
   if(it.triggered && vp){
     var u2=it.trend>=0, d2=(u2?'UP':'DOWN');
-    if(vp.sig && vp.vr>1) verdict='Confirmed '+d2+' push + significant PERSIST → continuation favored toward the cone’s '+(u2?'upper':'lower')+' band.';
-    else if(vp.sig && vp.vr<1) verdict='Confirmed '+d2+' push + significant FADE → mean-reversion risk'+(vp.halfLife?' (~'+vp.halfLife.toFixed(0)+'-day half-life)':'')+'; the push may not hold.';
-    else verdict='Confirmed '+d2+' push, but VR is not significant → no reliable persist/fade read; judge the push on its own merits.';
+    if(vp.sig && proven && vp.vr>1) verdict='Confirmed '+d2+' push + significant PERSIST (backtested edge) → continuation favored toward the cone’s '+(u2?'upper':'lower')+' band.';
+    else if(vp.sig && proven && vp.vr<1) verdict='Confirmed '+d2+' push + significant FADE (backtested edge) → mean-reversion risk'+(vp.halfLife?' (~'+vp.halfLife.toFixed(0)+'-day half-life)':'')+'; fade the push.';
+    else if(vp.sig) verdict='Confirmed '+d2+' push + '+vp.label+' VR — but the persist/fade overlay has NOT shown a selection-adjusted edge over direction-alone for this name; treat as a directional read.';
+    else verdict='Confirmed '+d2+' push, VR not significant → no reliable persist/fade read; judge the push on its own merits.';
   } else if(vp){
-    verdict='No intraday confirmation yet · cone persistence: '+vp.label+(vp.z!=null?' (z '+vp.z.toFixed(1)+')':'')+'.';
+    verdict='No intraday confirmation yet · cone persistence: '+vp.label+(vp.z!=null?' (z '+vp.z.toFixed(1)+')':'')+(proven?' · overlay edge backtested':'')+'.';
   }
   var tile=function(hd,val,col,sub,badge,tip){
     return '<div title="'+String(tip||'').replace(/"/g,'&quot;')+'" style="flex:1;min-width:134px;background:linear-gradient(160deg,var(--panel2,#19212e),var(--panel,#111721));border:1px solid var(--line,#27313f);border-left:3px solid '+col+';border-radius:9px;padding:7px 9px">'
@@ -3246,7 +3251,8 @@ function renderDirDeck(){
       +tile('Cone persistence · VR', cVal, cCol, cSub, '', 'The cone tells you whether a confirmed push is likely to persist (VR>1) or fade (VR<1).')
     +'</div>'
     +(verdict?'<div style="font-size:9px;color:var(--ink,#eef3f8);margin-top:4px;padding:4px 7px;background:rgba(255,255,255,.03);border:1px solid var(--line,#27313f);border-radius:7px">'+verdict+'</div>':'')
-    +'<div style="font-size:8px;color:var(--faint,#646e7c);margin-top:3px;line-height:1.4">Intraday-confirmed direction comes from the separate intraday engine (consecutive 15-min confirms), <b>not the cone</b>; the cone tells you whether a confirmed push is likely to <b style="color:#2ecc8f">persist (VR&gt;1)</b> or <b style="color:#ef5f4e">fade (VR&lt;1)</b>. <span style="opacity:.85">Persist/fade shows only when the Lo-MacKinlay VR is statistically significant (|z|&ge;1.64, multi-day scale); the intraday tile’s <b>next-bar&nbsp;%</b> is the intraday-scale persistence.</span></div>';
+    +'<div style="font-size:8px;color:var(--faint,#646e7c);margin-top:3px;line-height:1.4">Intraday-confirmed direction comes from the separate intraday engine (consecutive 15-min confirms), <b>not the cone</b>; the cone tells you whether a confirmed push is likely to <b style="color:#2ecc8f">persist (VR&gt;1)</b> or <b style="color:#ef5f4e">fade (VR&lt;1)</b>. <span style="opacity:.85">Persist/fade shows only when the Lo-MacKinlay VR is statistically significant (|z|&ge;1.64, multi-day scale); the intraday tile’s <b>next-bar&nbsp;%</b> is the intraday-scale persistence.</span></div>'
+    +(dvr?'<div style="font-size:8px;color:var(--faint,#646e7c);margin-top:2px" title="Walk-forward test (direction_vr_validate): does the persist/fade overlay beat following the direction alone, after Deflated-Sharpe + Probability-of-Backtest-Overfitting? VALIDATED only if edge>0, mechanism significant, DSR>=0.95, PBO<=0.5.">Overlay backtest ('+(dvr.h||'')+'d, n='+(dvr.n||0)+'): <b style="color:'+(proven?'#2ecc8f':'#e0c14a')+'">'+dvr.verdict+'</b>'+(dvr.edgeSharpe!=null?' · Δsharpe '+dvr.edgeSharpe.toFixed(2):'')+(dvr.dsr!=null?' · DSR '+dvr.dsr.toFixed(2):'')+(dvr.pbo!=null?' · PBO '+dvr.pbo.toFixed(2):'')+'</div>':'');
 }
 var _intraTimer=null,_intraSym=null;
 function intradayTick(){

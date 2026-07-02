@@ -21,6 +21,33 @@
   function holdings() { return _ls(LS_HOLD, []).filter(function (h) { return h && h.t && h.shares > 0; }); }
   function setHoldings(h) { _save(LS_HOLD, h); }
 
+  // ---------- session equity curve (total book value over the session) ----------
+  var LS_EQ = 'mrkt.practice.eq.';
+  function _eqKey() { return LS_EQ + (new Date().toISOString().slice(0, 10)); }
+  function recordEquity(total) {
+    var k = _eqKey(), buf = _ls(k, []), now = Date.now();
+    if (total > 0 && (!buf.length || buf[buf.length - 1][0] < now - SAMPLE_MS)) {
+      buf.push([now, Math.round(total * 100) / 100]); if (buf.length > MAXPX) buf = buf.slice(-MAXPX); _save(k, buf);
+    }
+    return buf;
+  }
+  function sparkline(vals, w, h) {
+    if (!vals || vals.length < 2) return '<span style="font-size:9px;color:var(--faint,#646e7c)">accumulating…</span>';
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), rng = (hi - lo) || 1, n = vals.length;
+    var pts = vals.map(function (v, i) { return ((i / (n - 1)) * w).toFixed(1) + ',' + (h - ((v - lo) / rng) * h).toFixed(1); }).join(' ');
+    var up = vals[vals.length - 1] >= vals[0], col = up ? '#2ecc8f' : '#ef5f4e';
+    var yb = (h - ((vals[0] - lo) / rng) * h).toFixed(1); // baseline = session open
+    return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="display:block">'
+      + '<line x1="0" y1="' + yb + '" x2="' + w + '" y2="' + yb + '" stroke="var(--line,#2a2f3a)" stroke-width="1" stroke-dasharray="2,2"/>'
+      + '<polyline points="' + pts + '" fill="none" stroke="' + col + '" stroke-width="1.6"/></svg>';
+  }
+  // backfill a cost basis for any holding missing one (uses last close) so P&L is always complete
+  function migrateCost() {
+    var h = _ls(LS_HOLD, []), ch = false;
+    h.forEach(function (x) { if (x && x.t && !(x.cost > 0)) { var lc = lastClose(x.t); if (lc != null) { x.cost = Math.round(lc * 100) / 100; ch = true; } } });
+    if (ch) _save(LS_HOLD, h);
+  }
+
   // ---------- price / history resolution (any ticker) ----------
   function _DATA() { try { return window.DATA || (typeof DATA !== 'undefined' ? DATA : null); } catch (_e) { return null; } }
   function _mmap() { try { return (window.MMAP && window.MMAP.names) ? window.MMAP.names : null; } catch (_e) { return null; } }
@@ -89,7 +116,11 @@
       try { var vm = window.PathProj.vrMulti(cl); if (vm) vp = vm; } catch (_e) {}
       try { pj = window.PathProj.project(cl, volsOf(sym), 21, 5); } catch (_e2) {}
     }
-    return { sym: sym, shares: h.shares, price: price, src: src, dayPct: dayPct, value: value, m5: m5, m15: m15, vp: vp, pj: pj };
+    var cost = (h.cost != null && h.cost > 0) ? h.cost : null;
+    var costBasis = (cost != null) ? h.shares * cost : null;
+    var pnl = (value != null && costBasis != null) ? value - costBasis : null;
+    var pnlPct = (cost != null && price != null && cost > 0) ? (price / cost - 1) * 100 : null;
+    return { sym: sym, shares: h.shares, cost: cost, costBasis: costBasis, pnl: pnl, pnlPct: pnlPct, price: price, src: src, dayPct: dayPct, value: value, m5: m5, m15: m15, vp: vp, pj: pj };
   }
 
   // ---------- education / recommendations (NOT advice) ----------
@@ -138,18 +169,38 @@
     var typing = ae && _mount.contains(ae) && (ae.tagName === 'INPUT');
     if (typing && _mount.querySelector('#ppBody')) return;
 
+    migrateCost();
     var hs = holdings(), rows = hs.map(rowModel);
     rows.sort(function (a, b) { return (b.value || -1) - (a.value || -1); });   // hierarchy by value, live-reordering
     var total = rows.reduce(function (a, r) { return a + (r.value || 0); }, 0);
     var totalPrev = rows.reduce(function (a, r) { var pc = prevClose(r.sym), lc = lastClose(r.sym); var base = (r.src === 'live') ? lc : pc; return a + ((base != null) ? r.shares * base : 0); }, 0);
     var totDay = (totalPrev > 0) ? (total / totalPrev - 1) * 100 : null;
     var liveOn = !!((window.MRKT_TOKEN || window.MRKT_CODE) && window._isRTH && window._isRTH());
+    // cost-basis / unrealized P&L totals
+    var totCost = rows.reduce(function (a, r) { return a + (r.costBasis || 0); }, 0);
+    var totPnl = rows.reduce(function (a, r) { return a + (r.pnl != null ? r.pnl : 0); }, 0);
+    var totPnlPct = (totCost > 0) ? (totPnl / totCost * 100) : null;
+    // session equity curve
+    var eq = rows.length ? recordEquity(total) : _ls(_eqKey(), []);
+    var eqVals = eq.map(function (p) { return p[1]; });
+    var eqStart = eqVals.length ? eqVals[0] : null, eqLo = eqVals.length ? Math.min.apply(null, eqVals) : null, eqHi = eqVals.length ? Math.max.apply(null, eqVals) : null;
+    var eqPct = (eqStart > 0) ? (total / eqStart - 1) * 100 : null;
+    function _tile(lab, big, sub, col) { return '<div style="flex:1;min-width:158px;background:var(--panel,#10141b);border:1px solid var(--line,#2a2f3a);border-radius:9px;padding:8px 10px"><div style="font-size:8px;letter-spacing:.5px;text-transform:uppercase;color:var(--faint,#646e7c)">' + lab + '</div><div style="font-size:18px;font-weight:800;line-height:1.1;margin-top:2px;color:' + (col || 'var(--ink,#eef3f8)') + '">' + big + '</div><div style="font-size:9px;color:var(--muted,#8a93a0);margin-top:3px">' + sub + '</div></div>'; }
 
     var css = 'background:var(--panel2,#141a24);border:1px solid var(--line,#2a2f3a);border-radius:10px;padding:10px 12px';
     var h = '<div style="' + css + '">';
     h += '<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">'
       + '<span style="font-size:13px;font-weight:800;letter-spacing:.04em;color:var(--ink,#eef3f8)">PRACTICE PORTFOLIO <span style="font-weight:600;color:var(--muted,#8a93a0)">· teacher dashboard</span></span>'
       + '<span style="font-size:11px;color:var(--muted,#8a93a0)">total <b style="font-size:15px;color:var(--ink,#eef3f8)">' + fmtMoney(total) + '</b> · ' + pctSpan(totDay) + ' · <span style="padding:1px 6px;border-radius:5px;font-size:9px;font-weight:700;background:' + (liveOn ? '#123' : '#222') + ';color:' + (liveOn ? '#2ecc8f' : '#8a93a0') + '">' + (liveOn ? 'LIVE 15-min' : 'CLOSE') + '</span></span></div>';
+
+    // tiles: session equity-curve sparkline + unrealized P&L + day change
+    if (rows.length) {
+      h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 2px">'
+        + _tile('Book value · session', fmtMoney(total), sparkline(eqVals, 150, 30) + '<span style="display:inline-block;margin-top:2px">session ' + pctSpan(eqPct) + (eqLo != null ? ' · lo ' + fmtMoney(eqLo) + ' · hi ' + fmtMoney(eqHi) : '') + '</span>')
+        + _tile('Unrealized P&amp;L', (totPnl >= 0 ? '+' : '-') + fmtMoney(Math.abs(totPnl)), 'vs cost ' + fmtMoney(totCost) + ' · ' + pctSpan(totPnlPct), totPnl >= 0 ? '#2ecc8f' : '#ef5f4e')
+        + _tile('Day change', (totDay == null ? '—' : (totDay >= 0 ? '+' : '') + totDay.toFixed(2) + '%'), 'book move today · ' + (liveOn ? 'live' : 'last close'), totDay == null ? 'var(--ink,#eef3f8)' : (totDay >= 0 ? '#2ecc8f' : '#ef5f4e'))
+        + '</div>';
+    }
 
     // add form (persistent ids so focus survives)
     h += '<div id="ppForm" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 6px">'

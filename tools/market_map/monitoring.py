@@ -157,6 +157,26 @@ def compute(root=".", window=10, horizon=21):
     m = {"asof": dt.date.today().isoformat(), "nResolved": len(resolved), "nLogged": len(arows)}
     alerts = []
 
+    # --- conformal e-process calibration alarm (anytime-valid test martingale over matured PIT) ---
+    # No-op until forecasts log a `pit` field (randomized PIT of the predictive CDF); guarded + lazy so
+    # it can never break the existing pipeline. eMax crossing warn(20)~5% / kill(100)~1% is level-controlled
+    # UNIFORMLY over time (Ville), so a persistent calibration drift raises an alarm without alpha-spending.
+    _pits = [float(r["pit"]) for r in resolved
+             if isinstance(r.get("pit"), (int, float)) and 0.0 <= float(r["pit"]) <= 1.0]
+    if len(_pits) >= 20:
+        try:
+            import eprocess as _ep
+            _ce = _ep.conformal_eprocess(_pits)
+            if _ce:
+                m["calibEprocess"] = {"eMax": _ce["eMax"], "level": _ce["level"],
+                                      "pAnytime": _ce["pAnytime"], "n": _ce["n"]}
+                if _ce["level"] == "kill":
+                    alerts.append({"sev": "alert", "metric": "calibEprocess", "value": _ce["eMax"], "note": _ce["note"]})
+                elif _ce["level"] == "warn":
+                    alerts.append({"sev": "warn", "metric": "calibEprocess", "value": _ce["eMax"], "note": _ce["note"]})
+        except Exception:
+            pass
+
     # --- skill: IC / rankIC / hit-rate (overall + recent) ---
     if len(resolved) >= 20:
         preds = [float(r["alpha"]) for r in resolved]

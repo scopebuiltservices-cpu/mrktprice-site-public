@@ -42,7 +42,8 @@ def _stooq(t):
             for ln in r.text.strip().splitlines()[1:]:
                 p = ln.split(",")
                 if len(p) >= 6 and p[4] not in ("", "N/D"):
-                    try: rows.append([p[0], round(float(p[4]), 4), int(float(p[5])) if p[5] not in ("", "N/D") else 0])
+                    try: rows.append([p[0], round(float(p[4]), 4), int(float(p[5])) if p[5] not in ("", "N/D") else 0,
+                                      round(float(p[2]), 4), round(float(p[3]), 4)])   # +high(p2) +low(p3)
                     except Exception: pass
             if len(rows) >= 40:
                 return rows
@@ -57,6 +58,11 @@ def history(t):
     try:
         import fmp_history as _fh
         if _fh.have_key():
+            ov = None
+            try: ov = _fh.eod_ohlcv(t)   # [date,open,high,low,close,vol]
+            except Exception: ov = None
+            if ov:   # keep [date,close,vol,high,low] so the cone can use Parkinson range vol (additive)
+                return [[r[0], r[4], r[5], r[2], r[3]] for r in ov], _fh.SOURCE_LABEL
             rows = _fh.eod_history(t)
             if rows:
                 return rows, _fh.SOURCE_LABEL
@@ -69,7 +75,10 @@ def history(t):
         for idx, r in h.iterrows():
             c = r.get("Close")
             if c == c and c > 0:
-                rows.append([str(idx.date()), round(float(c), 4), int(r.get("Volume") or 0)])
+                hh = r.get("High"); ll = r.get("Low")
+                rows.append([str(idx.date()), round(float(c), 4), int(r.get("Volume") or 0),
+                             round(float(hh), 4) if (hh == hh and hh) else round(float(c), 4),
+                             round(float(ll), 4) if (ll == ll and ll) else round(float(c), 4)])
         if len(rows) >= 40:
             return rows, "yfinance"
     except Exception:

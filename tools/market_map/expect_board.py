@@ -23,12 +23,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import expectations_engine as EE
 
 
-def expect_for(closes, vols, H=21, level=0.90):
+def expect_for(closes, vols, H=21, level=0.90, highs=None, lows=None):
     c = [float(x) for x in (closes or []) if x is not None and float(x) > 0]
     if len(c) < 80:
         return None
     vols = [float(x) if x is not None else 0.0 for x in (vols or [])]
-    sH = EE._champion_sigma(c, H)
+    sH = EE._champion_sigma(c, H, highs=highs, lows=lows)   # range-aware (Parkinson) when H/L present
     if not sH or sH <= 0:
         return None
     band = EE.expected_band(c[-1], sH, level)
@@ -44,7 +44,7 @@ def expect_for(closes, vols, H=21, level=0.90):
             wv = vols[t:] if len(vols) > t else []
             last = EE.reconcile(c[t], sHt, level, win, rets, wv, base, c[-1])
     acc = EE.accuracy(c, vols, H=H, level=level)
-    proj = EE.path_projection(c, vols, H=H)  # dispersion+persistence -> % on the expected path + top price/vol
+    proj = EE.path_projection(c, vols, H=H, highs=highs, lows=lows)  # dispersion+persistence -> % on the expected path + top price/vol
     return {"band": band, "bandBoot": bandBoot, "last": last, "accuracy": acc, "proj": proj, "H": H, "level": level}
 
 
@@ -54,11 +54,22 @@ def _load_hist(hist_dir, ticker):
         return None, None
     try:
         rows = json.load(open(p))
-        closes = [r[1] for r in rows if isinstance(r, (list, tuple)) and len(r) > 1 and r[1] is not None]
-        vols = [(r[2] if len(r) > 2 and r[2] is not None else 0) for r in rows if isinstance(r, (list, tuple)) and len(r) > 1]
-        return closes, vols
+        closes = []; vols = []; highs = []; lows = []; hl = 0
+        for r in rows:
+            if not (isinstance(r, (list, tuple)) and len(r) > 1 and r[1] is not None):
+                continue
+            closes.append(r[1])
+            vols.append(r[2] if len(r) > 2 and r[2] is not None else 0)
+            h = r[3] if len(r) > 3 and r[3] is not None else None
+            lw = r[4] if len(r) > 4 and r[4] is not None else None
+            highs.append(h if h is not None else r[1]); lows.append(lw if lw is not None else r[1])
+            if h is not None and lw is not None:
+                hl += 1
+        # only expose H/L when the series actually carries real intraday range (>=60% of rows)
+        hv, lv = (highs, lows) if (closes and hl >= 0.6 * len(closes)) else (None, None)
+        return closes, vols, hv, lv
     except Exception:
-        return None, None
+        return None, None, None, None
 
 
 def _is_equity(n):
@@ -79,10 +90,10 @@ def main():
     for n in names:
         if not _is_equity(n):
             continue
-        closes, vols = _load_hist(a.hist, n.get("t", ""))
+        closes, vols, highs, lows = _load_hist(a.hist, n.get("t", ""))
         if not closes:
             continue
-        block = expect_for(closes, vols, H=a.horizon, level=a.level)
+        block = expect_for(closes, vols, H=a.horizon, level=a.level, highs=highs, lows=lows)
         if block:
             n["expA"] = block; done += 1
     tmp = a.map + ".tmp"

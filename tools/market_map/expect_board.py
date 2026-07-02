@@ -43,7 +43,8 @@ def expect_for(closes, vols, H=21, level=0.90):
             wv = vols[t:] if len(vols) > t else []
             last = EE.reconcile(c[t], sHt, level, win, rets, wv, base, c[-1])
     acc = EE.accuracy(c, vols, H=H, level=level)
-    return {"band": band, "last": last, "accuracy": acc, "H": H, "level": level}
+    proj = EE.path_projection(c, vols, H=H)  # dispersion+persistence -> % on the expected path + top price/vol
+    return {"band": band, "last": last, "accuracy": acc, "proj": proj, "H": H, "level": level}
 
 
 def _load_hist(hist_dir, ticker):

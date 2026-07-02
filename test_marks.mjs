@@ -66,4 +66,30 @@ ok('verdict: fade when significant down', M.verdictGlyph({ vrStar: 0.6, pJoint: 
 ok('verdict: neutral RW (no star) when insignificant', M.verdictGlyph({ vrStar: 1.2, pJoint: 0.4 }).includes('~ RW') && !M.verdictGlyph({ vrStar: 1.2, pJoint: 0.4 }).includes('✱'));
 ok('verdict: empty when no data', M.verdictGlyph(null) === '');
 
+// ---- Tier 2 marks -----------------------------------------------------------------------------------
+const brk = M.breakLines({ breaks: [{ x: 300, label: 'BP', kind: 'mean' }, { x: 420, label: 'ICSS', kind: 'var' }], yTop, yBot });
+ok('breaks: two dashed verticals', (brk.match(/<line/g) || []).length === 2 && brk.includes('stroke-dasharray="2,3"'));
+ok('breaks: mean=amber, var=accent', brk.includes('#e0c14a') && brk.includes('#39b6ff'));
+ok('breaks: labels rendered', brk.includes('BP') && brk.includes('ICSS'));
+ok('breaks: empty when none', M.breakLines({ breaks: [], yTop, yBot }) === '');
+
+const rib = M.regimeRibbon({ segments: [{ x0: 400, x1: 460, state: 0 }, { x0: 460, x1: 520, state: 1 }, { x0: 520, x1: 560, state: 2 }], y: 30, h: 6 });
+ok('ribbon: three segments', (rib.match(/<rect/g) || []).length === 3);
+ok('ribbon: distinct state colors', rib.includes('#2ecc8f') && rib.includes('#ef5f4e') && rib.includes('#e0c14a'));
+ok('ribbon: unknown state => muted', M.regimeRibbon({ segments: [{ x0: 0, x1: 10 }], y: 0, h: 6 }).includes('#8a93a0'));
+
+const ou = M.ouLine({ mu: 101, sigma: 2, priceLo, priceHi, yTop, yBot, x0: 400, x1: 560, halfLifeLabel: '12d' });
+ok('OU: dashed equilibrium line', ou.includes('stroke-dasharray="6,4"'));
+ok('OU: ±σ zone rect drawn', ou.includes('<rect') && ou.includes('fill-opacity="0.08"'));
+ok('OU: half-life label', ou.includes('t½ 12d'));
+// zone must bracket μ: top of zone above μ line, bottom below
+const yμ = yOf(101);
+ok('OU zone brackets μ', yOf(103) < yμ && yμ < yOf(99));
+
+const carP = M.carShade({ x0: 300, x1: 340, yTop, yBot, car: 0.03 });
+const carN = M.carShade({ x0: 300, x1: 340, yTop, yBot, car: -0.03 });
+ok('CAR: positive => green wash', carP.includes('#2ecc8f'));
+ok('CAR: negative => red wash', carN.includes('#ef5f4e'));
+ok('CAR: empty when no window', M.carShade({ car: 0.01 }) === '');
+
 console.log('\n' + (process.exitCode ? 'SOME marks TESTS FAILED' : 'ALL ' + pass + ' marks PASS'));

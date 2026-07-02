@@ -82,7 +82,60 @@
     return '<text x="' + x + '" y="' + yy + '" font-size="11" font-weight="500" fill="' + col + '" text-anchor="end">' + lab + (sig ? ' ✱' : '') + '</text>';
   }
 
-  var API = { coneBands: coneBands, calibChip: calibChip, peakNode: peakNode, verdictGlyph: verdictGlyph };
+  /* ---- Tier 2 marks ------------------------------------------------------------------------------- */
+
+  /* Structural-break verticals (Bai-Perron / PELT / ICSS). o = {breaks:[{x, label, kind}], yTop, yBot}.
+     kind: 'mean' (Bai-Perron/PELT level shift) => amber; 'var' (ICSS variance shift) => accent. Dashed so
+     they never read as price levels. Backed by the server break detectors. */
+  function breakLines(o) {
+    if (!o || !o.breaks || !o.breaks.length) return '';
+    var s = '', yTop = o.yTop, yBot = o.yBot;
+    o.breaks.forEach(function (b) {
+      if (b.x == null) return;
+      var col = b.kind === 'var' ? C.acc : C.warn;
+      s += '<line x1="' + b.x + '" y1="' + yTop + '" x2="' + b.x + '" y2="' + yBot + '" stroke="' + col + '" stroke-width="1" stroke-dasharray="2,3" opacity="0.7"/>';
+      if (b.label) s += '<text x="' + (b.x + 3) + '" y="' + (yTop + 10) + '" font-size="9" fill="' + col + '">' + b.label + '</text>';
+    });
+    return s;
+  }
+
+  /* Regime ribbon — a thin band along the top encoding the HMM/ICSS state over time. o = {segments:[{x0,x1,
+     state}], y, h}. state 0=calm(up-green), 1=stressed(danger), 2=transition(amber); unknown=muted. */
+  function regimeRibbon(o) {
+    if (!o || !o.segments || !o.segments.length) return '';
+    var y = o.y || 0, h = o.h || 6, pal = [C.up, C.dn, C.warn], s = '';
+    o.segments.forEach(function (g) {
+      if (g.x0 == null || g.x1 == null) return;
+      var col = (g.state != null && pal[g.state]) ? pal[g.state] : C.muted;
+      s += '<rect x="' + g.x0 + '" y="' + y + '" width="' + Math.max(0, g.x1 - g.x0) + '" height="' + h + '" fill="' + col + '" fill-opacity="0.55"/>';
+    });
+    return s;
+  }
+
+  /* OU equilibrium line + ±σ mean-reversion zone + half-life label. o = {mu, sigma, priceLo, priceHi,
+     yTop, yBot, x0, x1, halfLifeLabel}. The band is where the process is "pulled back"; the line is θ-fit μ. */
+  function ouLine(o) {
+    if (!o || o.mu == null) return '';
+    var y = _sc(o.priceLo, o.priceHi, o.yTop, o.yBot), ym = y(o.mu), s = '';
+    if (o.sigma != null) {
+      var yhi = y(o.mu + o.sigma), ylo = y(o.mu - o.sigma);
+      s += '<rect x="' + o.x0 + '" y="' + Math.min(yhi, ylo).toFixed(1) + '" width="' + Math.max(0, o.x1 - o.x0) + '" height="' + Math.abs(ylo - yhi).toFixed(1) + '" fill="' + C.acc + '" fill-opacity="0.08"/>';
+    }
+    s += '<line x1="' + o.x0 + '" y1="' + ym.toFixed(1) + '" x2="' + o.x1 + '" y2="' + ym.toFixed(1) + '" stroke="' + C.acc + '" stroke-width="1" stroke-dasharray="6,4"/>';
+    s += '<text x="' + o.x0 + '" y="' + (ym - 4).toFixed(1) + '" font-size="9" fill="' + C.acc + '">OU μ' + (o.halfLifeLabel ? ' · t½ ' + o.halfLifeLabel : '') + '</text>';
+    return s;
+  }
+
+  /* Event CAR window shading — cumulative abnormal return around an event. o = {x0, x1, yTop, yBot, car}.
+     car>0 => green wash (positive drift), car<0 => red. Backed by event_engine CAR. */
+  function carShade(o) {
+    if (!o || o.x0 == null || o.x1 == null) return '';
+    var col = (o.car || 0) >= 0 ? C.up : C.dn;
+    return '<rect x="' + o.x0 + '" y="' + o.yTop + '" width="' + Math.max(0, o.x1 - o.x0) + '" height="' + (o.yBot - o.yTop) + '" fill="' + col + '" fill-opacity="0.06"/>';
+  }
+
+  var API = { coneBands: coneBands, calibChip: calibChip, peakNode: peakNode, verdictGlyph: verdictGlyph,
+              breakLines: breakLines, regimeRibbon: regimeRibbon, ouLine: ouLine, carShade: carShade };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   if (typeof window !== 'undefined') window.MrktMarks = API;
 })();

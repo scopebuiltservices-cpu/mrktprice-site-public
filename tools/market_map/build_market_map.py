@@ -661,6 +661,25 @@ def build(names,mkt,ff,macro=None):
         _dbeta3=_dc3.calibrate3([n.get("_cl") for n in names if n.get("_cl")], H=20, win=20, mwin=21)
     except Exception:
         _dbeta3=None
+    # CALIBRATION E-PROCESS (anytime-valid test martingale): studentized PIT of the SAME no-lookahead
+    # walk-forward residuals projledger uses -> pit_stream (predictive-CDF PIT) -> conformal e-process.
+    # Level-controlled UNIFORMLY over time (Ville): eMax>=20 ~5%, >=100 ~1%, so a persistent calibration
+    # drift raises an alarm without alpha-spending. No-op until >=60 matured residuals exist. Stamped
+    # top-level as snap['calibEprocess'] so the terminal's calibration chip (marks.js) can read it.
+    try:
+        import projledger as _pl, pit_stream as _ps
+        _mat=[]
+        for _c in [n.get("_cl") for n in names if n.get("_cl")]:
+            try:
+                _wf=_pl.walk_forward(_c)
+                if not _wf: continue
+                _rows=_wf.get(21) or _wf[sorted(_wf.keys())[0]]
+                for _pr,_rl,_sg in _rows:
+                    if _sg and _sg>0: _mat.append({"z":(_rl-_pr)/_sg})
+            except Exception: pass
+        _calibEp=_ps.calibration_alarm(_mat) if len(_mat)>=60 else None
+    except Exception:
+        _calibEp=None
     return {"asof":dt.date.today().isoformat(),"source":"SAMPLE (synthetic, illustrative) — replaced by the nightly job","calibration":cal,
             "driftShrink":_driftShrink,"driftShrinkN":_driftShrinkN,"driftBeta":_dbeta,"driftBeta3":_dbeta3,
             "indices":{"DOW":"Dow Jones 30","NDX":"Nasdaq-100","SPX":"S&P 500","RUT":"Russell 2000"},"sectors":SECTORS,"factors":FACTORS,"macrof":["MKT"]+MFAC,
@@ -669,7 +688,7 @@ def build(names,mkt,ff,macro=None):
             # the COMPLETE complex (macro_tilt.js) so every commodity enters the rank, not just OIL. Real-rate curve
             # moves ride in snap['realCurve'] (dL/dS/dC) and pair with n['rate'] duration betas.
             "factorMoves":{k:(round(macro[k][-1],6) if (macro.get(k) and len(macro[k])) else 0.0) for k in MFAC},
-            "names":names,"sectorCorr":{"order":osec,"m":M},"factorCov":_fcov}
+            "names":names,"sectorCorr":{"order":osec,"m":M},"factorCov":_fcov,"calibEprocess":_calibEp}
 
 # ---------- real fetch (nightly Action only; needs network) ------------------------------------
 SECMAP={"Information Technology":"Technology","Technology":"Technology","Financials":"Financials",

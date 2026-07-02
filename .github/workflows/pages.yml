@@ -49,7 +49,7 @@ jobs:
         with: { fetch-depth: 0 }   # full history so the change-detector can diff the whole push range
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with: { node-version: "20" }
 
       # TRUNCATION GATE: a source file truncated mid-statement (e.g. an interrupted edit) silently

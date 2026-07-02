@@ -31,7 +31,14 @@ class PriceSource:
             key = False
         self.health = {"fmp": 0, "yf": 0, "miss": 0, "fmpLastOk": None,
                        "yfEnabled": bool(yf is not None), "yfImported": bool(yf is not None),
-                       "fmpKeyPresent": key}
+                       "fmpKeyPresent": key, "yfTripped": False}
+        # yfinance CIRCUIT BREAKER: on GitHub-Actions runners Yahoo frequently blocks/throttles the IP, so a
+        # per-ticker .history() call hangs ~10s (curl 28, 0 bytes). Across a ~700-name universe that alone
+        # blows the ~20-min job budget and trips the "refusing to publish synthetic data" guard. After
+        # `_yf_break` consecutive yfinance failures we DISABLE yfinance for the rest of the run (FMP-only),
+        # bounding total wasted time to ~_yf_break x 10s instead of N x 10s.
+        self._yf_fail = 0
+        self._yf_break = 5
 
     def get(self, sym, min_rows=10):
         """FMP Ultimate first; yfinance fallback when enabled. dict(cl,hi,lo,vo,src) or None."""
@@ -57,9 +64,14 @@ class PriceSource:
                         H = float(H); Lw = float(Lw); hi.append(H if H == H else c); lo.append(Lw if Lw == Lw else c)
                 if len(cl) >= min_rows:
                     self.health["yf"] += 1
+                    self._yf_fail = 0                      # success resets the breaker
                     return {"cl": cl, "hi": hi, "lo": lo, "vo": vo, "src": "yfinance"}
+                self._yf_fail += 1                          # returned but too few rows counts as a failure
             except Exception:
-                pass
+                self._yf_fail += 1                          # timeout / blocked IP (curl 28) etc.
+            if self._yf_fail >= self._yf_break:             # trip: stop hammering a dead provider this run
+                self.yf = None
+                self.health["yfTripped"] = True
         self.health["miss"] += 1
         return None
 

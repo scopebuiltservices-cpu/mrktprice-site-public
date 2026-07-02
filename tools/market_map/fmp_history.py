@@ -40,8 +40,10 @@ def have_key():
     return bool(_key())
 
 
-def _get(s, url, timeout=25, tries=3):
-    """GET with small backoff on transient codes. Returns Response or None."""
+def _get(s, url, timeout=8, tries=2):
+    """GET with small backoff on transient codes. Returns Response or None.
+    Timeout/tries bounded (8s x 2) so one hung socket can't cost 75s and blow the build's ~20-min budget
+    across a ~700-name universe; 429/5xx still get one short backoff-retry (rate-limit friendly)."""
     import requests  # noqa
     for i in range(tries):
         try:

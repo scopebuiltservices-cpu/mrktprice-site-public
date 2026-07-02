@@ -669,7 +669,7 @@ def build(names,mkt,ff,macro=None):
     try:
         import projledger as _pl, pit_stream as _ps
         _mat=[]
-        for _c in [n.get("_cl") for n in names if n.get("_cl")]:
+        for _c in [n.get("_cl") for n in names if n.get("_cl")][:160]:   # cap: sample enough names for a stable PIT stream without adding material build time
             try:
                 _wf=_pl.walk_forward(_c)
                 if not _wf: continue

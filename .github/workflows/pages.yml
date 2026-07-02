@@ -305,7 +305,7 @@ jobs:
           [ -n "$HL" ] && python tools/market_map/coverage_regression.py "$HL" || echo "::notice::health_log.jsonl absent this run"
 
       - name: Upload site
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with: { path: '_site' }
 
       - id: deployment
